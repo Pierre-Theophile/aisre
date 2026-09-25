@@ -1,0 +1,28 @@
+# Go
+bin/
+*.exe
+*.test
+*.out
+vendor/
+# Coverage artifacts, by their actual names. `coverage.*` was too broad: it silently ignored
+# internal/backends/gcp/coverage.go, a source file the task list names by path, so the file built
+# locally and was simply absent from the commit. A pattern that swallows a .go file is not a
+# tooling-artifact pattern.
+coverage.out
+coverage.html
+coverage.txt
+coverage.cov
+# tooling
+.DS_Store
+*.swp
+.idea/
+.vscode/
+.env*
+# local runtime
+/tmp/
+deploy/**/kubeconfig*
+*.key
+*.crt
+
+# claude local settings
+.claude/settings.local.json

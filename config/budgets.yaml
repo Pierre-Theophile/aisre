@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The published budget profiles (002 FR-043, FR-047, plan §The budget manager, research §11).
+#
+# This file is the checked-in copy of what `internal/investigation/budget` publishes in code, so
+# that an operator can read the defaults, copy the file, change a number and pass the result to
+# `--budget-profiles <file>`. A file that names only one profile leaves the other at its published
+# default; the profile actually applied is recorded on every investigation, so a run stays
+# interpretable after the file changes.
+#
+# Every dimension is a dimension. A flat call count is never the only cap (FR-043): it prices a
+# cheap monitor read the same as an expensive span search, and the expensive one is what spends
+# the on-call's vendor quota.
+#
+# Three numbers here are NOT configurable, and the loader refuses a file that tries to move them:
+#
+#   synthesis_reserve_fraction   exactly 0.15 — it is what makes an exhausted investigation still
+#                                produce a written answer with a verifier pass behind it (FR-045,
+#                                SC-005)
+#   the evidence requirement     a claim resting on nothing is not a claim this engine makes
+#   the read-only posture,       an engine that could act, or whose calls were not recorded, or
+#   the recording of calls,      whose claims were not verified, is a different product wearing
+#   the verification pass        this one's output format (FR-047b)
+
+version: "1.0.0"
+
+profiles:
+  # Time-bound. Someone is awake and waiting.
+  #
+  # The first-tested target is reachable because the deterministic first wave produces the first
+  # tested hypothesis with no model in the loop (plan Findings F2): a single request on this model
+  # family can run for minutes on a hard problem, so SC-013's figure must not sit behind a model
+  # turn.
+  - name: page
+    wall_time: 10m                 # the hard stop; nothing runs past it, not even the synthesis
+    first_tested_target: 120s      # FR-046a's published figure
+    substantive_target: 5m         # >= 1 hypothesis supported|refuted + a verdict line that
+                                   #   passed the citation checker (FR-047)
+    cost_units: 400000             # model tokens, all classes, all models — the primary unit
+    calls_per_backend:
+      "*": 40
+    calls_per_cost_class:
+      cheap: 60
+      standard: 30
+      expensive: 8
+    max_window: 6h
+    quota_share: 0.25              # of what the vendor says is LEFT, not of its total
+    synthesis_reserve_fraction: 0.15
+    max_concurrent_investigations: 4
+    daily_global_spend: 250
+
+  # Quality-bound. Nobody is waiting, so there is no engine deadline at all: `wall_time: 0` means
+  # the operator's own cap is the only wall-clock limit (FR-047).
+  - name: review
+    wall_time: 0
+    first_tested_target: 0
+    substantive_target: 0
+    cost_units: 2000000
+    calls_per_backend:
+      "*": 200
+    calls_per_cost_class:
+      cheap: 300
+      standard: 150
+      expensive: 40
+    max_window: 168h               # seven days
+    quota_share: 0.25
+    synthesis_reserve_fraction: 0.15
+    max_concurrent_investigations: 2
+    daily_global_spend: 250

@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Where the pods send OTLP. Written by deploy/kind/host-endpoint.sh; the committed value is the
+# usual gateway of the `kind` Docker bridge on Linux, so Linux users can apply this overlay
+# without running anything first.
+#
+#   Docker Desktop (macOS / Windows)  run deploy/kind/host-endpoint.sh — it resolves
+#                                     host.docker.internal from inside the node container and
+#                                     writes the literal address here and in ../minimal/.
+#   kind on Linux                     usually already correct; the script confirms it.
+#
+# Why a literal and not the name: kind rewrites each node's /etc/resolv.conf away from Docker's
+# embedded resolver, so `host.docker.internal` does not resolve from inside a pod. See
+# deploy/kind/README.md, "Reaching the host from inside the cluster".
+#
+# Consumed with envFrom by the upstream collector (see collector-deployment.yaml), whose
+# configuration refers to it as ${env:OTLP_GRPC_ENDPOINT} (see collector-config.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-agent-otlp
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/part-of: opentelemetry-demo
+data:
+  OTLP_HOST: "172.18.0.1"
+  OTLP_GRPC_ENDPOINT: "172.18.0.1:4317"
+  OTLP_HTTP_ENDPOINT: "http://172.18.0.1:4318"

@@ -1,0 +1,722 @@
+// Public schema for the temporal system graph. Source of truth for events, entities and
+// queries. Served via ConnectRPC (gRPC, gRPC-Web, JSON). Versioned with buf; breaking
+// changes require a MAJOR bump and an event-log transformation (constitution IX).
+syntax = "proto3";
+
+package sreagent.graph.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1;graphv1";
+
+// ---------- Core value types ----------
+
+// Half-open interval [start, end). Unknown flags per FR-011.
+message Interval {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;   // unset = unbounded
+  bool start_unknown = 3;
+  bool end_unknown = 4;
+}
+
+// Identifier of an entity in some external namespace, e.g. ("otel.service.name","checkout").
+message Ref {
+  string namespace = 1;
+  string value = 2;
+}
+
+enum NodeType {
+  NODE_TYPE_UNSPECIFIED = 0;
+  SERVICE = 1; WORKLOAD = 2; INFRA_RESOURCE = 3; CONFIG = 4; FEATURE_FLAG = 5;
+  DB_SCHEMA = 6; THIRD_PARTY = 7; OWNER = 8; ALERT = 9; CHANGE = 10;
+  // ADR-0005 D3 (the feature 001 change package for 002): an investigation is a decision
+  // record the graph holds like any other fact, and a knowledge document is what graph-scoped
+  // retrieval indexes. Neither carries telemetry (constitution IV).
+  INVESTIGATION = 11; KNOWLEDGE_DOC = 12;
+}
+
+enum EdgeType {
+  EDGE_TYPE_UNSPECIFIED = 0;
+  CALLS = 1; DEPENDS_ON = 2; RUNS_ON = 3; DEPLOYED_BY = 4; OWNED_BY = 5;
+  EXPOSED_VIA = 6; CHANGED_BY = 7;
+  // ADR-0005 D3 (the feature 001 change package for 002).
+  WATCHES = 8;      // alert -> the entity it watches (ADR-0003 D10, ADR-0004 D4)
+  INVESTIGATED = 9; // investigation -> a subject or target entity
+  CONCERNS = 10;    // knowledge document -> entity; the graph is the retrieval index
+}
+
+// Extensible: unknown kinds are carried as CHANGE_KIND_OTHER + change.kind_other.
+enum ChangeKind {
+  CHANGE_KIND_UNSPECIFIED = 0;
+  ROLLOUT = 1; IAC_APPLY = 2; FLAG_FLIP = 3; SECRET_ROTATION = 4; SCALING = 5;
+  MIGRATION = 6; DNS_SWITCH = 7; CLOUD_MAINTENANCE = 8; CONFIG_CHANGE = 9;
+  // ADR-0005 D3 (the feature 001 change package for 002): kinds the vendor-notice and cloud
+  // feeders observe and 002 must rank and render distinctly.
+  DEPRECATION = 10; VENDOR_INCIDENT = 11; IAM_CHANGE = 12; QUOTA_CHANGE = 13;
+  CHANGE_KIND_OTHER = 100;
+}
+
+// Who or what performed a change (ADR-0005 D1). ACTOR_KIND_UNSPECIFIED is the zero value and
+// means "the source said nothing", which is genuinely distinct from ACTOR_KIND_UNKNOWN, "an
+// actor was named and the feeder could not type it". A projector that learns nothing writes
+// nothing: the field stays unspecified and canonical serialisation omits it, so an existing
+// golden does not move. ACTOR_KIND_UNKNOWN is never guessed.
+enum ActorKind {
+  ACTOR_KIND_UNSPECIFIED = 0;
+  PERSON = 1;      // a human originated it
+  AUTOMATION = 2;  // a CI job, bot or deploy principal acting on a person's behalf
+  CONTROLLER = 3;  // an autoscaler, operator or other system controller reacting to state
+  VENDOR = 4;      // a cloud or SaaS provider: maintenance, deprecation, incident
+  ACTOR_KIND_UNKNOWN = 5;  // an actor was observed and could not be classified; never guessed
+}
+
+enum PointerKind { POINTER_KIND_UNSPECIFIED = 0; METRIC = 1; LOG = 2; TRACE = 3; DASHBOARD = 4; SOURCE_LINK = 5; }
+
+// Where to look. Never the telemetry itself (constitution IV).
+message Pointer {
+  PointerKind kind = 1;
+  string backend_kind = 2;            // e.g. "prometheus", "datadog", "loki", "tempo", "k8s", "github"
+  string vocabulary = 3;              // e.g. "otel-semconv/1.30", "promql", "datadog-query"
+  string selector = 4;                // the query/selector text in that vocabulary
+  map<string, string> attributes = 5; // OTel resource attributes identifying the entity
+  // ADR-0005 D6: which attribute or tag in THIS pointer's vocabulary carries each join role,
+  // so separate answers can be related to each other and to the graph. Keys come from the
+  // published role set "version" | "workload" | "pod" | "host" | "trace"; values are the
+  // attribute or tag name, e.g. {"version": "service.version"}. An empty map is omitted by
+  // canonical serialisation, exactly as every other empty map is, so a pointer with no join
+  // keys produces a byte-identical golden. Documented in docs/schema/pointers.md.
+  map<string, string> join_keys = 6;
+}
+
+// The state of an ANNOUNCED fact — one whose valid time begins after its observed time (003
+// plan item 4, FR-062-FR-068).
+//
+// This vocabulary exists to keep an announcement from being read as an occurrence. A maintenance
+// window read on 17 September for 02:00-04:00 on 2 October is a fact about the future: it is
+// announced, not happened, and a ranker that treated the two alike would implicate a window that
+// has not run yet.
+//
+// The transitions are corrections in the constitution's sense (II): cancelling or rescheduling
+// CLOSES an observation and OPENS a new one, and never rewrites a valid interval. A reschedule
+// becomes SUPERSEDED plus a new ANNOUNCED observation of the SAME change ref, so the history
+// records that the vendor moved the window rather than that it was always at the new time.
+enum AnnouncementState {
+  // Unset means this change is not an announcement at all — an ordinary observed change. It is
+  // NOT a synonym for ANNOUNCED: canonical serialisation omits the zero value, so every change
+  // ever recorded keeps serialising exactly as it did.
+  ANNOUNCEMENT_STATE_UNSPECIFIED = 0;
+  ANNOUNCED = 1;    // the default for a notice, and never skipped
+  CONFIRMED = 2;    // the window is observed to have happened; see the validation rule below
+  CANCELLED = 3;    // the vendor withdrew it
+  SUPERSEDED = 4;   // the vendor moved it; a new ANNOUNCED observation of the same ref follows
+}
+
+message Change {
+  ChangeKind kind = 1;
+  string kind_other = 2;
+  string summary = 3;
+  string actor = 4;                   // who/what performed it, if known
+  string origin_ref = 5;              // link/id in the origin system
+  // ADR-0005 D1: the typed reading of `actor`. Reaches the change-observation event body
+  // through ObserveChange.change, and the ranker through RankedChange.actor_kind.
+  ActorKind actor_kind = 6;
+
+  // 003 plan item 4. Unset on every change that is not an announcement.
+  //
+  // A promotion to CONFIRMED is REFUSED without an observation that the window actually happened
+  // (FR-066), and that refusal is the point of the field: a vendor saying it will do something and
+  // the thing having been done are different facts, and only the second may be reasoned from as an
+  // occurrence. Without the rule, "confirmed" would drift into meaning "the vendor confirmed the
+  // announcement", which is still an announcement.
+  AnnouncementState announcement_state = 7;
+
+  // 004 plan item 4 (FR-016). A rollback is a ROLLOUT in every other respect — it moves production
+  // to a version, it has an actor, it has an instant — so it is marked rather than given a kind of
+  // its own. A distinct ChangeKind would make every consumer that ranks rollouts remember to include
+  // it, and the first one to forget would silently stop ranking the change an incident is most often
+  // about.
+  //
+  // `rolled_back_to` names the deployment or version production was restored to, in the source's own
+  // spelling, and is empty when the platform states a rollback without saying what it went back to.
+  // That case is real: a Vercel instant rollback reports that it happened, and the deployment it
+  // restored is a second read. An empty value with `rollback` true is therefore "a rollback whose
+  // target we have not been told", never "not a rollback".
+  //
+  // Not to be confused with `investigation.proto`'s `rollback_candidate`, which is the engine's
+  // SUGGESTION of what an operator might do next. This is an OBSERVATION that somebody already did
+  // it. The two are different facts about different moments and a query that conflated them would
+  // report a proposal as history.
+  bool rollback = 8;
+  string rolled_back_to = 9;
+
+  // 004 T155. The deployment or version production was moved AWAY from by this rollback, in the source's
+  // own spelling, and empty when the platform does not say. It is the half that makes a rollback evidence:
+  // an operator rolling production back from X during an incident has judged X to be the problem, and the
+  // investigation engine credits the hypothesis naming X with it.
+  //
+  // By convention the value is spelled the way the same source's rollout of that deployment is named — a
+  // Vercel rollback's `rolled_back_from` is `dpl_…`, and the Vercel rollout of that deployment is
+  // `vercel.change=dpl_…` — so a reader joins the two within one source's namespace without a lookup
+  // table. Empty on everything that is not a rollback.
+  string rolled_back_from = 10;
+}
+
+message Provenance {
+  repeated string produced_by_event_ids = 1;
+  string source_id = 2;
+}
+
+message NodeVersion {
+  string entity_id = 1;
+  string version_id = 2;
+  NodeType type = 3;
+  string display_name = 4;
+  repeated Ref aliases = 5;
+  Interval valid = 6;
+  Interval observed = 7;
+  google.protobuf.Struct props = 8;
+  repeated Pointer pointers = 9;
+  Change change = 10;                 // set iff type == CHANGE
+  Provenance provenance = 11;
+  repeated PropConflict conflicts = 12;  // keys where sources disagree; never silently resolved
+  // All node types asserted for this entity by its sources. `type` is the resolved type chosen by
+  // the published precedence (SERVICE > WORKLOAD > THIRD_PARTY > INFRA_RESOURCE > CONFIG > ...);
+  // facets keeps the rest so nothing is lost when a workload and a service merge (research §10).
+  repeated NodeType facets = 13;
+}
+
+message PropConflict {
+  string key = 1;
+  repeated AssertedValue values = 2;
+}
+message AssertedValue { google.protobuf.Value value = 1; string source_id = 2; string event_id = 3; }
+
+message EdgeVersion {
+  string version_id = 1;
+  string src_id = 2;
+  string dst_id = 3;
+  EdgeType type = 4;
+  Interval valid = 5;
+  Interval observed = 6;
+  optional uint32 weight_class = 7;   // CALLS only, 0..5
+  google.protobuf.Struct props = 8;
+  Provenance provenance = 9;
+  string closed_as_consequence_of = 10;
+}
+
+// ---------- Events (ingestion contract, constitution III) ----------
+
+message EventEnvelope {
+  string event_id = 1;                // required, globally unique
+  string idempotency_key = 2;         // defaults to event_id
+  string source_id = 3;               // required, registered
+  optional int64 source_seq = 4;
+  string schema_version = 5;          // e.g. "1.0.0"
+  google.protobuf.Timestamp source_observed_at = 6; // informational
+  oneof body {
+    UpsertNode upsert_node = 10;
+    UpsertEdge upsert_edge = 11;
+    RetractNode retract_node = 12;
+    RetractEdge retract_edge = 13;
+    ObserveChange observe_change = 14;
+    IdentityClaim identity_claim = 15;
+    ConfirmMerge confirm_merge = 16;
+    RejectMerge reject_merge = 17;
+    SplitEntity split_entity = 18;
+    ManualMerge manual_merge = 19;
+    SourceCheckpoint source_checkpoint = 20;
+    // ADR-0005 D2/D3: the events feature 002 emits, and the alert intake both of its front
+    // doors normalise into. All additive; all idempotent; all replay-surviving.
+    RecordInvestigation record_investigation = 21;
+    SubmitHumanFact submit_human_fact = 22;
+    ReopenInvestigation reopen_investigation = 23;
+    LabelInvestigation label_investigation = 24;
+    AlertTransition alert_transition = 25;
+    // 003 plan item 2 (FR-029). Resolution can suggest that two ENTITIES are one; nothing
+    // could suggest that an EDGE exists until this.
+    ProposeDependency propose_dependency = 26;
+    // And the two decisions about one. A proposal is not an edge until a person says so, and
+    // that saying has to be an event or it does not survive replay (FR-029, FR-122).
+    ConfirmDependency confirm_dependency = 27;
+    RejectDependency reject_dependency = 28;
+    // 004 T148. The second way two things can be related, and the one most of an SRE agent's
+    // reasoning actually uses: a value SEVERAL entities share.
+    CorrelateEntity correlate_entity = 29;
+  }
+}
+
+message UpsertNode {
+  Ref ref = 1; NodeType type = 2; string display_name = 3;
+  google.protobuf.Struct props = 4; repeated Pointer pointers = 5;
+  google.protobuf.Timestamp valid_at = 6; bool valid_from_unknown = 7;
+}
+message UpsertEdge {
+  Ref src = 1; Ref dst = 2; EdgeType type = 3; google.protobuf.Struct props = 4;
+  optional uint32 weight_class = 5; google.protobuf.Timestamp valid_at = 6; bool valid_from_unknown = 7;
+}
+message RetractNode { Ref ref = 1; google.protobuf.Timestamp valid_end = 2; }
+message RetractEdge { Ref src = 1; Ref dst = 2; EdgeType type = 3; google.protobuf.Timestamp valid_end = 4; }
+message ObserveChange {
+  Ref ref = 1;                        // identity of the change itself in its origin system
+  Change change = 2; repeated Ref targets = 3;
+  google.protobuf.Timestamp valid_at = 4; google.protobuf.Timestamp valid_end = 5;
+  // 003 FR-069. A change whose valid start is genuinely unknown — a vendor announcing a deprecation
+  // "in a future release" — says so, exactly as a node or an edge does. Without it, a missing valid_at
+  // reads as the zero timestamp and a change nobody dated lands in 1970: not merely wrong, but
+  // *plausibly* wrong, because an ancient change ranks as maximally distant and is never excluded.
+  //
+  // The interval then starts at the observation, marked unknown: the earliest instant we can show,
+  // stated as a bound rather than as the instant the vendor meant.
+  bool valid_from_unknown = 6;
+
+  // 004: the change's own properties and pointers.
+  //
+  // Added because there was no channel at all and two features had been written as though there
+  // were. Feature 003's `contracts/gcp-feeder.md` §3.3 states that a revision-creation change is
+  // "marked as not having moved production traffic"; its feeder duly built that property and then
+  // discarded it, because nothing carried one. The clause was unmet, and
+  // `sre.gcp.moved_production_traffic` appeared exactly once in the whole repository — in its own
+  // declaration. `nodeContent.pointers` was the same: the projector has always had the field and a
+  // change observation never filled it.
+  //
+  // Here rather than on `Change`, and the distinction matters. `Change` is the *record*, serialised
+  // whole into the change column; props and pointers are stored in their own columns, so putting
+  // them on `Change` would write each fact twice and leave two copies to diverge. `targets` already
+  // sits here for the same reason.
+  //
+  // What belongs in props is what is true of the CHANGE rather than of the thing it changed: which
+  // environment a rollout went to, whether it moved production traffic, which rung of an actor
+  // ladder decided and on what evidence, the instant a rollout was later superseded. What does NOT
+  // belong there is an identifier another source might also know the change by — that is an
+  // `IdentityClaim`, so a published resolution rule can key on it, and a property no rule can read
+  // is a property no rule can merge on.
+  //
+  // Both are additive: an unset Struct and an empty list are omitted by canonical serialisation, so
+  // every change recorded before these fields existed serialises exactly as it did.
+  google.protobuf.Struct props = 7;
+  repeated Pointer pointers = 8;
+}
+message IdentityClaim { Ref subject = 1; Ref claim = 2; google.protobuf.Struct attributes = 3; }
+
+// CorrelateEntity attaches a value several entities may share (004 T148).
+//
+// It is deliberately NOT an IdentityClaim, and the difference is the reason this message exists. An
+// identity claim is a NAME for one entity: `otel.service.name=checkout` said by two sources is two
+// sources naming one service, and certain rule C1 merges on exactly that. `graph.identity_claims`
+// enforces it — `UNIQUE (namespace, value, source_id)` — so an identifier from one source belongs to
+// exactly one entity.
+//
+// A correlation key is a FACT SEVERAL ENTITIES SHARE. A monorepo run ships one commit to three
+// services, so three changes carry `deploy.commit_sha=8f5b…`; a redeploy ships it again. Stored as an
+// identity that value lands on whichever entity was processed first, and the graph then depends on the
+// order events arrived in — which is what four of feature 004's US1 fixtures failed their shuffle step
+// on, and what the shuffle step exists to find.
+//
+// A correlation is never by itself a reason to merge. It is the first half of "correlated, then
+// corroborated": C8 merges two rollouts sharing a deploy key only where they also agree on an
+// environment and already share a target the graph itself resolved. A rule that merged on the key
+// alone would collapse a monorepo's three services into one change, certainly and with no human in
+// the loop.
+//
+// `key` is the shared value; `attributes` carries what a rule needs to corroborate with — the
+// deployment environment, the source that stated it — exactly as an identity claim's do.
+message CorrelateEntity { Ref subject = 1; Ref key = 2; google.protobuf.Struct attributes = 3; }
+message ConfirmMerge { string entity_a = 1; string entity_b = 2; string rationale = 3; }
+message RejectMerge  { string entity_a = 1; string entity_b = 2; string rationale = 3; }
+message ManualMerge  { string entity_a = 1; string entity_b = 2; string rationale = 3; }
+message SplitEntity  { string entity_id = 1; repeated Ref detach_claims = 2; string rationale = 3; }
+message SourceCheckpoint { google.protobuf.Timestamp extent_from = 1; google.protobuf.Timestamp extent_to = 2; bool gap_before = 3; string note = 4; }
+
+// ProposeDependency suggests that an edge exists, without asserting one (003 FR-029, plan item 2).
+//
+// It is NOT an IdentityClaim and the difference is the reason this message exists. An identity
+// claim says two refs name the same entity; this says two DIFFERENT entities are related. Nothing
+// in the schema could express the second, so a feeder that had suggestive but inconclusive evidence
+// of a dependency had two options and both were worse than a stated gap: invent the edge, or drop
+// the evidence.
+//
+// The concrete case: where a Cloud Run service's configuration, connection settings or labels name
+// a Cloud SQL instance, a depends-on edge is asserted with the evidence that derived it recorded
+// (FR-028). Where the dependency cannot be derived, this is emitted instead.
+//
+// A proposal is NEVER an edge until a human confirms it. That is the whole contract: the projector
+// persists it as a pending suggestion, no query traverses it, and a confirmation or rejection is
+// itself an event, so the decision survives replay and outranks any later automated match (FR-122).
+//
+// Raised once per cycle and not re-raised while pending, so a feeder that sees the same weak
+// evidence every minute does not produce a queue nobody can read.
+message ProposeDependency {
+  Ref src = 1;
+  Ref dst = 2;
+  EdgeType type = 3;                          // the edge being proposed, never created here
+  double score = 4;                           // the rule's confidence, published with the rule
+  string rule_id = 5;                         // which published rule proposed it
+  string rationale = 6;                       // why, in one line a human can act on
+  // The evidence that suggested it, so a reviewer decides from the same material the rule saw
+  // rather than from the score alone. Constitution V: a claim resting on nothing is not a claim.
+  google.protobuf.Struct evidence = 7;
+}
+
+// ConfirmDependency and RejectDependency are the two terminal decisions about a proposal.
+//
+// They exist because T013's requirement — that a decision persist across replay and outrank any
+// later automated match — cannot be met by anything else. A row updated in place would be
+// recomputed away by the next replay, and the existing ConfirmMerge / RejectMerge are typed for
+// entity IDENTITY: they say "these two refs are one thing", which is a different claim from "this
+// edge exists". Reusing them would file a dependency decision in the identity ledger.
+//
+// Both name the proposal by its (src, dst, type) triple rather than by a row id, so a decision
+// is expressible by someone reading the proposal list without having to quote an internal key,
+// and so the same decision replays to the same row.
+//
+// Both REQUIRE an authenticated principal (FR-041), exactly as the merge decisions do, and both
+// are refused if no proposal exists for the triple: a decision about a proposal nobody made would
+// claim the graph had suggested something it never did. Asserting an edge with no proposal behind
+// it is what upsert_edge is for.
+//
+// Confirming CREATES the edge — that is the whole point of "never an edge until confirmed" — and
+// the edge's provenance names the confirming event, which in turn names the proposal, so the chain
+// from edge back to the evidence that suggested it is walkable.
+message ConfirmDependency {
+  Ref src = 1;
+  Ref dst = 2;
+  EdgeType type = 3;
+  string rationale = 4;
+  // When the edge became true, if the person knows better than "now". Unset means the
+  // confirmation instant, which is the honest default: what is being asserted is that somebody
+  // decided this today, not that they know when it started.
+  google.protobuf.Timestamp valid_at = 5;
+  bool valid_from_unknown = 6;
+}
+
+// RejectDependency records that a person looked at the evidence and said no. It is durable in the
+// strong sense: a later automated proposal for the same triple stays rejected and is recorded as
+// a conflict rather than reopened, which is FR-122's "a human decision outranks any automated
+// match" applied to edges rather than to identities.
+message RejectDependency {
+  Ref src = 1;
+  Ref dst = 2;
+  EdgeType type = 3;
+  string rationale = 4;
+}
+
+// ---------- Investigation events (ADR-0005 D2/D3; feature 002 emits them) ----------
+//
+// The decision record and every human action about an investigation are facts about the
+// production system's operation, so they are events like any other: typed, idempotent and
+// replayable. The working material of a run -- judgments, worker calls, ledger updates -- is
+// NOT eventful and never appears here.
+
+// One per investigation, emitted once at conclusion, in one transaction.
+//
+// INVARIANT (constitution IV, 002 SC-010): no metric sample, log line, span or aggregate of
+// them. Props are written under the allow-listed `sre.investigation.*` prefix; everything else
+// stays subject to the existing telemetry denylist, and a decision record carrying a series is
+// rejected with reason_code = telemetry_payload.
+message RecordInvestigation {
+  string investigation_id = 1;              // also the idempotency key
+  repeated Ref subjects = 2;
+  repeated Ref target_entities = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp ended_at = 5;
+  string outcome = 6;                       // ranked | unknown | budget_exhausted | failed
+  string stop_reason = 7;
+  string verdict_line = 8;
+  google.protobuf.Struct hypotheses = 9;    // ids, statements, statuses, confidences, buckets, ranks
+  google.protobuf.Struct spend = 10;        // tokens by model and class, calls, quota share
+  google.protobuf.Struct model_config = 11;
+  string recording_key = 12;
+  string recording_digest = 13;             // sha256; the link to the bulk beside the graph
+  string requester = 14;
+}
+
+// A fact a person pushes at an investigation. Never blocks it; contradictions are stated, not
+// resolved. Idempotency key: sha256(investigation_id, author, submitted_at, statement).
+message SubmitHumanFact {
+  string investigation_id = 1;
+  string kind = 2; string statement = 3;
+  repeated Ref entities = 4;
+  google.protobuf.Timestamp concerns_from = 5;
+  google.protobuf.Timestamp concerns_to = 6;
+  string author = 7;                        // authenticated principal; anonymous is rejected
+  google.protobuf.Timestamp submitted_at = 8;
+}
+
+// A concluded investigation is immutable: reopening links a NEW investigation to the parent
+// and never rewrites the parent's version. Idempotency key: child_investigation_id.
+message ReopenInvestigation {
+  string parent_investigation_id = 1;
+  string child_investigation_id = 2;
+  string cause = 3;                         // human_fact | answer
+  string cause_ref = 4;
+}
+
+// The one-click "was this right?". Idempotency key: sha256(investigation_id, author, labelled_at).
+message LabelInvestigation {
+  string investigation_id = 1;
+  bool was_this_right = 2;
+  string author = 3;
+  google.protobuf.Timestamp labelled_at = 4;
+}
+
+// Alert intake as a feeder, two transports, one event (ADR-0003 D10, ADR-0004 D4). Polling is
+// the source of truth; a webhook is a doorbell that only triggers a poll. A human declaration
+// is the same event shape, distinguished by actor_kind = PERSON, never a separate mode.
+//
+// Idempotency key: sha256(monitor, group_key, transition_at) -- so the webhook and the poll
+// that follows it are one event, and a declaration observed many times is one event however
+// often it is seen. `group_key` is empty for a declaration. Flapping and no-data transitions
+// are filtered at the feeder; recoveries are KEPT, because a recovery is evidence.
+message AlertTransition {
+  Ref monitor = 1;                          // the alert entity; for a declaration, the place
+                                            // the incident lives, on its STABLE identifier
+  string group_key = 2;                     // "" when the monitor has no groups
+  google.protobuf.Timestamp transition_at = 3;  // for a declaration: the instant of DECLARATION
+  string from_state = 4; string to_state = 5;   // ok | alert | warn | no_data | declared
+  repeated Ref watches = 6;                 // entities the monitor watches -> WATCHES edges
+  string transport = 7;                     // poll | webhook | human_declared
+  string origin_ref = 8;
+  ActorKind actor_kind = 9;                 // PERSON for a human declaration
+  string severity = 10;                     // as declared; never inferred
+  string title = 11;                        // as declared
+  string declaring_identity = 12;           // authenticated principal
+
+  // 003 plan item 3 (FR-051). A published way to say "this history is SAMPLED at interval d"
+  // rather than complete.
+  //
+  // A webhook-delivered transition is complete: the vendor pushed every one. A POLLED transition
+  // history is not — it is a sequence of observations at an interval, and any transition that
+  // opened and closed between two polls is invisible. Both arrive here as AlertTransition, and
+  // before this marker a reader could not tell them apart, so a gap in a polled history read as
+  // "the alert did not fire" when it meant "we were not looking at the moment it did".
+  //
+  // That is the same distinction the source checkpoint's gap_before draws for a feed, drawn here
+  // for one alert's history, and it is the constitution's evidence-first rule applied to absence:
+  // an unobserved interval is a stated fact, never an implied "nothing happened".
+  //
+  // sampled_interval_seconds is the poll interval in force when this transition was read; it is
+  // unset for a webhook or a human declaration, where the history is complete. Its presence is
+  // what makes it a marker: a reader that sees it knows the resolution of everything around it.
+  bool sampled = 13;
+  int64 sampled_interval_seconds = 14;
+}
+
+message IngestResult {
+  string event_id = 1;
+  enum Status { STATUS_UNSPECIFIED = 0; APPLIED = 1; DUPLICATE_NOOP = 2; REJECTED = 3; }
+  Status status = 2;
+  string reason_code = 3; string reason_detail = 4;
+  google.protobuf.Timestamp observed_at = 5;
+}
+
+service IngestService {
+  rpc Ingest(stream EventEnvelope) returns (stream IngestResult);
+  rpc IngestBatch(IngestBatchRequest) returns (IngestBatchResponse);
+  rpc RegisterSource(RegisterSourceRequest) returns (RegisterSourceResponse);
+}
+message IngestBatchRequest { repeated EventEnvelope events = 1; }
+message IngestBatchResponse { repeated IngestResult results = 1; }
+message RegisterSourceRequest { string source_id = 1; string kind = 2; string ordering = 3; int64 reordering_window_seconds = 4; string schema_version = 5; }
+message RegisterSourceResponse {}
+
+// ---------- Queries (constitution I, II, V) ----------
+
+message AsOf {
+  google.protobuf.Timestamp valid_at = 1;    // required
+  google.protobuf.Timestamp observed_at = 2; // unset = now
+}
+
+enum Direction { DIRECTION_UNSPECIFIED = 0; UPSTREAM = 1; DOWNSTREAM = 2; BOTH = 3; }
+
+message Truncation { bool truncated = 1; string reason = 2; uint32 per_hop_cap = 3; uint32 total_cap = 4; repeated string truncated_at_entity_ids = 5; }
+
+message SubgraphRequest {
+  Ref focus = 1; AsOf as_of = 2; uint32 hops = 3; Direction direction = 4;
+  repeated EdgeType edge_types = 5; optional uint32 min_weight_class = 6;
+  optional uint32 per_hop_cap = 7; optional uint32 total_cap = 8;
+}
+message SubgraphResponse { NodeVersion focus = 1; repeated NodeVersion nodes = 2; repeated EdgeVersion edges = 3; Truncation truncation = 4; Extent extent = 5; }
+
+message PropertyDelta { string key = 1; google.protobuf.Value old = 2; google.protobuf.Value new = 3; }
+message NodeDelta { string entity_id = 1; NodeVersion before = 2; NodeVersion after = 3; repeated PropertyDelta deltas = 4; }
+message EdgeDelta { string key = 1; EdgeVersion before = 2; EdgeVersion after = 3; repeated PropertyDelta deltas = 4; }
+
+message RankedChange {
+  NodeVersion change = 1;
+  double score = 2;
+  double temporal = 3; double topological = 4; double traffic = 5;
+  uint32 hop_distance = 6; int64 time_distance_seconds = 7;
+  bool unattached = 8; repeated string target_entity_ids = 9;
+  string tie_break = 10;
+  // ADR-0005 D4. Field 7 keeps its floored semantics so no existing consumer breaks; these
+  // carry what a caller needs to tell a post-reference candidate from a pre-reference one,
+  // which matters once the reference instant is the estimated symptom onset rather than the
+  // alert instant. See docs/schema/ranking.md for the two-sided decay.
+  int64 signed_time_distance_seconds = 11;  // T_ref - change.valid.start, NOT floored
+  bool post_reference = 12;                 // true iff signed_time_distance_seconds < 0
+  ActorKind actor_kind = 13;                // passthrough of Change.actor_kind (D3)
+  // 004 T128 (SC-016). The cross-source keys this change carries — the commit it shipped
+  // (`deploy.commit_sha`), the immutable image (`deploy.image`), the release (`deploy.release`) —
+  // as known at the request's observed instant, deduplicated and sorted by namespace then value.
+  // They are what an on-call needs next to a ranked change ("which commit is this?") and they
+  // live in the correlation store rather than on the change's version, so the query attaches
+  // them here. A key two sources both stated appears once.
+  repeated Ref correlation_keys = 14;
+}
+
+message DiffRequest {
+  SubgraphRequest subgraph = 1;                // as_of.valid_at ignored; t1/t2 used
+  google.protobuf.Timestamp t1 = 2; google.protobuf.Timestamp t2 = 3;
+  google.protobuf.Timestamp observed_at = 4;
+  google.protobuf.Timestamp reference_at = 5;  // default t2
+  optional uint32 change_hop_margin = 6; optional double tau_seconds = 7;
+}
+// Why a change was left out of a ranked list (003 FR-065).
+//
+// An exclusion is reported, never silent. "It is not in the list" and "it is in the list at the
+// bottom" are the two answers FR-065 distinguishes, and the third — "it is not in the list and
+// nobody said why" — is the one an operator cannot act on.
+enum ExclusionReason {
+  EXCLUSION_REASON_UNSPECIFIED = 0;
+  // The change is ANNOUNCED and its valid interval begins after the reference instant: it has not
+  // happened yet, so it cannot have caused what the list is about. Asking what is *expected* to
+  // change is a forward query with a future valid instant, and must not be reachable by accident
+  // from a backward-looking one.
+  EXCLUSION_ANNOUNCED_AFTER_REFERENCE = 1;
+}
+
+message ExcludedChange {
+  NodeVersion change = 1;
+  ExclusionReason reason = 2;
+  // Detail states the instants the decision was made on, so a reader can check it without
+  // recomputing: the change's valid start and the reference it was compared to.
+  string detail = 3;
+}
+
+message DiffResponse {
+  repeated NodeVersion nodes_added = 1; repeated NodeVersion nodes_removed = 2; repeated NodeDelta nodes_changed = 3;
+  repeated EdgeVersion edges_added = 4; repeated EdgeVersion edges_removed = 5; repeated EdgeDelta edges_changed = 6;
+  repeated RankedChange changes = 7; Truncation truncation = 8; string ranking_formula = 9;
+  // 003 FR-065. A change excluded from `changes` appears here with its reason. It is a separate
+  // field rather than a flag on RankedChange because an excluded change is **not ranked**: giving
+  // it a score would be the scoring-low behaviour the requirement exists to forbid.
+  repeated ExcludedChange excluded_changes = 10;
+  // The nodes the ranked changes touched, each once, in first-mention order (004 T156): what
+  // `RankedChange.target_entity_ids` names, described. Read at t2, or at t1 for a target that no
+  // longer existed at t2.
+  //
+  // A target is usually an entity that did NOT change in the window -- the service a rollout
+  // landed on -- so the node deltas above do not carry it, and a caller holding only this answer
+  // had a canonical id and no way to say what it was: an on-call read a hash where a service name
+  // belonged, and an investigation tested the change against the wrong service. A target the
+  // graph cannot read at either instant is absent here, never invented.
+  repeated NodeVersion change_targets = 11;
+}
+
+message ImpactRequest { Ref focus = 1; AsOf as_of = 2; optional uint32 max_hops = 3; optional uint32 total_cap = 4; }
+message ImpactItem { NodeVersion node = 1; uint32 hop_distance = 2; repeated string heaviest_path = 3; uint32 alternative_paths = 4; uint32 weight_class = 5; }
+message ImpactResponse { repeated ImpactItem downstream = 1; repeated ImpactItem upstream = 2; Truncation truncation = 3; }
+
+message PointersRequest { Ref focus = 1; AsOf as_of = 2; }
+message PointersResponse { NodeVersion node = 1; map<string, PointerList> by_kind = 2; }
+message PointerList { repeated Pointer pointers = 1; }
+
+message ResolutionAuditRequest { Ref a = 1; Ref b = 2; google.protobuf.Timestamp observed_at = 3; /* unset = now (constitution II) */ }
+message ResolutionDecision { string decision_id = 1; string kind = 2; string rule_id = 3; double score = 4; string rationale = 5; repeated string supporting_claim_ids = 6; string principal = 7; google.protobuf.Timestamp decided_at = 8; string event_id = 9; }
+message ResolutionAuditResponse {
+  bool same_entity = 1;
+  string canonical_id = 2;
+  repeated IdentityClaimRecord claims = 3;
+  repeated ResolutionDecision decisions = 4;
+  // The correlation keys the decisions stood on (004 T148).
+  //
+  // A separate field and not folded into `claims`, for the reason the two tables are separate: a
+  // claim is a name and a correlation is a value several entities share. C8's
+  // `supporting_claim_ids` are correlation ids, so an audit that read only `claims` would answer a
+  // merge it made with an empty evidence list -- which is exactly the unfalsifiable conclusion
+  // FR-031 exists to prevent.
+  repeated CorrelationKeyRecord correlations = 5;
+}
+message IdentityClaimRecord { string claim_id = 1; string entity_id = 2; Ref claim = 3; google.protobuf.Struct attributes = 4; string source_id = 5; google.protobuf.Timestamp observed_at = 6; string event_id = 7; }
+message CorrelationKeyRecord { string correlation_id = 1; string entity_id = 2; Ref key = 3; google.protobuf.Struct attributes = 4; string source_id = 5; google.protobuf.Timestamp observed_at = 6; string event_id = 7; }
+
+message NodeHistoryRequest { Ref focus = 1; }
+message NodeHistoryResponse { repeated NodeVersion versions = 1; repeated ResolutionDecision decisions = 2; }
+
+message SuggestionsRequest { Ref focus = 1; string status = 2; uint32 limit = 3; string cursor = 4; }
+message Suggestion { string pair_key = 1; NodeVersion a = 2; NodeVersion b = 3; string rule_id = 4; double score = 5; string rationale = 6; string status = 7; google.protobuf.Timestamp created_at = 8; }
+message SuggestionsResponse { repeated Suggestion suggestions = 1; string next_cursor = 2; }
+
+// The proposed-dependency review queue (003 FR-029, FR-122).
+//
+// Deliberately NOT folded into SuggestionsRequest/Response. A suggestion is about a symmetric pair
+// of refs that may be one entity; a proposal is about a DIRECTED edge between two entities that are
+// definitely not one. Sharing the message would mean a `pair_key` that is not a pair and an `a`/`b`
+// that carry a direction nothing names — and a reviewer reading `A` and `B` could not tell which
+// end depends on which, which is the only thing they need to know.
+message ProposedDependenciesRequest {
+  Ref focus = 1;            // only proposals involving this node, at either end
+  string status = 2;        // pending | confirmed | rejected | conflict
+  uint32 limit = 3;
+  string cursor = 4;
+}
+message ProposedDependency {
+  string proposal_key = 1;
+  NodeVersion src = 2;      // the dependent
+  NodeVersion dst = 3;      // the dependency
+  EdgeType type = 4;
+  string rule_id = 5;
+  double score = 6;
+  string rationale = 7;
+  string status = 8;
+  google.protobuf.Timestamp created_at = 9;
+  // The material the rule matched on. A reviewer of a proposed dependency is asked about a
+  // relationship visible from neither end, so the evidence has to reach them (constitution V).
+  google.protobuf.Struct evidence = 10;
+  repeated string proposed_by_event_ids = 11;
+  string decided_by = 12;
+  google.protobuf.Timestamp decided_at = 13;
+}
+message ProposedDependenciesResponse {
+  repeated ProposedDependency proposals = 1;
+  string next_cursor = 2;
+}
+
+message ExtentRequest {}
+message Extent { google.protobuf.Timestamp earliest_observed = 1; google.protobuf.Timestamp latest_observed = 2; repeated SourceExtent sources = 3; }
+message SourceExtent { string source_id = 1; google.protobuf.Timestamp last_checkpoint = 2; repeated Interval gaps = 3; }
+
+service QueryService {
+  rpc Subgraph(SubgraphRequest) returns (SubgraphResponse);
+  rpc Diff(DiffRequest) returns (DiffResponse);
+  rpc Impact(ImpactRequest) returns (ImpactResponse);
+  rpc Pointers(PointersRequest) returns (PointersResponse);
+  rpc ResolutionAudit(ResolutionAuditRequest) returns (ResolutionAuditResponse);
+  rpc NodeHistory(NodeHistoryRequest) returns (NodeHistoryResponse);
+  rpc Suggestions(SuggestionsRequest) returns (SuggestionsResponse);
+  // 003 plan item 2. The edge analogue of Suggestions: what a rule proposed and nobody has
+  // decided, so a person can find it without reading the event log.
+  rpc ProposedDependencies(ProposedDependenciesRequest) returns (ProposedDependenciesResponse);
+  // Return type is fully qualified: inside a service, the method name `Extent` shadows
+  // the message name `Extent`, so the unqualified form does not resolve.
+  rpc Extent(ExtentRequest) returns (.sreagent.graph.v1.Extent);
+}
+
+// Human resolution decisions are events; this service is sugar that stamps the
+// authenticated principal and forwards to IngestService with source_id = "human".
+service ResolutionService {
+  rpc Confirm(ConfirmMerge) returns (IngestResult);
+  rpc Reject(RejectMerge) returns (IngestResult);
+  rpc Split(SplitEntity) returns (IngestResult);
+  rpc Merge(ManualMerge) returns (IngestResult);
+  // 003 plan item 2. Separate methods rather than overloads of Confirm/Reject, because the
+  // decisions are about different things: Confirm says two refs are one entity, ConfirmDependency
+  // says an edge exists between two entities that are not.
+  //
+  // Request types are fully qualified for the same reason `Extent` above is: inside a service the
+  // method name shadows the message name of the same spelling, so the unqualified form does not
+  // resolve.
+  rpc ConfirmDependency(.sreagent.graph.v1.ConfirmDependency) returns (IngestResult);
+  rpc RejectDependency(.sreagent.graph.v1.RejectDependency) returns (IngestResult);
+}

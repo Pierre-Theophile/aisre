@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The namespace the feeder's identity lives in. Nothing runs here: `aisre feed k8s` runs on
+# the host during the demo, and this ServiceAccount exists only so that the host has a
+# credential the API server will refuse to let it write with (FR-046, constitution VII).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sre-agent
+  labels:
+    app.kubernetes.io/part-of: sre-agent

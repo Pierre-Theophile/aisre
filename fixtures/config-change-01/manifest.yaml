@@ -1,0 +1,56 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# T066, FR-043, FR-047. Recorded from the kind cluster of deploy/kind/ on 2026-09-16 by both
+# reference feeders; docs/benchmarks/live-run-2026-09-16.md is the run.
+id: config-change-01
+family: config-change
+description: >-
+  One key of `shop/checkout-config` edited on a live cluster by
+  deploy/kind/scenarios/config-change.sh, and nothing else. The pods are deliberately not
+  restarted, so the Kubernetes feeder emits a CONFIG_CHANGE change node and a new CONFIG
+  version whose `sre.config.value_hash` differs from the old one, and emits no rollout: the
+  workload is untouched. `checkout-diff` is the query the scenario exists for — a config change
+  one hop from checkout, with the hash delta visible in the changed node's properties.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+
+sources:
+  - source_id: k8s:kind
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+  - source_id: otel:kind
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-16T10:12:37Z
+  # Widened from 2026-09-16T10:31:02Z (004 T153): the recorder took the window from the payloads alone, and
+  # the feeder's final events were observed 46 ms after the last payload arrived, outside it.
+  end:   2026-09-16T10:31:03Z
+
+queries:
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    # Inside the window, not at clock.start: the clock begins one second before the first
+    # payload, so a diff from there reports every Kubernetes fact as newly appeared and buries
+    # the one change the scenario made. 10:15 is after the initial list and four minutes before
+    # the ConfigMap was edited.
+    t1: 2026-09-16T10:15:00Z
+    t2: 2026-09-16T10:31:02Z
+    hops: 2
+    direction: both
+  - name: checkout-impact
+    kind: impact                   # answered in Phase 6; skipped until then
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-16T10:31:02Z
+  - name: checkout-2hop
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-16T10:31:02Z
+    hops: 2
+    direction: both

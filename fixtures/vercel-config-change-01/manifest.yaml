@@ -1,0 +1,53 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: vercel-config-change-01
+family: vercel
+description: 'Four environment variables and one rollout. Two variables become CONFIG changes — one created at 03:10, one edited at 09:05 — and each is dated by the instant the PLATFORM states it changed rather than by the poll that found it at 14:00 or by the deployment that next applied it (FR-039). The other two are refused and counted: one scoped to preview only, by the same platform-stated `target` filter the deployment mapper applies (FR-032), and one the platform assigns itself, whose instants are the project''s rather than anybody''s decision. The rollout is here so that `neither folded into the other` is visible in the corpus rather than only in a unit test: it is its own change with its own valid time, and it carries no `sre.vercel.config_*` property. **No value appears anywhere, including in payloads/**, and the absence there is the point rather than an omission: `GET /projects/{id}/env` lists `value` among its REQUIRED response fields and ships `legacyValue` and `internalContentHint.encryptedValue` beside it, so the platform sends the secret on every read — and sanitisation runs in the connector before anything touches disk (FR-062), dropping all three, so a recording never holds them. A twin that held them would be modelling a file that must not exist. What this fixture therefore proves is the graph half: no event, property, claim or golden holds the value in any form — not plaintext, not ciphertext, not truncated, not hashed (FR-038, SC-006). That a POPULATED value field has nowhere to land is a unit test''s job, because a fixture only ever sees post-sanitisation bytes. No fingerprint either, which is the deliberate difference from the GCP config feeder: a keyed HMAC answers `did this change` without storing what it is, and SC-006 counts hashes of values among what must be zero. A REMOVAL is absent from this fixture because it is absent from the API: Vercel records `project.env_variable.deleted` in its audit log, which has no REST endpoint and is enterprise-plan, owner-role, CSV-export or push-drain only. Reading a variable''s disappearance between two polls as a deletion would assert that somebody removed it when the only fact is that a listing no longer shows it. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: vercel:twin
+      kind: vercel
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The 03:10 creation, at its own instant. A change's valid interval is one microsecond, so this is the
+  # only instant that can show it (004 T150) — and it being 03:10 rather than 14:00 is the whole of
+  # FR-039's first clause.
+  - name: config-created-at-0310
+    kind: subgraph
+    focus: vercel.change=projects/prj_storefront/env/icfg_payments_url/created/1789960200000
+    valid_at: 2026-09-21T03:10:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The 09:05 edit, likewise. Two changes at two instants from ONE reading is what "independently of
+  # when a deployment next applied it" looks like in a golden.
+  - name: config-updated-at-0905
+    kind: subgraph
+    focus: vercel.change=projects/prj_storefront/env/icfg_feature_checkout/updated/1789981500000
+    valid_at: 2026-09-21T09:05:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The rollout, as a history rather than a subgraph, because its valid start is UNKNOWN and so begins
+  # at an observation instant the arrival clock assigns rather than one that can be written down
+  # (research §5.2). A history takes no instant and shows the whole record, which is what is wanted
+  # here: the rollout is its OWN change, not an attribute of either configuration edit.
+  - name: the-rollout-is-its-own-change
+    kind: history
+    focus: vercel.change=dpl_storefront_77
+  # The extent: `not present` and `not read at that time` are different answers, and with two of the
+  # four variables refused this fixture needs the difference stated.
+  - name: extent
+    kind: extent
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z

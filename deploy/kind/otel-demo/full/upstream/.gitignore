@@ -1,0 +1,6 @@
+# The upstream OpenTelemetry Demo manifest is fetched, not vendored: it is ~20k lines of
+# generated YAML that would drown every diff in this repository. deploy/kind/otel-demo/
+# fetch-upstream.sh downloads it here, pinned to a release tag and checked against a SHA-256.
+*
+!.gitignore
+!README.md

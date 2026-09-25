@@ -1,0 +1,7 @@
+{"entries":[{
+  "insertId": "dns-change-1",
+  "logName": "projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity",
+  "timestamp": "2026-09-21T14:25:00Z",
+  "receiveTimestamp": "2026-09-21T14:25:20Z",
+  "protoPayload": {"serviceName": "dns.googleapis.com", "methodName": "dns.changes.create", "resourceName": "projects/twin-production/managedZones/twin-zone/changes/1", "status": {}}
+}]}

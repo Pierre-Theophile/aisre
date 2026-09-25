@@ -1,0 +1,141 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: unobserved-credential-leak-01
+family: unobserved
+description: >-
+  FR-071b and SC-023: a credential that leaked into a public repository is being used from
+  outside the estate, and payments is spending its rate limit on requests nobody in the shop
+  made. The graph holds no record of the leak, of the traffic's origin or of the credential's
+  use: the cause is real, it is not a change to the system, and nothing any feeder in this
+  build emits can see it. Ground truth `unobserved`, category `credential_leak` -- one of the
+  three categories the 2026-09 coverage audit leaves in the unobservable remainder.
+
+  The decoy is the most instructive in the corpus because it is a RESPONSE to the symptom: the
+  on-call rotated the payments credential at 14:08, eight minutes after the onset. It is a
+  change, it is on the failing service, it is close to the alert, and it cannot be the cause of
+  something that had already started. Its causal role is `candidate_effect`, and the predicate
+  that rules it out is temporal rather than statistical: the onset precedes it.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20104:group=env:prod"
+    statement: "payments upstream rate-limit rejections above 10 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: unobserved
+    category: credential_leak
+    causal_path:
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=payments"
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+            version_attribute: service.version
+        field_path: versions.length
+        op: eq
+        value: 1
+        note: >-
+          one version of payments across the window: whatever is consuming the rate limit, it
+          is not a new build of the service.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=payments"
+            windows: {reference_at: 2026-09-01T14:00:00Z, width_seconds: 900}
+            statistic: RATE
+        field_path: comparisons[statistic=RATE].direction
+        op: eq
+        value: flat
+        note: >-
+          the request rate payments serves for the shop is unchanged. The traffic exhausting
+          the quota is not arriving through any caller the graph knows, which is the positive
+          evidence for `unobserved` rather than the absence of evidence for anything else.
+
+    decoys:
+      - entity: k8s.change=shop/payments-secret@v8
+        causal_role: candidate_effect
+        why: >-
+          a credential rotation on the failing service, eight minutes AFTER the onset. It is a
+          response to the incident, and the fixture exists so that "a change, on the right
+          service, near the alert" is not on its own enough to convict.
+
+    exonerating_evidence:
+      k8s.change=shop/payments-secret@v8:
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=payments"
+              search_window: "2026-09-01T13:45:00Z..2026-09-01T14:15:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: lt
+          value: 2026-09-01T14:08:00Z
+          note: >-
+            the symptom began before the rotation did. A cause precedes its effect, so the
+            rotation is a candidate effect and not a candidate cause.
+
+    knowability_time: 2026-09-01T14:15:00Z
+    onset: {at: 2026-09-01T14:00:00Z, tolerance_seconds: 300}
+    prior_rank_of_culprit: 0
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    # Centred on this incident's own onset at 14:00 -- eight minutes before the decoy, thirty-two
+    # before the alert. Centring on the alert would put the whole symptom in the baseline half.
+    window_grid:
+      - {reference_at: 2026-09-01T14:00:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry centred on the estimated onset, which is the cap every fixture in this
+      directory takes: the world is the cross product of (pointers in the neighbourhood) x
+      (grid) x (the recorder's statistic set: ERROR_RATE, P95, RATE) plus monitor_state, log
+      patterns, onset, errors_by_version where a version join key exists, error_spans per edge
+      and the depth-1 drill-downs those answers mint, so each further grid entry doubles the
+      directory. No culprit was supplied to the recorder, which is the point of this fixture:
+      every comparison in the world reads flat, so nothing in it supports any candidate.
+
+  runs: 3

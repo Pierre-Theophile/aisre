@@ -1,0 +1,9 @@
+{"projectId":"prj_storefront","envs":[{"id":"icfg_payments_url","key":"PAYMENTS_API_URL","target":["production"],"type":"encrypted","system":false,
+		"createdBy":"usr_ada","createdAt":1789960200000,
+		"decrypted":false,"securityIssues":[]},{"id":"icfg_feature_checkout","key":"FEATURE_NEW_CHECKOUT","target":["production","preview"],"type":"encrypted","system":false,
+		"createdBy":"usr_ada","createdAt":1789869600000,"updatedAt":1789981500000,"updatedBy":"usr_grace",
+		"decrypted":false,"securityIssues":[]},{"id":"icfg_preview_flag","key":"PREVIEW_FLAG","target":["preview","development"],"type":"encrypted","system":false,
+		"createdBy":"usr_ada","createdAt":1789960200000,
+		"decrypted":false,"securityIssues":[]},{"id":"icfg_vercel_url","key":"VERCEL_URL","target":["production"],"type":"encrypted","system":true,
+		"createdBy":"usr_ada","createdAt":1789869600000,
+		"decrypted":false,"securityIssues":[]}]}

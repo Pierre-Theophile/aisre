@@ -1,0 +1,71 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: deploy-k8s-commit-merge-01
+family: deploy-cross-source
+description: 'One rollout of a Kubernetes workload seen by the deploy pipeline and by the cluster, joined on the commit the pod template states under a key the operator trusts (004 T149). The rollout that shipped the commit merges with the pipeline''s deployment under C8; the restart that followed it states the same commit and did not ship it, so it carries no commit key and stays its own change. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7).'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: k8s:demo
+      kind: k8s
+      ordering: per_source_sequence
+      reordering_window: 1m0s
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The merge T149 exists for: the pipeline's deployment of NEW and the cluster's rollout that shipped
+  # it, joined on the commit the pod template states under a trusted key. Its golden records rule C8
+  # and the correlation keys it stood on.
+  - name: why-the-pipeline-deploy-is-the-cluster-rollout
+    kind: audit
+    ref_a: github.change=repositories/777/deployments/6001/targets/k8s.deployment/shop/payments
+    ref_b: k8s.change=shop/payments@rev8
+    observed_at: 2026-09-21T20:00:00Z
+  # The RESTART. Same target, same environment, and its template states the same commit — but it did
+  # not ship it, so the feeder minted no commit key and C8 has nothing to merge on.
+  - name: why-the-restart-is-not-the-deploy
+    kind: audit
+    ref_a: github.change=repositories/777/deployments/6001/targets/k8s.deployment/shop/payments
+    ref_b: k8s.change=shop/payments@rev9
+    observed_at: 2026-09-21T20:00:00Z
+  # What an investigation asks: what changed on payments in the hour? TWO rollouts: the deploy, carrying
+  # the cluster's instant and revision and the pipeline's actor, because C8 merged the two observations;
+  # and the restart, on its own.
+  - name: what-changed-on-payments
+    kind: diff
+    focus: k8s.deployment=shop/payments
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T15:00:00Z
+    reference_at: 2026-09-21T15:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 1
+    direction: both
+
+ground_truth:
+  cross_source_pairs:
+    - pair:
+        - github.change=repositories/777/deployments/6001/targets/k8s.deployment/shop/payments
+        - k8s.change=shop/payments@rev8
+      same: true
+      rule: C8
+  distinct_pairs:
+    # The restart: everything C8 compares would agree if the unchanged commit were minted.
+    - pair:
+        - github.change=repositories/777/deployments/6001/targets/k8s.deployment/shop/payments
+        - k8s.change=shop/payments@rev9
+      same: false
+    # And the two cluster rollouts of one workload are two rollouts.
+    - pair:
+        - k8s.change=shop/payments@rev8
+        - k8s.change=shop/payments@rev9
+      same: false

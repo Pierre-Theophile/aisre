@@ -1,0 +1,1 @@
+{"items":[{"name":"shop-backend","selfLink":"https://www.googleapis.com/compute/v1/projects/twin-production/global/backendServices/shop-backend","loadBalancingScheme":"EXTERNAL_MANAGED","protocol":"HTTPS","backends":[{"group":"https://www.googleapis.com/compute/v1/projects/twin-production/regions/europe-west1/networkEndpointGroups/shop-neg"}]}]}

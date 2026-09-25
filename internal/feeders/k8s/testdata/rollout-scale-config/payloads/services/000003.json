@@ -1,0 +1,1 @@
+{"type":"DELETED","object":{"metadata":{"name":"checkout","namespace":"shop","resourceVersion":"1101","labels":{"app.kubernetes.io/name":"checkout","app.kubernetes.io/part-of":"shop"}},"spec":{"ports":[{"name":"http","port":80,"targetPort":"http"}],"selector":{"app.kubernetes.io/name":"checkout"}},"status":{"loadBalancer":{}}}}

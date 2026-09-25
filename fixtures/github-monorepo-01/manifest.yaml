@@ -1,0 +1,49 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: github-monorepo-01
+family: github
+description: 'One deployment of a monorepo that the operator''s mapping resolves to THREE services, which is three changes rather than one change with three targets (FR-017, SC-010). An investigation asking what changed on checkout must get an answer about checkout; one node at hop 0 of three unrelated services would rank three times for three different onsets. The three share one origin reference and one deploy.commit_sha, which is what keeps them recognisable as one pipeline run and lets C8 merge each with the platform feeder''s own observation separately. The targets come from the operator''s mapping and never from a file in the observed repository, which this connector cannot read at all: `contents` is not on its published surface. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-03-01T14:00:00Z
+    end: 2026-03-01T15:30:00Z
+queries:
+  # Each of the three services separately: an investigation asking what changed on
+  # checkout must get an answer about checkout, and one node at hop 0 of three
+  # services would rank three times for three different onsets.
+  - name: checkout-2hop
+    kind: subgraph
+    focus: github.change=repositories/556/deployments/4400/targets/k8s.deployment/shop/checkout
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 2
+    direction: both
+  - name: catalogue-2hop
+    kind: subgraph
+    focus: github.change=repositories/556/deployments/4400/targets/k8s.deployment/shop/catalogue
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 2
+    direction: both
+  - name: search-2hop
+    kind: subgraph
+    focus: github.change=repositories/556/deployments/4400/targets/k8s.deployment/shop/search
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 2
+    direction: both
+  # The extent: `not present` and `not read at that time` are different answers.
+  - name: extent
+    kind: extent
+    valid_at: 2026-03-01T15:30:00Z
+    observed_at: 2026-03-01T15:30:00Z

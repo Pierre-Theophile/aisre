@@ -1,0 +1,34 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: github-actor-kinds-01
+family: github
+description: 'Four rollouts whose actor kinds must come from the payload and never from the login (SC-005). A machine user called `deploy-bot` that GitHub types as a USER account is a PERSON; a person whose login reads like one, `marie-curie`, typed as a BOT is AUTOMATION; a scheduled run is a CONTROLLER whatever its actor says, because GitHub attributes a scheduled run to whoever last edited the workflow file and that person did not deploy anything; and a login on the operator''s automation list is AUTOMATION whatever GitHub types it. Each change records which rung decided and on what evidence — and the evidence never carries the login''s value. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-03-01T14:00:00Z
+    end: 2026-03-01T15:30:00Z
+queries:
+  # Four changes on one service, each with a different actor kind, so a golden that
+  # mistyped any of them differs visibly.
+  - name: machine-user-is-a-person
+    kind: subgraph
+    focus: github.change=repositories/555/deployments/201/targets/k8s.deployment/shop/storefront
+    valid_at: 2026-03-01T14:03:00Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 2
+    direction: both
+  # The extent: `not present` and `not read at that time` are different answers.
+  - name: extent
+    kind: extent
+    valid_at: 2026-03-01T15:30:00Z
+    observed_at: 2026-03-01T15:30:00Z

@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The price table cost figures are derived from (002 FR-048, plan §Observability and cost
+# accounting).
+#
+# Spend is recorded twice: as raw token counts per model and class — input, cache write, cache
+# read, output — which is the provider-independent unit that aggregates across runs and over
+# time, and as a monetary figure derived from this table. The `version` below is stored on every
+# investigation, so a cost printed a year ago still says what it meant. A price change is a new
+# version of this file, never an edit of an existing one's numbers.
+#
+# The table prices **both** providers, because both configurations are checked in and either may
+# be in force: `config/model.yaml` (Mistral, serving GLM) and `config/model.anthropic.yaml`. Both
+# name this version, and a configuration whose models this table does not price is refused at
+# load time rather than producing a run that cannot report its spend.
+#
+# Anthropic rates are first-party API rates in USD per million tokens. Cache multipliers follow
+# the published structure — writes at 1.25x input for the 5-minute TTL and 2x for the 1-hour
+# TTL, reads at 0.1x input — with one published exception: Claude Fable 5.1 reads at $0.25/MTok,
+# which is 0.025x rather than 0.1x.
+#
+# Mistral rates are La Plateforme list rates in USD per million tokens, read from
+# https://mistral.ai/pricing/api on **2026-09-18**. Two things differ from the Anthropic
+# structure and both are recorded in the numbers rather than in a footnote:
+#
+#   * there is **no separate cache write**. Mistral's prefix cache is automatic; a turn that
+#     populates it is billed at the ordinary input rate. `cache_write_5m` and `cache_write_1h`
+#     therefore equal `input` for every Mistral model, and the provider reports no cache-write
+#     class, so the figure is priced but never spent.
+#   * a cache **read** is billed at 0.1x input ("-90% on input tokens"), which is the same
+#     multiplier Anthropic publishes for everything except Fable 5.1.
+
+version: "2026-09-18"
+currency: USD
+unit: per_million_tokens
+source: >-
+  Anthropic first-party API rates as published on 2026-06-24, and Mistral La Plateforme list
+  rates as published on 2026-09-18 (https://mistral.ai/pricing/api). Partner-operated platforms
+  (Amazon Bedrock, Vertex AI, Azure AI Foundry) price separately and are not covered by this
+  table; a deployment running against one of them needs its own table and its own version.
+
+models:
+  # ------------------------------------------------------------------------------------------
+  # Mistral (config/model.yaml — the configuration in force)
+  # ------------------------------------------------------------------------------------------
+
+  # GLM 5.3, served by Mistral. $1.40 in / $4.40 out: roughly a seventh of the input price and a
+  # tenth of the output price of the Anthropic investigator it replaces, for the same order of
+  # context window. This is the whole reason the investigator moved.
+  zai-glm-5-3:
+    role: investigator
+    input: 1.40
+    output: 4.40
+    # No separate cache write on this platform: populating the prefix cache is billed as input.
+    cache_write_5m: 1.40
+    cache_write_1h: 1.40
+    cache_read: 0.14
+
+  # The rolling alias, priced identically, so a configuration that pins `zai-glm-latest` instead
+  # of a dated id still loads. It is not what production names: an alias that moves under a
+  # recorded run is a run whose model configuration was not what it says.
+  zai-glm-latest:
+    role: investigator
+    input: 1.40
+    output: 4.40
+    cache_write_5m: 1.40
+    cache_write_1h: 1.40
+    cache_read: 0.14
+
+  # Mistral Medium 3.5 — the verifier. A different family from GLM, which is what FR-022a is
+  # actually asking for.
+  mistral-medium-latest:
+    role: verifier
+    input: 1.50
+    output: 7.50
+    cache_write_5m: 1.50
+    cache_write_1h: 1.50
+    cache_read: 0.15
+
+  # Ministral 3 (8B) — the logs labeller. Templates and counts only, never a raw line.
+  ministral-8b-latest:
+    role: logs_labeller
+    input: 0.15
+    output: 0.15
+    cache_write_5m: 0.15
+    cache_write_1h: 0.15
+    cache_read: 0.015
+
+  # ------------------------------------------------------------------------------------------
+  # Anthropic (config/model.anthropic.yaml — the alternative configuration)
+  # ------------------------------------------------------------------------------------------
+
+  claude-fable-5-1:
+    role: investigator
+    input: 10.00
+    output: 50.00
+    cache_write_5m: 12.50
+    cache_write_1h: 20.00
+    # 0.025x input, not the usual 0.1x. This is why the engine caches the stable
+    # tools -> system -> algebra prefix rather than rebuilding it per turn.
+    cache_read: 0.25
+
+  claude-opus-5:
+    role: verifier
+    input: 5.00
+    output: 25.00
+    cache_write_5m: 6.25
+    cache_write_1h: 10.00
+    cache_read: 0.50
+
+  claude-haiku-4-5:
+    role: logs_labeller
+    input: 1.00
+    output: 5.00
+    cache_write_5m: 1.25
+    cache_write_1h: 2.00
+    cache_read: 0.10

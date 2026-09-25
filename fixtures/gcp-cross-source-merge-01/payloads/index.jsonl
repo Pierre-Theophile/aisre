@@ -1,0 +1,8 @@
+{"kind":"traces","at":"2026-09-21T14:00:00Z","seq":0,"file":"traces/000001.pb"}
+{"kind":"traces","at":"2026-09-21T14:05:00Z","seq":0,"file":"traces/000002.pb"}
+{"kind":"traces","at":"2026-09-21T14:10:00Z","seq":0,"file":"traces/000003.pb"}
+{"kind":"traces","at":"2026-09-21T14:15:00Z","seq":0,"file":"traces/000004.pb"}
+{"kind":"sql_instances","at":"2026-09-21T14:30:00Z","seq":0,"file":"sql_instances/000001.json"}
+{"kind":"services","at":"2026-09-21T14:30:00Z","seq":0,"file":"services/000001.json"}
+{"kind":"revisions","at":"2026-09-21T14:30:00Z","seq":0,"file":"revisions/000001.json"}
+{"kind":"poll","at":"2026-09-21T14:30:00Z","seq":0,"file":"poll/000001.json"}

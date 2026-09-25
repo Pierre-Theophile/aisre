@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Two namespaces, on purpose.
+#
+#   shop          the demo application itself. Nothing else lives here, so the graph the
+#                 Kubernetes feeder builds from `shop` is exactly the shop in
+#                 fixtures/baseline-topology-01 and nothing more.
+#   shop-traffic  the telemetrygen span emitters. They *claim* to be the shop services in
+#                 their OTLP resource attributes, but they are not the shop, so they are kept
+#                 out of it. Feed only the shop with `feed k8s --namespaces shop` if you want
+#                 the tightest possible recording.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+  labels:
+    app.kubernetes.io/part-of: shop
+    deployment.environment.name: prod
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop-traffic
+  labels:
+    app.kubernetes.io/part-of: shop
+    sre.role: traffic-generator

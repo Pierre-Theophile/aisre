@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The published schema of this project (constitution IX). `buf lint` and `buf breaking`
+# against main both gate every pull request; see .github/workflows/ci.yml.
+#
+# The module holds two published packages, and one `path: api` covers both, so lint and
+# breaking apply to each of them without further configuration:
+#
+#   sreagent.graph.v1          api/sreagent/graph/v1/graph.proto
+#                              the temporal graph: events, entities, queries (feature 001)
+#   sreagent.investigation.v1  api/sreagent/investigation/v1/investigation.proto
+#                              the investigation service, the hypothesis ledger, the query
+#                              algebra, the digest contract (shared with 003 and 005), the
+#                              recording format and the fixture ground truth (feature 002)
+#
+# `sreagent.investigation.v1` starts at v1 and is checked against main from its first merge:
+# it is implemented by third-party telemetry backends, so it is a contract on the day it
+# lands, not on the day someone else adopts it. The CI job asserts that both packages are in
+# the module, so a new package cannot be added outside it and escape the gate.
+
+version: v2
+
+modules:
+  - path: api
+
+lint:
+  use:
+    - STANDARD
+  except:
+    # The proto is the published contract, so the fix for each of these would be a rename,
+    # and a rename is a breaking change to every third-party feeder and consumer. We take the
+    # lint exception instead. New messages and enums SHOULD follow the standard rules.
+    #
+    # The exceptions are module-wide and `sreagent.investigation.v1` inherits them, which is
+    # deliberate rather than incidental: its taxonomies are named in the spec, the prompt and
+    # the published documents by their short spellings (`Statistic.P95`, `CostClass.CHEAP`,
+    # `TermOutcome.NO_DATA`, `JudgmentStrength.DECISIVE`), and those names are what a grader
+    # reads in a ledger export and what a backend author reads in a declaration. Zero values
+    # do carry the full prefix there too, so ENUM_ZERO_VALUE_SUFFIX is enforced on both
+    # packages.
+    #
+    # The three RPC-naming exceptions below also carry over, for the same reason they exist
+    # here: `InvestigationService` returns the `Investigation` itself from Investigate,
+    # Declare, Get, Reopen, SubmitHumanFact, Review and Label, because all seven answer with
+    # the one object the caller asked about, and `TelemetryBackendService.Describe` returns a
+    # `BackendDescription`, which is what a description is called everywhere else. Wrapping
+    # either in a per-RPC envelope would add a layer that carries nothing. No exception
+    # beyond these four is needed, and a new one would belong in the proto rather than here.
+
+    # ENUM_VALUE_PREFIX wants NodeType.SERVICE to be NODE_TYPE_SERVICE, EdgeType.CALLS to be
+    # EDGE_TYPE_CALLS, and so on for ChangeKind, PointerKind, Direction and
+    # IngestResult.Status. The short spellings are what the taxonomy is called in the spec and
+    # in every document that describes it; the prefixed forms would make the JSON surface
+    # considerably noisier. Zero values do carry the full prefix
+    # (NODE_TYPE_UNSPECIFIED, ...), so ENUM_ZERO_VALUE_SUFFIX still applies and is enforced.
+    - ENUM_VALUE_PREFIX
+
+    # RPC_REQUEST_STANDARD_NAME / RPC_RESPONSE_STANDARD_NAME want every RPC to take
+    # <Rpc>Request and return <Rpc>Response. Three places deliberately differ:
+    #   - IngestService.Ingest streams EventEnvelope in and IngestResult out. The envelope is
+    #     the event schema itself, named for what it is; wrapping it in an IngestRequest would
+    #     add a layer that carries nothing.
+    #   - QueryService.Extent returns Extent, which is also embedded in SubgraphResponse. One
+    #     name for one concept.
+    #   - ResolutionService.Confirm/Reject/Split/Merge take the human decision *events*
+    #     (ConfirmMerge, ...) and return IngestResult, because the service is sugar that
+    #     stamps the principal and forwards to IngestService. Renaming them would hide that
+    #     these calls are events like any other.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+
+    # RPC_REQUEST_RESPONSE_UNIQUE follows from the same three cases: IngestResult is the
+    # response of five RPCs on purpose, because all five append one event to the log.
+    - RPC_REQUEST_RESPONSE_UNIQUE
+
+# A breaking change to the published schema needs a MAJOR bump and a migration expressed as
+# an event-log transformation (constitution IX), so CI runs this against main on every PR.
+breaking:
+  use:
+    - FILE

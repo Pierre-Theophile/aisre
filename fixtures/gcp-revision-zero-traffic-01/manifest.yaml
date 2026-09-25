@@ -1,0 +1,39 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: gcp-revision-zero-traffic-01
+family: gcp-rollout
+description: 'A revision created at 14:18 that never receives traffic: the split names it at 0%. It still exists as a node and still produced its creation change (FR-018), it is not presented as serving, and no traffic-shift change is emitted because the split never changed. Synthetic structural twin: no identifier is derived from the organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — US7''s recording replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The revision exists and is not serving. Both halves are in one answer.
+  - name: storefront-2hop
+    kind: subgraph
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The creation change is a candidate cause even though no traffic moved: a revision that crashed
+  # on startup is the case this exists for.
+  - name: storefront-diff-over-the-creation
+    kind: diff
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    t1: 2026-09-21T14:17:00Z
+    t2: 2026-09-21T14:20:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both

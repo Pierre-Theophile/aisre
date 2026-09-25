@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The recorded acceptance corpus of the Kubernetes feeder (T058).
+#
+# Unlike testdata/baseline-shop, none of this was authored: payloads/ is what the informers
+# actually delivered from the kind cluster of deploy/kind/ on 2026-09-16, and events.jsonl is
+# what the feeder emitted from them — the same 63 `k8s:kind` lines that
+# fixtures/baseline-topology-01 ships. Constitution VIII asks for exactly this before a
+# connector is called stable. docs/benchmarks/live-run-2026-09-16.md is the run.
+#
+# The feeder must be configured as the live run was, or the events will not match:
+#   --source-id k8s:kind --cluster-name sre-agent-demo --namespaces shop
+#   --owner-labels team --environment prod
+id: kind-shop
+family: k8s-topology
+description: >-
+  The shop of deploy/kind/otel-demo/minimal as one real informer list from a kind cluster: two
+  nodes in two pools (control-plane and general, one node each), 4 Deployments, 1 StatefulSet,
+  6 Services, 1 Ingress, 2 ConfigMaps (including the kube-root-ca.crt every namespace carries)
+  and 1 Secret, plus the periodic checkpoints of a live watch.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+
+sources:
+  - source_id: k8s:kind
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-16T09:38:32Z
+  end:   2026-09-16T09:49:01Z

@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# What `aisre feed k8s` may do, and nothing else.
+#
+# The feeder asks the API server what this credential is allowed to do (SelfSubjectRulesReview)
+# before it emits a single event, and refuses to start if the answer includes create, update,
+# patch, delete or deletecollection on any resource it watches (FR-046, constitution VII).
+# This role is the credential that passes that check, which is why it is the documented path and
+# why `--allow-write-credentials` should never be needed against a cluster set up this way.
+#
+# The resource list is the same one internal/feeders/k8s/permissions.go checks against; a
+# resource added to the informers without being added here makes the feeder fail to list, loudly.
+#
+# Note what is NOT here: pods. The feeder does not watch them (research §12) and so does not ask
+# to read them, which keeps every container's environment out of reach.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-agent-feeder
+  labels:
+    app.kubernetes.io/part-of: sre-agent
+rules:
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - nodes
+      - services
+      - configmaps
+      - secrets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch"]
+  # The one thing the feeder creates is the question "what am I allowed to do?". A
+  # SelfSubjectRulesReview is answered about the caller and changes no cluster state; every
+  # identity in Kubernetes may already ask it through the `system:basic-user` ClusterRole, and
+  # granting it explicitly is what makes this role self-contained.
+  - apiGroups: ["authorization.k8s.io"]
+    resources:
+      - selfsubjectrulesreviews
+    verbs: ["create"]

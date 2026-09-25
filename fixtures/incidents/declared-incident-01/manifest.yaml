@@ -1,0 +1,195 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: declared-incident-01
+family: declared-incident
+description: >-
+  US1a: the front door a human walks through. No monitor fired. At 14:32 an on-call engineer
+  declared an incident -- severity, title, declaring identity and a target slug -- and the
+  declaration entered the graph as an `alert_transition` like any other, distinguished by
+  `transport: human_declared` and `actor_kind: PERSON` rather than by a path of its own
+  (FR-002a). The target it watches, `otel.service.name=checkout`, is what the slug rule parsed
+  out of `origin_ref` (`slack:C0SRE:checkout-is-throwing-500s`).
+
+  Four things are asserted, and each is a file in `golden/`:
+
+  1. the declaration is an ALERT node valid from 14:32 carrying `sre.alert.state: declared`,
+     `sre.alert.severity: sev2`, `sre.alert.transport: human_declared` and the declaring
+     identity, with a WATCHES edge to checkout (`subgraph.declared-alert-1hop`);
+  2. the chat integration retried and delivered the same declaration again 41 seconds later
+     under a different event id. Same facts, same instant: the node has ONE version, which
+     `history.declared-alert-history` shows, so a re-delivery changes nothing (FR-002b). The
+     verifier's own double-delivery step covers the identical-id case; this covers the case
+     the identity system cannot dedupe for you;
+  3. five minutes later a Datadog monitor fires on payments, the neighbouring service
+     (`subgraph.monitor-alert-1hop`). It is a second alert node about the same incident, and
+     it must ATTACH to the investigation the declaration started rather than open a second one
+     (FR-008b/c). Which investigation it attaches to is the engine's decision and is graded
+     from the trajectory; what the fixture pins is that both transitions are in the graph,
+     minutes apart, on neighbouring entities;
+  4. a second declaration at 14:41 whose target text ("everything is weird in prod") matches no
+     rule carries NO watched entity at all (`subgraph.unparseable-alert-1hop` has no edges).
+     The correct outcome for it is `unknown` with a `confirm_identity` resolving action, not a
+     guess at which service was meant (FR-004a).
+
+  There is no change in this fixture and nothing in the world supports any candidate, which is
+  deliberate: this fixture is about intake, and an intake fixture that also had a culprit would
+  be grading two things at once.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: alerts:demo
+    kind: alerts
+    ordering: none
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:45:00Z
+
+queries:
+  - name: declared-alert-1hop
+    kind: subgraph
+    focus: incident.declared=inc-2026-09-01-0042
+    valid_at: 2026-09-01T14:40:00Z
+    hops: 1
+    direction: both
+  - name: declared-alert-history
+    kind: history
+    focus: incident.declared=inc-2026-09-01-0042
+  - name: monitor-alert-1hop
+    kind: subgraph
+    focus: monitor.datadog=12345
+    valid_at: 2026-09-01T14:40:00Z
+    hops: 1
+    direction: both
+  # The declaration nobody could parse: an ALERT node with no WATCHES edge, which is what
+  # "the targets could not be parsed" looks like in the graph.
+  - name: unparseable-alert-1hop
+    kind: subgraph
+    focus: incident.declared=inc-2026-09-01-0043
+    valid_at: 2026-09-01T14:42:00Z
+    hops: 1
+    direction: both
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+
+incident:
+  question:
+    transport: human_declared
+    origin_system: slack
+    origin_ref: "slack:C0SRE:checkout-is-throwing-500s"
+    statement: "checkout is throwing 500s"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+    severity: sev2
+    title: "checkout is throwing 500s"
+    declaring_identity: "sre-agent-dev|dana"
+    attaches_later:
+      - "monitor:12345:group=env:prod@2026-09-01T14:37:00Z"
+
+  ground_truth:
+    culprit: unobserved
+    causal_path:
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          graph:
+            subgraph:
+              focus: incident.declared=inc-2026-09-01-0042
+              hops: 1
+              valid_at: 2026-09-01T14:40:00Z
+        field_path: focus.props["sre.alert.state"]
+        op: eq
+        value: declared
+        note: >-
+          the declaration is a fact in the graph with a state, a severity and a named human
+          behind it, valid from the instant of the declaration.
+      - term:
+          graph:
+            subgraph:
+              focus: incident.declared=inc-2026-09-01-0042
+              hops: 1
+              valid_at: 2026-09-01T14:40:00Z
+        field_path: edges[type=WATCHES].dst.display_name
+        op: contains
+        value: checkout
+        note: the slug rule's answer, stored as an edge rather than as a string in a log line.
+      - term:
+          graph:
+            node_history:
+              focus: incident.declared=inc-2026-09-01-0042
+        field_path: versions.length
+        op: eq
+        value: 1
+        note: >-
+          two deliveries of the same declaration, one version. This is the re-delivery
+          assertion (FR-002b) and it is a golden file, not a claim.
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=checkout"
+            window: "2026-09-01T14:17:00Z..2026-09-01T14:32:00Z"
+            version_attribute: service.version
+        field_path: versions.length
+        op: eq
+        value: 1
+        note: one version throughout; there is no deploy here for the declaration to be about.
+
+    decoys: []
+    exonerating_evidence: {}
+
+    # The declaration IS the question, so the question cannot be older than its own answer: at
+    # `fired_at` the on-call has declared the incident, the declaration is in the graph with its
+    # state, its severity and its WATCHES edge, and the checkout version breakdown over the
+    # quarter-hour ENDING at the declaration holds the one version it holds. Nothing here waits
+    # on telemetry after 14:32, and under the horizon rule none could: this investigation
+    # observes the world at 14:32 and a window past it is answered `no_data` naming the horizon
+    # (constitution II). The old value, 14:47, came from a decisive window that ran a quarter of
+    # an hour into the future.
+    knowability_time: 2026-09-01T14:32:00Z
+    onset: {at: 2026-09-01T14:32:00Z, tolerance_seconds: 600}
+    prior_rank_of_culprit: 0
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    # Centred on the declaration, because a declaration carries no estimated onset: the person
+    # said "now", and "now" is the only instant the intake has. A fixture that pretended to a
+    # better estimate would be inventing one.
+    window_grid:
+      - {reference_at: 2026-09-01T14:32:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry centred on the estimated onset. The world is the cross product of
+      (pointers in the neighbourhood) x (grid) x (the recorder's statistic set: ERROR_RATE,
+      P95, RATE) plus monitor_state, log patterns, onset, errors_by_version where a version
+      join key exists, error_spans per edge, and the depth-1 drill-downs those answers mint,
+      so each further grid entry doubles the directory. The cap is the grid, the hop radius
+      and the drill-down depth; all three are read back from this block by
+      `fixture record-world`, so widening one is an edit a reviewer sees.
+
+  runs: 3

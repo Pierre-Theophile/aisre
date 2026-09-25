@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The configuration objects the shop depends on. Both are referenced by a workload, which is
+# what makes the Kubernetes feeder emit `depends-on` edges to CONFIG nodes (FR-043) and, when
+# they change, `config_change` change nodes (research §12).
+#
+# checkout-config is consumed with envFrom and payments-secret as a volume, matching the
+# `sre.k8s.reference` edge property in fixtures/baseline-topology-01 (`envFrom` and `volume`).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: checkout-config
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: checkout
+    app.kubernetes.io/part-of: shop
+data:
+  # deploy/kind/scenarios/config-change.sh rewrites CART_TTL_SECONDS. Keys are env var names
+  # because checkout takes this ConfigMap through envFrom.
+  CART_TTL_SECONDS: "900"
+  PRICING_ROUNDING: "half-even"
+  FEATURE_FLAGS: "express-checkout"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: payments-secret
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: payments
+    app.kubernetes.io/part-of: shop
+type: Opaque
+# Deliberately not a credential of any kind. The feeder records a Secret's version, never its
+# content (FR-043, SC-009), but there is no reason to put a real-looking key in a repository.
+# check-no-secrets: allow
+stringData:
+  payment_provider_token: "not-a-real-token-disposable-demo-cluster"  # check-no-secrets: allow

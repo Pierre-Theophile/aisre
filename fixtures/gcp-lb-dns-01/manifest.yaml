@@ -1,0 +1,51 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: gcp-lb-dns-01
+family: gcp-exposure
+description: 'A Cloud Run service exposed through a global HTTPS load balancer, derived hop by hop from stated fields — forwarding rule, URL map, backend service, serverless NEG, and the NEG''s cloudRun.service — with the host names and the chain on the relation rather than as nodes. The A record then answers a different address, and the switch is dated at the Cloud DNS audit entry''s instant and not at the poll. The twin''s entries carry no principal, because a sanitised entry has no such field at all (FR-135). Synthetic structural twin: no identifier is derived from the organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — US7''s recording replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The service and what it is exposed through. Pinned, so the golden does not encode the day it was
+  # recorded (fixture-format.md).
+  - name: storefront-2hop
+    kind: subgraph
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The load balancer from the other side, which is where the relation's host names and derivation
+  # chain are checked.
+  - name: load-balancer-2hop
+    kind: subgraph
+    focus: gcp.lb=projects/twin-production/global/forwardingRules/shop-https
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The window the switch falls in: the DNS_SWITCH is valid at the audit entry's instant, not the poll's.
+  - name: storefront-diff
+    kind: diff
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  - name: extent
+    kind: extent
+    observed_at: 2026-09-21T20:00:00Z

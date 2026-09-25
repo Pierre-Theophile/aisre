@@ -1,0 +1,37 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: gcp-alert-transitions-unavailable-01
+family: gcp-alerts
+description: 'The incident capability OFF, which is the default. `projects.alerts` is Public Preview and its only Go binding is a maintenance-mode client, so reading it is opted into deliberately — and this fixture is what makes the degradation a tested path rather than an assumed one. The ALERT node still exists, with its display name, its severity, its conditions and its pointers, because `alertPolicies.list` is GA and unaffected. What is absent is the state history: no transition, no `sre.alert.state`, and nothing that reads as "this alert has not fired". The backend''s half of the same answer — monitor_state returning NO_DATA with coverage naming the absent source — is asserted in internal/backends/gcp, because a digest is not a graph fact and has no golden here. Synthetic structural twin: no identifier is derived from the organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — US7''s recording replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The alert exists and is not alerting: a definition with no state history.
+  - name: unavailable-alert-2hop
+    kind: subgraph
+    focus: gcp.monitoring.alert_policy=projects/twin-production/alertPolicies/1122334455
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The condition pointers are there: the GA policy read is unaffected by the capability flag, so
+  # an investigation still knows where to look even though nothing can tell it whether the alert
+  # fired.
+  - name: unavailable-alert-pointers
+    kind: pointers
+    focus: gcp.monitoring.alert_policy=projects/twin-production/alertPolicies/1122334455
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z

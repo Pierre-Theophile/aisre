@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# payments-db: PostgreSQL, the third-party dependency reached only by payments.
+#
+# The OTLP feeder keys this node on server.address (db.system=postgresql,
+# server.address=payments-db.shop.svc.cluster.local, server.port=5432), which is why the
+# Service name and namespace must stay exactly `payments-db` and `shop`.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-db
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: payments-db
+    app.kubernetes.io/part-of: shop
+    team: team-payments
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: payments-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: payments-db
+        app.kubernetes.io/part-of: shop
+        team: team-payments
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17.11-alpine
+          env:
+            # A disposable database in a disposable cluster. Nothing connects to it.
+            - name: POSTGRES_USER
+              value: payments
+            - name: POSTGRES_PASSWORD
+              value: payments-demo-password
+            - name: POSTGRES_DB
+              value: payments
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments-db
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: payments-db
+    app.kubernetes.io/part-of: shop
+spec:
+  selector:
+    app.kubernetes.io/name: payments-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

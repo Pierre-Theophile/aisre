@@ -1,0 +1,177 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: human-fact-reopen-01
+family: human-fact-reopen
+description: >-
+  US9: a human pushes a fact at a concluded investigation, and both survive.
+
+  `inv-2026-09-01-0007` ran at 14:33, concluded at 14:45 that the payments rollout to rev7 was
+  the most likely cause of checkout's errors, and recorded that as a decision record in the
+  graph -- one event, idempotency key the investigation id, no telemetry in it (FR-033,
+  FR-034). At 15:10 an operator submitted a typed, signed, time-bounded fact: they rolled the
+  payments cache back by hand at 14:25 and the errors stopped, and the graph never saw it.
+
+  The telemetry contradicts them. payments is still failing at 14:35, ten minutes after the
+  rollback they describe, and the recorded world holds the series that says so. The point of
+  the fixture is what happens next: both are kept. The fact is stored with its author, its
+  kind and the interval it concerns; the investigation is reopened as a NEW investigation
+  (`inv-2026-09-01-0011`) linked to the original; the original stays readable and unchanged;
+  and the reopened run reports the contradiction rather than resolving it by picking a side
+  (FR-057a, FR-057b, SC-015, SC-024).
+
+  `history.parent-history` is where "the original is readable and unchanged" is asserted, and
+  `subgraph.child-1hop` is where the link and the reopen cause are. Neither is a claim in a
+  narrative: they are files.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+  - source_id: sre-agent:demo
+    kind: sre-agent
+    ordering: none
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T15:30:00Z
+
+queries:
+  - name: parent-history
+    kind: history
+    focus: sre.investigation.id=inv-2026-09-01-0007
+  - name: child-1hop
+    kind: subgraph
+    focus: sre.investigation.id=inv-2026-09-01-0011
+    valid_at: 2026-09-01T15:20:00Z
+    hops: 1
+    direction: both
+  - name: payments-1hop-1432
+    kind: subgraph
+    focus: otel.service.name=payments
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 1
+    direction: both
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20105:group=env:prod"
+    statement: "checkout error rate above 5 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: k8s.change=shop/payments@rev7
+    causal_path:
+      - entity: k8s.change=shop/payments@rev7
+        via: changed-by
+        role: cause
+      - entity: otel.service.name=payments
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=payments"
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+            version_attribute: service.version
+        field_path: versions[version=rev7].error_rate
+        op: gt
+        value: 0.05
+        note: the new revision carries the errors; askable only because the metric pointer publishes a version join key.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=payments"
+            windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: up
+        note: payments' error rate rises across the onset by more than an order of magnitude.
+      - term:
+          error_spans:
+            src: otel.service.name=checkout
+            dst: otel.service.name=payments
+            edge_type: CALLS
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+        field_path: groups[error_kind=deadline_exceeded].join_keys.version
+        op: eq
+        value: rev7
+        note: the failing spans on the call path from the alerting service carry the new version.
+      # And the predicate that contradicts the human fact. It is decisive evidence rather
+      # than exonerating evidence because it is not about a decoy: it is about a claim a
+      # person made, and FR-057b says both are kept and the contradiction is stated.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=payments"
+            windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].symptom
+        op: gt
+        value: 0.05
+        note: >-
+          payments is still failing through 14:35, ten minutes after the manual rollback the
+          operator reports at 14:25. The fact and the series disagree; the run reports both.
+
+    decoys: []
+    exonerating_evidence: {}
+
+    # Nobody sees the future: this investigation observes the world at `fired_at` (14:32), so the
+    # decisive windows above end there and no predicate rests on telemetry after it
+    # (constitution II). The evidence itself exists earlier: the onset is 14:20, and the five
+    # one-minute samples after it — `onset.MinSustainedPoints`, the shortest run this project
+    # calls a symptom — are complete at 14:25, by which instant rev7's error rate over them is
+    # an order of magnitude above the 5 % floor the predicate asks for. Asked before 14:25,
+    # `unknown` is the correct answer and naming payments is a lucky guess.
+    knowability_time: 2026-09-01T14:25:00Z
+    onset: {at: 2026-09-01T14:20:00Z, tolerance_seconds: 120}
+    prior_rank_of_culprit: 1
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry centred on the estimated onset. The world is the cross product of
+      (pointers in the neighbourhood) x (grid) x (the recorder's statistic set: ERROR_RATE,
+      P95, RATE) plus monitor_state, log patterns, onset, errors_by_version where a version
+      join key exists, error_spans per edge, and the depth-1 drill-downs those answers mint,
+      so each further grid entry doubles the directory. The cap is the grid, the hop radius
+      and the drill-down depth; all three are read back from this block by
+      `fixture record-world`, so widening one is an edit a reviewer sees.
+
+  runs: 3

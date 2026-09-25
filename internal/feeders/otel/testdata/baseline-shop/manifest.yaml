@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The acceptance corpus of the OpenTelemetry topology feeder (T061, US3 scenarios 1-3).
+#
+# events.jsonl is not a recording of this feeder: it is the twenty-three `otel:demo` lines of
+# fixtures/baseline-topology-01, copied unchanged and renumbered (appendedSeq is the line
+# number). The payloads are what the feeder must read to produce them, so a change to the
+# feeder that alters a single field of a single event fails here rather than in a review.
+id: baseline-shop
+family: otel-topology
+description: >-
+  One five-minute window of the baseline shop as OTLP: four services (storefront, checkout,
+  payments, inventory), three dependencies (a PostgreSQL database and a Redis behind a peer
+  name, and api.stripe.com over https), and eight calls edges in weight classes 4, 3 and 2.
+  The payloads are synthetic — they were authored before Docker was available — but carry the
+  attribute shapes deploy/kind/otel-demo/minimal/traffic.yaml makes telemetrygen send, plus a
+  sampling.probability of 0.1 so that 618 recorded spans stand for 6180 and the corpus stays
+  small. Constitution VIII asks for more than that, and since the live run of 2026-09-16 it has
+  it: fixtures/baseline-topology-01 is 849 real OTLP exports and 1714 real spans, replayed by
+  TestConformanceRecordedFixture through this same feeder. This corpus is kept beside it
+  because it is small enough to read, and because it is the only one exercising the `compat`
+  id format the hand-authored era used.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-01T13:01:00Z
+  end:   2026-09-01T13:02:10Z
+
+# Facts about the corpus that are not events. `id_format` is the one a replay must be run with:
+# fixtures/baseline-topology-01 was hand-authored with `@w1300` window keys, which is
+# `--id-format compat`; every other corpus and every live run uses the default, `full`
+# (`@w20260901T1300Z`), which cannot collide across days.
+ground_truth:
+  id_format: compat
+  window: 5m
+  services: 4
+  third_parties: 3
+  calls_edges: 8
+  sampling_probability: 0.1
+  spans_recorded: 618

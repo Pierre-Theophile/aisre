@@ -1,0 +1,5 @@
+{"total_count":1,"workflow_runs":[{"id":301,"name":"Deploy search","run_number":12,"run_attempt":1,"head_sha":"8f5bd3c0b0e4a1d2c3f4a5b6c7d8e9f0a1b2c3d4","event":"workflow_dispatch",
+		"status":"completed","conclusion":"success","run_started_at":"2026-03-01T14:00:00Z",
+		"actor":{"login":"ada","id":1,"type":"User"},"triggering_actor":{"login":"ada","id":1,"type":"User"},
+		"html_url":"https://github.com/acme/monorepo/actions/runs/301",
+		"logs_url":"https://api.github.com/repos/acme/monorepo/actions/runs/301/logs"}]}

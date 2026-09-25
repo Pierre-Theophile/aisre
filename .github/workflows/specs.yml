@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The spec-artifact guard, on its own so it can run when nothing else needs to.
+#
+# ci.yml ignores changes confined to `specs/`: no Go code, test or fixture reads them, so a
+# plan-only pull request used to pay ~37 billed minutes of Go builds, race tests and fixture
+# replays to prove nothing about its own content. This workflow is the part of CI that does read
+# them. It runs on every change, not only on `specs/`: the guard resolves relative links from the
+# specs into the rest of the tree, so renaming a Go file can break it. It needs Python and a
+# checkout, nothing more — about a minute.
+
+name: specs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: specs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  specs:
+    name: spec artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # The plan and task artifacts under specs/ are the deliverable of a whole phase of this
+      # project's method, and nothing in CI read a line of them until this guard existed: a pull
+      # request adding 3,400 lines of plan and 540 of tasks passed seven of the eight jobs in
+      # ci.yml without any of them opening the files. Renumbering damage, dead links, dead heading
+      # anchors and half-applied conventions break no build, so they were found by hand or not
+      # at all.
+      - name: spec artifacts are well formed
+        run: ./scripts/check-specs.sh
+
+      # Same standard as the secrets guard: every rule is observed to fire on a planted violation,
+      # and the shapes the guard must NOT reject are planted too — all three taken from the real
+      # repository, because the first draft of the guard rejected all three.
+      - name: the spec guard itself catches a planted violation
+        if: ${{ !cancelled() }}
+        run: ./scripts/check-specs_test.sh

@@ -1,0 +1,246 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The published GCP call budget (003 FR-146–FR-154, SC-022).
+# Contract: specs/003-gcp-integration/contracts/budget.md. Vendor facts: research.md §6, §7.
+#
+# This is the checked-in copy of what internal/gcpx publishes in code, so an operator can read the
+# defaults, copy the file, change a number and pass the result to `--gcp-budget <file>`. The budget
+# actually applied is recorded in every checkpoint and in every usage report, so a run stays
+# interpretable after this file changes.
+#
+# The governing fact, before anything else: `logging.entries.list` is limited to **60 calls per
+# minute per project**, the limit is **not hierarchical**, and it is **shared with every human
+# querying Cloud Logging in that project**. One call per second, project-wide, during an incident,
+# against the same pool as the on-call trying to read the logs. Every rule below follows from it.
+#
+# Two things here are NOT configurable, and the loader refuses a file that moves them:
+#
+#   the human reserve floors   an integration that can spend the humans' last 18 calls/min during an
+#                              incident is the failure this contract exists to prevent (FR-147)
+#   the alert cadence ceiling  alert polling may not be stretched past 30s: SC-004 binds
+#                              transition-to-observed delay to the poll interval plus one minute at
+#                              p95, and alert polling does not touch logging.read anyway (FR-050)
+
+version: "1.0.0"
+
+# --- Endpoint classes -----------------------------------------------------------------------------
+#
+# Budgets are per endpoint class (FR-147), never a single global call count: GCP's quotas are per
+# API and per project, and one global figure lets a cheap class starve a binding one.
+#
+# `limit` is the documented default used to seed the fast loop's token bucket. `discovered: true`
+# means the figure is not published by Google and must be read at runtime (see monitoring.query);
+# `limit: null` with `discovered: false` means no limit is known and none is assumed — the class is
+# metered but never treated as unlimited.
+endpoint_classes:
+  # The binding one. Everything in this contract exists because of this row.
+  - class: logging.read
+    api: logging.googleapis.com
+    operations: [logging.entries.list]
+    limit: 60
+    period: 1m
+    scope: project              # NOT hierarchical: a folder-level grant buys no extra calls
+    shared_with_humans: true
+    binding: true
+    steady_state_share: 0.40    # 24 of 60 calls/min
+    human_reserve: 0.30         # >= 18 calls/min, never spent, in 100% of cycles
+    # page_size is deliberately absent. Google documents a default of 50 and **no maximum**; the
+    # widely-cited 1,000-entry and ~10 MB page caps appear nowhere in its reference or quota pages
+    # (research §6). The client therefore designs against neither: it requests a page size, reads
+    # the size it actually got, and never predicts a page count from a window width.
+
+  # Binding, and its limit is not publicly documented, so it is discovered at startup from
+  # serviceruntime.googleapis.com/quota/limit filtered to service="monitoring.googleapis.com".
+  # A budget expressed as a share of an unknown limit is not a budget, and "limit unknown" is never
+  # read as "limit unlimited" (§4).
+  - class: monitoring.query
+    api: monitoring.googleapis.com
+    operations: [monitoring.timeSeries.list]
+    limit: null
+    discovered: true
+    fallback_limit: 60          # conservative; the usage report says "fallback", not "discovered"
+    period: 1m
+    scope: project
+    shared_with_humans: true
+    binding: true
+    steady_state_share: 0.50
+    human_reserve: 0.25
+
+  - class: run.read
+    api: run.googleapis.com
+    operations: [run.services.list, run.services.get, run.revisions.list, run.revisions.get]
+    limit: 3000
+    period: 60s
+    scope: project_region       # per project per region, unlike the two binding classes
+    binding: false              # not binding at this estate's scale
+
+  - class: sqladmin.read
+    api: sqladmin.googleapis.com
+    operations: [sql.instances.list, sql.instances.get]
+    limit: 500
+    period: 1m
+    scope: user_region
+    binding: false
+
+  - class: monitoring.policies
+    api: monitoring.googleapis.com
+    operations: [monitoring.alertPolicies.list, monitoring.alertPolicies.get]
+    limit: null                 # undocumented, low volume; metered, not assumed unlimited
+    period: 1m
+    scope: project
+    binding: false
+
+  - class: container.read
+    api: container.googleapis.com
+    operations: [container.clusters.list, container.clusters.get]
+    limit: null                 # undocumented; one call per project per poll, metered not assumed
+    period: 1m
+    scope: project
+    binding: false
+
+  # P3, and the first thing cut (FR-057, US9). See deferral_order below.
+  - class: compute.read
+    api: compute.googleapis.com
+    operations: [compute.forwardingRules.list, compute.urlMaps.list, compute.backendServices.list]
+    limit: null
+    period: 1m
+    scope: project
+    binding: false
+
+  - class: dns.read
+    api: dns.googleapis.com
+    operations: [dns.managedZones.list, dns.resourceRecordSets.list]
+    limit: null
+    period: 1m
+    scope: project
+    binding: false
+
+  # The doorbell. Note this is the feature's one declared non-read-only grant (FR-006):
+  # pubsub.subscriptions.consume authorises pull, ack, modifyAckDeadline and seek together, and no
+  # read-only pull exists at any granularity (research §12). The feature runs correctly without it.
+  - class: pubsub.pull
+    api: pubsub.googleapis.com
+    operations: [pubsub.subscriptions.pull]
+    limit: null
+    period: 1m
+    scope: subscription
+    binding: false
+
+# --- The two loops --------------------------------------------------------------------------------
+#
+# FR-148's two branches are not symmetric, because GCP reports **no usable real-time remaining
+# figure** for any of the four relevant APIs: no rate-limit response headers (the first signal the
+# quota is gone is 429/RESOURCE_EXHAUSTED), and the Cloud Quotas and Service Usage APIs expose
+# configured *limits*, not consumption. So every real-time decision here is self-tracked, and the
+# usage report labels each figure accordingly (§3).
+quota_tracking:
+  # Real time. Authorises or refuses every call.
+  fast_loop:
+    mechanism: token_bucket
+    per: [api, project, region]
+    seeded_from: documented_defaults
+    figure_label: self-tracked
+
+  # Minutes-stale. A reconciliation and drift check — it catches an out-of-band quota increase and
+  # catches this integration's accounting drifting from GCP's. It NEVER authorises a call the fast
+  # loop refused, because a minutes-stale figure cannot authorise anything during a 60-second
+  # incident. Note reading it itself spends monitoring.query quota.
+  slow_loop:
+    limit_metric: serviceruntime.googleapis.com/quota/limit              # GAUGE
+    usage_metric: serviceruntime.googleapis.com/quota/rate/net_usage     # DELTA, 1m sampling
+    remaining: limit_minus_net_usage
+    filtered_by: [service, limit_name]
+    interval: 5m
+    authoritative: false
+    figure_label: vendor-reported
+
+# --- Window caps ---------------------------------------------------------------------------------
+#
+# The width of a query window is capped per cost class (FR-150). A request wider than its cap is
+# narrowed to the cap, or refused with the cap named — never issued as asked. Where a cap truncates,
+# the digest states what was dropped and by which criterion (FR-099): a truncated answer that does
+# not say so is worse than a refusal.
+window_caps:
+  CHEAP:
+    terms: [monitor_state, drill_down]
+    max_window: 168h            # an indexed read; wide is fine
+  STANDARD:
+    terms: [compare, errors_by_version, error_spans]
+    max_window: 24h             # one aggregation, one selector, one window pair
+  EXPENSIVE:
+    # The tightest, because new_log_patterns is the term that spends logging.read. This is not a
+    # politeness setting: it is what stops one algebra term taking the on-call's log console away
+    # mid-incident.
+    terms: [new_log_patterns, onset, exemplars]
+    max_window: 2h
+
+# --- Deferral order -------------------------------------------------------------------------------
+#
+# When the budget cannot cover a full cycle, work is deferred in this published order (FR-149),
+# reported, and reflected in the checkpoints as reduced coverage. The order is the priority order of
+# the user stories — the same judgement written down twice — so a deferral that reordered it would be
+# quietly changing what the feature is.
+#
+# A deferral is NEVER silent: what was deferred and why is reported, and the checkpoint records
+# reduced coverage, so a later query can tell "no change happened" from "we were not looking"
+# (FR-040, FR-149).
+deferral_order:
+  - load_balancers_and_dns     # P3, explicitly the first thing cut (FR-057, US9)
+  - general_audit_stream       # beyond the deploy path
+  - cloudsql_settings_and_flags
+  # --- below this line is what the P1 stories depend on; deferred only when the alternative is
+  #     failing outright ---
+  - cloud_run_topology
+  - alert_policies_and_transitions
+
+# --- Backing off ----------------------------------------------------------------------------------
+#
+# On 429 / RESOURCE_EXHAUSTED or a throttling response (FR-151). For the telemetry backend half, a
+# quota refusal is not an empty answer: it is the typed outcome QUERY_FAILED with reason
+# RATE_LIMITED and the earliest retry instant where GCP states one (FR-104). Never a partial result
+# presented as whole, and never an empty answer that reads like "nothing happened".
+backoff:
+  honour_retry_after: true      # wait at least as long as the response asks, where it says
+  initial: 1s                   # Google's documented guidance
+  max: 60s
+  multiplier: 2.0
+  jitter: true                  # truncated exponential backoff
+  resume_from_position: true    # do not lose the position already reached; never restart the cycle
+  record_refusals: true         # in the integration's own operational telemetry (FR-011)
+
+# --- Cadences -------------------------------------------------------------------------------------
+#
+# Everything here is stretchable by the deferral order above except alert_transitions, which is the
+# one cadence the budget may not stretch (FR-050, SC-004) and is cheap: alert-policy and incident
+# polling do not touch logging.read, which is where the scarcity is.
+cadences:
+  alert_transitions:
+    interval: 20s
+    min: 15s
+    max: 30s                    # NOT configurable past this; see the header
+    stretchable: false
+  cloud_run_topology:
+    interval: 60s
+    stretchable: true
+  cloudsql:
+    interval: 5m
+    stretchable: true
+  audit_stream:
+    interval: 60s
+    stretchable: true
+  load_balancers_and_dns:
+    interval: 30m
+    stretchable: true
+
+# --- The usage report -----------------------------------------------------------------------------
+#
+# What Dana sees per run (FR-152, SC-022). Every field is required; the report is what makes the
+# budget auditable rather than aspirational.
+usage_report:
+  fields:
+    - calls_per_area                      # matched against the recording to the exact call (SC-022)
+    - share_of_configured_budget_consumed  # per endpoint class
+    - share_of_remaining_quota            # each figure labelled vendor-reported or self-tracked
+    - human_reserve_untouched             # must be 100% of the reserve, in 100% of cycles
+    - quota_refusals                      # with the class and the retry instant
+    - feeder_and_backend_usage_separately  # FR-113: investigations cost, as distinct from ingestion

@@ -1,0 +1,6 @@
+{"deployments":[{"uid":"dpl_storefront_77","name":"storefront","projectId":"prj_storefront","target":"production",
+		"readyState":"READY","readySubstate":"PROMOTED","source":"git","isRollbackCandidate":false,
+		"inspectorUrl":"https://vercel.com/twin/storefront/dpl_storefront_77",
+		"creator":{"uid":"usr_ada","type":"user"},
+		"attribution":{"commitMeta":{"githubCommitSha":"9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"}},
+		"createdAt":1789998840000,"buildingAt":1789998900000,"ready":1789999140000}]}

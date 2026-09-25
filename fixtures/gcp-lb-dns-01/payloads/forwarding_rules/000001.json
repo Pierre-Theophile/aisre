@@ -1,0 +1,1 @@
+{"items":[{"name":"shop-https","selfLink":"https://www.googleapis.com/compute/v1/projects/twin-production/global/forwardingRules/shop-https","IPAddress":"34.111.0.7","IPProtocol":"TCP","portRange":"443-443","loadBalancingScheme":"EXTERNAL_MANAGED","target":"https://www.googleapis.com/compute/v1/projects/twin-production/global/targetHttpsProxies/shop-urlmap"}]}

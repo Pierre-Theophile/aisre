@@ -1,0 +1,1 @@
+{"id":"prj_storefront","name":"storefront","createdAt":1740819600000,"link":{"type":"github","org":"acme","repo":"storefront","repoId":555},"lastAliasRequest":{"type":"rollback","jobStatus":"succeeded","fromDeploymentId":"dpl_bad","toDeploymentId":"dpl_good","requestedAt":1790001600000}}

@@ -1,0 +1,73 @@
+# Hand-authored fixture (002 Phase 3, T031; semantics from spec 003 FR-062..FR-068 and ADR-0005 D5).
+id: announced-fact-01
+family: announced-fact
+description: >-
+  Four services observed from 13:00 on 1 September. On 20 September a vendor notice announces
+  maintenance of the payments provider for 2 October 02:00-04:00: a change whose valid time
+  begins after it was observed. On 25 September the notice is withdrawn, recorded as a
+  correction of the same change (a new observation, same valid window), never a retraction.
+  A diff whose window ends before 2 October must not list the announced change as a cause; a
+  forward diff over 2 October lists it; pinning observed time to 21 September shows the
+  original announcement, pinning to 26 September shows the cancellation.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: vendor:demo
+    kind: vendor-notice
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-10-03T00:00:00Z
+
+queries:
+  # Window ends before the announced valid start: the announcement is NOT a candidate cause,
+  # whatever is known. Pinned all the same: every query in a fixture with observations still
+  # ahead of the verification date must be (fixture-format.md).
+  - name: checkout-diff-before
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-30T00:00:00Z
+    observed_at: 2026-10-03T00:00:00Z
+    hops: 2
+    direction: both
+    expect_empty: "the window ends before the announced maintenance's valid start, so the announcement is not a candidate cause whatever is known about it; its absence here is the assertion"
+  # Forward window over the maintenance, as known at the end of the clock: the announced change
+  # is listed and reads as cancelled. Pinned explicitly: this fixture's events are OBSERVED on
+  # 20 and 25 September, so an unpinned ("now") query here would answer differently on every
+  # day before the 25th — the golden would encode the recording date (caught by CI 2026-09-20).
+  - name: checkout-diff-forward
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-30T00:00:00Z
+    t2: 2026-10-03T00:00:00Z
+    observed_at: 2026-10-03T00:00:00Z
+    hops: 2
+    direction: both
+  # Same forward window as known on 21 September: the original announcement.
+  - name: checkout-diff-forward-asof-0921
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-30T00:00:00Z
+    t2: 2026-10-03T00:00:00Z
+    observed_at: 2026-09-21T00:00:00Z
+    hops: 2
+    direction: both
+  # The change node itself during the announced window, as known at the end of the clock
+  # (pinned for the same reason as checkout-diff-forward).
+  - name: payments-2hop-during
+    kind: subgraph
+    focus: otel.service.name=payments
+    valid_at: 2026-10-02T03:00:00Z
+    observed_at: 2026-10-03T00:00:00Z
+    hops: 2
+    direction: both

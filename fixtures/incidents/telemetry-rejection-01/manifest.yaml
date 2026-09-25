@@ -1,0 +1,125 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: telemetry-rejection-01
+family: conformance
+description: >-
+  SC-010 and FR-034, as a file the graph refuses.
+
+  `rejected.jsonl` holds one `record_investigation` event: a decision record of exactly the
+  published shape, whose `sre.investigation.hypotheses` carries the series behind the judgement
+  -- seven error-rate samples -- instead of the digest that points at where the series lives.
+  It must be rejected with `reason_code: telemetry_payload`, and the graph must be byte-for-byte
+  unchanged afterwards. That is what `expect_rejected` asserts and what `fixture verify`'s
+  expect-rejected step runs.
+
+  It is the investigation-shaped twin of `baseline-topology-01`'s `bad-span-props-1`, and it
+  exists because the allow-listed `sre.investigation.*` namespace is the one place in the schema
+  where a future author could plausibly attach "just the series that proves it". The allow-list
+  says where properties may live; the telemetry denylist says what may be in them; a list of
+  numbers is a series whatever it is called and under whichever namespace (internal/log/validate.go).
+
+  `events.jsonl` holds the accepted twin: the same investigation, concluding `unknown`, carrying
+  confidences, statuses and a `recording_digest` and no samples at all. Both halves are needed.
+  A fixture that only held the rejection would prove that the graph refuses things, not that it
+  refuses the right ones.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+rejected_events: rejected.jsonl
+
+# The decision record that must be refused, and the reason it must be refused with.
+expect_rejected:
+  - event_id: sre-agent:demo:investigation:inv-2026-09-01-0032
+    reason_code: telemetry_payload
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: sre-agent:demo
+    kind: sre-agent
+    ordering: none
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:55:00Z
+
+queries:
+  - name: investigation-history
+    kind: history
+    focus: sre.investigation.id=inv-2026-09-01-0031
+  - name: checkout-1hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 1
+    direction: both
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20108:group=env:prod"
+    statement: "checkout error rate above 5 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: unobserved
+    causal_path:
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          graph:
+            node_history:
+              focus: sre.investigation.id=inv-2026-09-01-0031
+        field_path: versions[0].props["sre.investigation.recording_digest"]
+        op: present
+        note: >-
+          the accepted decision record points at its recording by digest. The digest is the
+          whole mechanism: the bulk lives beside the graph and the graph holds the link, so
+          there is never a reason to put the series in a property.
+      - term:
+          graph:
+            node_history:
+              focus: sre.investigation.id=inv-2026-09-01-0031
+        field_path: versions.length
+        op: eq
+        value: 1
+        note: >-
+          one version, from the one accepted record. The rejected event changed nothing, which
+          is the other half of what a rejection has to mean.
+
+    decoys: []
+    exonerating_evidence: {}
+
+    knowability_time: 2026-09-01T14:41:00Z
+    onset: {at: 2026-09-01T14:20:00Z, tolerance_seconds: 600}
+    prior_rank_of_culprit: 0
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry centred on the estimated onset. The world is the cross product of
+      (pointers in the neighbourhood) x (grid) x (the recorder's statistic set: ERROR_RATE,
+      P95, RATE) plus monitor_state, log patterns, onset, errors_by_version where a version
+      join key exists, error_spans per edge, and the depth-1 drill-downs those answers mint,
+      so each further grid entry doubles the directory. The cap is the grid, the hop radius
+      and the drill-down depth; all three are read back from this block by
+      `fixture record-world`, so widening one is an edit a reviewer sees.
+
+  runs: 3

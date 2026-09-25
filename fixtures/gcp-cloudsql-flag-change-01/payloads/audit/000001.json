@@ -1,0 +1,10 @@
+{"entries":[
+ {"insertId":"sql-req-1","logName":"projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity","timestamp":"2026-09-21T14:11:20Z","receiveTimestamp":"2026-09-21T14:11:50Z",
+  "operation":{"id":"op-flag-1","producer":"cloudsql.googleapis.com","first":true},
+  "protoPayload":{"serviceName":"cloudsql.googleapis.com","methodName":"cloudsql.instances.update",
+   "resourceName":"projects/twin-production/instances/orders-primary"}},
+ {"insertId":"sql-done-1","logName":"projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity","timestamp":"2026-09-21T14:12:00Z","receiveTimestamp":"2026-09-21T14:12:30Z",
+  "operation":{"id":"op-flag-1","producer":"cloudsql.googleapis.com","last":true},
+  "protoPayload":{"serviceName":"cloudsql.googleapis.com","methodName":"cloudsql.instances.update",
+   "resourceName":"projects/twin-production/instances/orders-primary","status":{}}}
+]}

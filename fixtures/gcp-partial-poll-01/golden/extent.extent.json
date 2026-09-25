@@ -1,0 +1,1 @@
+{"earliestObserved":"2026-09-21T14:00:00Z","latestObserved":"2026-09-21T15:30:00Z","sources":[{"gaps":[{"end":"2026-09-21T14:20:00Z","start":"2026-09-21T14:00:00Z"},{"end":"2026-09-21T14:50:00Z","start":"2026-09-21T14:30:00Z"},{"end":"2026-09-21T15:20:00Z","start":"2026-09-21T15:00:00Z"}],"lastCheckpoint":"2026-09-21T15:30:00Z","sourceId":"gcp:twin"}]}

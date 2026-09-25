@@ -1,0 +1,43 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: github-partial-poll-01
+family: github
+description: 'A poll that failed part-way. Two deployments are announced; the statuses of the first arrive and the statuses of the second do not, and the poll marker says `partial` with its reason. One ROLLOUT is emitted, the unread deployment is DEFERRED rather than retracted — work not done yet is not work decided against (FR-073) — and no retraction appears anywhere, because retracting for an unread tail would assert that something stopped existing when the only fact is that nobody looked. The second cycle completes, and its checkpoint follows a declared gap (FR-056). Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-03-01T14:00:00Z
+    end: 2026-03-01T15:30:00Z
+queries:
+  # The rollout the poll DID read, at its own instant. A partial poll still
+  # delivers what it reached: the tail it did not reach is not a reason to withhold
+  # the head.
+  - name: the-rollout-that-was-read
+    kind: subgraph
+    focus: github.change=repositories/555/deployments/4321/targets/k8s.deployment/shop/storefront
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 2
+    direction: both
+  # ONE version. Its valid interval is closed after a microsecond because that is what
+  # a change IS (`changeInstant`), not because anything retracted it — a retraction
+  # issued because the poll stopped part-way would appear here as a SECOND version
+  # whose observed start closes this one's, and that is the row that must not exist.
+  # No subgraph at a single instant can show it.
+  - name: the-read-rollout-is-not-retracted
+    kind: history
+    focus: github.change=repositories/555/deployments/4321/targets/k8s.deployment/shop/storefront
+  # The extent: `not present` and `not read at that time` are different answers.
+  - name: extent
+    kind: extent
+    valid_at: 2026-03-01T15:30:00Z
+    observed_at: 2026-03-01T15:30:00Z

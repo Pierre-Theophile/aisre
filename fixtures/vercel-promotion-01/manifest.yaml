@@ -1,0 +1,59 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: vercel-promotion-01
+family: vercel
+description: 'One Vercel deployment, polled twice. The first poll finds it READY and STAGED and it produces NO change — `READY` means built and available, not serving, and a connector that read it as live would put a change node on the graph claiming production moved when it had not. The second poll finds the same deployment PROMOTED and it becomes a ROLLOUT carrying the commit C8 joins on. The STAGED payload is recorded rather than omitted because it is what makes the refusal observable: a fixture holding only the promoted deployment would pass with `readySubstate` ignored entirely. Valid time is marked UNKNOWN rather than taken from the build instant, which Vercel does state — substituting it would date the rollout earlier than it happened and move it up a causal ranking (research §5.2, FR-041). Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: vercel:twin
+      kind: vercel
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # What an investigation asks first: what changed on the project, over the window, as known at the end
+  # (004 T152, T093). The project is described by this feeder's projects read, so the question has a
+  # node to be asked about, and the promotion is the one answer. The reference instant is the window's
+  # end, the way an alert raised then would ask it.
+  - name: what-changed-on-the-project
+    kind: diff
+    focus: vercel.project=prj_storefront
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T15:00:00Z
+    reference_at: 2026-09-21T15:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 1
+    direction: both
+  # The rollout itself, with what it attaches to. It targets the project, which this feeder describes,
+  # and the operator's `shop/storefront`, which no source here describes — so that one is recorded as an
+  # unattached target and waits (Edge case 1, FR-034).
+  #
+  # One change is the assertion. A second would mean the STAGED observation had been read as live.
+  #
+  # The two instants are DIFFERENT and neither is a default. The valid instant is where this change is
+  # valid — for a change whose valid start is unknown that is the observation it begins at, which is the
+  # second poll — and the observed instant is the clock's end, by which the whole recording has arrived.
+  # 004 T150 found eight deploy goldens empty because both fields held the clock's end while a change's
+  # valid interval is one microsecond, and 004 T079 found that the fix had been applied to the
+  # manifests by hand while this generator still wrote one instant into both.
+  - name: promoted-rollout-2hop
+    kind: subgraph
+    focus: vercel.change=dpl_storefront_42
+    valid_at: 2026-09-21T14:18:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The suggestion queue, empty. One source cannot corroborate itself, so nothing here should be
+  # proposing a merge — and a probable rule that fired on a single source's own events would show up.
+  - name: no-merge-from-one-source
+    kind: suggestions
+    observed_at: 2026-09-21T20:00:00Z
+    expect_empty: "one source cannot corroborate itself, so no rule should propose a merge; a probable rule that fired on a single source's own events would appear here"

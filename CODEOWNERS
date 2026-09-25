@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Review ownership. GitHub requests a review from the owners of every path a pull request
+# touches. Later entries win, so the more specific rules are at the bottom.
+
+# Default owner for everything in the repository.
+*                                   @pierreblais
+
+# The published schema and its documentation. Any change here needs an ADR under
+# docs/decisions/ and must pass `buf breaking` (constitution IX).
+/api/                               @pierreblais
+/buf.yaml                           @pierreblais
+/buf.gen.yaml                       @pierreblais
+/docs/schema/                       @pierreblais
+
+# The temporal substrate: log, projector, bitemporal storage and migrations.
+/internal/log/                      @pierreblais
+/internal/projector/                @pierreblais
+/internal/store/                    @pierreblais
+
+# Governance, licensing and the rules CI enforces.
+/.specify/memory/constitution.md    @pierreblais
+/docs/decisions/                    @pierreblais
+/.github/                           @pierreblais
+/scripts/                           @pierreblais
+/LICENSE                            @pierreblais
+/NOTICE                             @pierreblais
+/CODEOWNERS                         @pierreblais

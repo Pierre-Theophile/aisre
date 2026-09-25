@@ -1,0 +1,34 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: github-unattached-01
+family: github
+description: 'A production deployment of a repository the operator''s mapping does not cover, emitted as ONE UNATTACHED change rather than dropped (Edge case 1). A deploy that happened is a fact whether or not this connector can say what it touched, and a target that appears later attaches through the projector''s pending queue rather than requiring the change to be re-observed. The change carries its commit claim, so the attachment can happen on the identifier rather than on a name. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-03-01T14:00:00Z
+    end: 2026-03-01T15:30:00Z
+queries:
+  # The change exists and attaches to nothing. Focused on the change itself,
+  # because there is no target to look at it from — which is Edge case 1.
+  - name: unattached-change
+    kind: subgraph
+    focus: github.change=repositories/555/deployments/4500
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 1
+    direction: both
+  # The extent: `not present` and `not read at that time` are different answers.
+  - name: extent
+    kind: extent
+    valid_at: 2026-03-01T15:30:00Z
+    observed_at: 2026-03-01T15:30:00Z

@@ -1,0 +1,19 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: rollout-scale-config
+family: k8s-topology
+description: 'the same list, then a payments rollout, a storefront scale-up, a checkout-config change and the deletion of the checkout Service. Synthetic: authored from deploy/kind/, not recorded from a cluster (T058 replaces it).'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: k8s:demo
+      kind: k8s
+      ordering: per_source_sequence
+      reordering_window: 1m0s
+clock:
+    start: 2026-09-01T13:00:00Z
+    end: 2026-09-01T13:20:00Z

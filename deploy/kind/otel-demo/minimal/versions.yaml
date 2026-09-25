@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The service.version each emitter reports. Separated from the emitter Deployments so that
+# deploy/kind/scenarios/rollout.sh can bump one value and restart one Deployment, which is what
+# makes the OTLP feeder emit a rollout change node (FR-042: "a rollout change node when a
+# service's version changes").
+#
+# The values match fixtures/baseline-topology-01, so a recording taken before any scenario runs
+# lines up with the hand-authored fixture.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-versions
+  namespace: shop-traffic
+  labels:
+    app.kubernetes.io/part-of: shop
+data:
+  storefront: "3.1.0"
+  checkout: "2.3.1"
+  payments: "1.4.0"
+  inventory: "0.9.7"

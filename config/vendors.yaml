@@ -1,0 +1,178 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The vendor allowlist for the vendor-notice feeder (003 FR-058–FR-078, FR-132a, FR-132b).
+# Contract: specs/003-gcp-integration/contracts/vendor-notice-feeder.md.
+#
+# Why an allowlist at all. The mailbox this feeder reads is an ordinary mailbox that receives provider
+# mail, not a purpose-built feed: **most of what arrives in it is not a notice.** So the allowlist and
+# the extraction-failure path (FR-074) carry real traffic and are not edge cases — and an allowlist is
+# the only shape that makes "this message is from a vendor we depend on" a decision somebody made
+# rather than a guess about a sender's name.
+#
+# Adding a vendor is configuration, not a code change (spec Assumptions). No address, domain or sender
+# is hard-coded anywhere in internal/feeders/vendornotice (FR-132b).
+
+version: "1.0.0"
+
+# --- Mailbox sources --------------------------------------------------------------------------------
+#
+# FR-132a: **per-user delivery is a first-class path, not a fallback.** Google Cloud addresses platform
+# notices to each project's Essential Contacts and to its billing and owner principals, so a notice
+# stream generally arrives in individuals' mailboxes and reaches a shared address only where somebody
+# configured it to. A feeder that read only a shared mailbox would miss exactly the announcements the
+# coverage audit found mattered.
+#
+# `kind` decides what is possible, and getting it wrong is silent:
+#   workspace_mailbox  a real mailbox; readable by Gmail API (read-only scope) or IMAP
+#   google_group       a distribution list. **Its archive is readable by no API.** If the configured
+#                      address is a Group, configure a subscribed member's mailbox instead — the
+#                      Group itself will yield nothing, forever, without erroring.
+#
+# For IMAP, both EXAMINE **and** BODY.PEEK are required: RFC 9051 §6.3.2 permits a read-only SELECT to
+# change per-user state, and \Seen is exactly that (FR-007).
+mailboxes: []
+  # - address: ""              # REQUIRED; no default, and never hard-coded
+  #   kind: workspace_mailbox  # workspace_mailbox | google_group
+  #   path: gmail_readonly     # gmail_readonly | imap_examine_peek
+  #   authorised_by: ""        # who authorised the read; recorded in the campaign record (FR-140)
+
+# FR-132b. An empty notice stream is indistinguishable from a working feeder in a quiet week, so a
+# campaign whose configured mailbox yields nothing fails LOUDLY at campaign start rather than
+# recording silence as evidence.
+refuse_empty_notice_stream: true
+
+# --- Senders ----------------------------------------------------------------------------------------
+#
+# Sender matching is per vendor, below. This list is only for senders that carry notices for the
+# platform itself rather than for one product.
+platform_senders:
+  - CloudPlatform-noreply@google.com
+
+# The vendor those senders write for. Required wherever platform_senders is set: a notice attributed to
+# no vendor is a notice nobody can act on, so the file says which entry they belong to rather than
+# leaving the feeder to infer it from a domain name (FR-059).
+platform_vendor: google-cloud
+
+# The rules for those senders' messages, applied after the matched vendor's own. Extraction rules are
+# stated, never inferred: an operator says what an announcement looks like, and a message no rule claims
+# is counted and reported rather than guessed at (FR-073, FR-074). Left empty because what a platform
+# notice looks like is this organisation's mail to read, not something to ship a guess about.
+platform_rules: []
+
+# --- Vendors ----------------------------------------------------------------------------------------
+#
+# The published default. `google-cloud` is populated because it is the platform this feature reads and
+# its endpoints are publicly documented.
+#
+# The five provider families below are the organisation's actual dependency categories (spec
+# Assumptions) and ship as **stubs with the shape filled in and the identity left blank**. That is
+# deliberate: guessing which LLM API provider or which ATS an organisation uses would put a wrong
+# vendor in an allowlist, and a wrong allowlist entry does not fail — it silently matches nothing, or
+# worse, matches someone else's mail. The operator names the vendor; the shape is already right.
+vendors:
+  - slug: google-cloud
+    name: Google Cloud
+    products: [cloud-run, cloud-sql, cloud-logging, cloud-monitoring, gke, cloud-dns, pub-sub]
+    hosts: [googleapis.com, run.app, cloudfunctions.net]
+    senders: [CloudPlatform-noreply@google.com]
+
+    # status.cloud.google.com is **not** an Atlassian Statuspage, so it is not polled on the /api/v2
+    # paths. Saying so here rather than probing and remembering keeps a 404 about a page that was never
+    # a Statuspage out of every cycle's gaps (FR-075).
+    status_page: https://status.cloud.google.com/
+    statuspage_api: false
+
+    # The vendor-native document, which needs no extraction rules because it states its own fields:
+    # `begin` and `end` are RFC 3339 with explicit offsets and the service is a field rather than a
+    # sentence.
+    status_feed: https://status.cloud.google.com/incidents.json
+    status_feed_format: gcp-incidents
+
+    # The release-notes feed and page are **not polled** until somebody states the rules that read them.
+    # The format is known; what an entry means is not, and a feeder that guessed would either place
+    # release notes as announcements or silently match nothing. Uncomment the format lines together
+    # with a `rules:` block below.
+    changelog: https://cloud.google.com/release-notes
+    changelog_feed: https://cloud.google.com/feeds/gcp-release-notes.xml
+    # changelog_feed_format: atom
+    rules: []
+
+  - slug: llm-api
+    family: llm-api-provider
+    name: ""                   # operator names the vendor
+    products: []
+    hosts: []
+    senders: []
+    status_page: ""
+    statuspage_api: false
+    changelog: ""
+    rules: []
+
+  - slug: gpu-host
+    family: gpu-host
+    name: ""
+    products: []
+    hosts: []
+    senders: []
+    status_page: ""
+    statuspage_api: false
+    changelog: ""
+    rules: []
+
+  - slug: voice-infra
+    family: voice-infrastructure
+    name: ""
+    products: []
+    hosts: []
+    senders: []
+    status_page: ""
+    statuspage_api: false
+    changelog: ""
+    rules: []
+
+  - slug: serverless-gpu
+    family: serverless-gpu
+    name: ""
+    products: []
+    hosts: []
+    senders: []
+    status_page: ""
+    statuspage_api: false
+    changelog: ""
+    rules: []
+
+  - slug: ats
+    family: ats
+    name: ""
+    products: []
+    hosts: []
+    senders: []
+    status_page: ""
+    statuspage_api: false
+    changelog: ""
+    rules: []
+
+# --- Notice kinds -----------------------------------------------------------------------------------
+#
+# The taxonomy named `deprecation` and `vendor_incident` on 2026-09-18 (ADR-0006 D3), so these map to
+# ChangeKind.DEPRECATION and ChangeKind.VENDOR_INCIDENT directly. FR-060's CHANGE_KIND_OTHER fallback
+# is DEAD: a fixture asserting an OTHER-kind deprecation asserts a regression.
+notice_kinds:
+  maintenance_window: MAINTENANCE_WINDOW
+  deprecation: DEPRECATION
+  vendor_incident: VENDOR_INCIDENT
+
+# --- Extraction -------------------------------------------------------------------------------------
+#
+# The feeder extracts typed fields and a message pointer. **The body is never stored at all** — not
+# redacted, not truncated, not hashed: never written (FR-073). Announcement text is untrusted input
+# from outside the organisation, and this typed boundary is the same boundary that governs what may be
+# sent to a model provider.
+extraction:
+  store_body: false            # not configurable to true
+  # A notice whose fields cannot be extracted is reported as an extraction failure with its pointer,
+  # never dropped and never guessed at. Most mailbox traffic is not a notice, so this path is normal.
+  on_failure: report_with_pointer
+  # An unknown valid start is MARKED, never guessed (FR-022, FR-069). A notice announcing "in the
+  # coming weeks" has no valid_from, and that is a legal, recorded state.
+  unknown_valid_start: mark

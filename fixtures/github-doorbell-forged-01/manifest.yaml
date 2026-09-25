@@ -1,0 +1,46 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: github-doorbell-forged-01
+family: github
+description: 'What a forged or replayed doorbell costs: one extra poll, and nothing else. The same production rollout is read by two polls — the scheduled one, and the early one a forged notification would trigger — and the recording holds ONE rollout with ONE version, which the history query pins. Two things this fixture does NOT prove, stated here because a fixture that overstated them would be worse than no fixture. It cannot prove that the extra poll wrote nothing: a replay applies a recorded log that deduplicates on event id, so a second reading is a DUPLICATE_NOOP before its contents are compared, and a probe that made the second poll report something different at the same deployment left every verification step green. That claim is carried by `TestTwoReadingsOfOneWindowProduceOneChange`, over the emitted events, where the mapper actually runs. Nor does it prove the doorbell''s BODY reaches nothing: that is enforced by `Doorbell.Ring` taking an int and the package having no type a payload could be decoded into. Polling is the source of truth and this corpus runs with the doorbell absent, which is why no payload here is a notification. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-03-01T14:00:00Z
+    end: 2026-03-01T15:30:00Z
+queries:
+  # The rollout, at the change's own instant — a change's valid interval is one
+  # microsecond and no other instant contains it (T150). This says the rollout is
+  # THERE; it cannot say there is only one of it, which is what the history below is
+  # for.
+  - name: one-rollout-after-two-polls
+    kind: subgraph
+    focus: github.change=repositories/555/deployments/4321/targets/k8s.deployment/shop/storefront
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 2
+    direction: both
+  # The fixture's actual claim, and the only query here that can carry it: ONE version,
+  # observed from the first poll onwards. The second poll reads the same window byte
+  # for byte, so every event it produces carries the same deterministic id and the log
+  # answers DUPLICATE_NOOP. Anything it wrote instead — a second version at this ref,
+  # a re-observation, a retraction — appears here as a second row, where the subgraph
+  # above would look identical. That is SC-012's "no node, no change and no event" in
+  # the form a replay can assert it.
+  - name: one-rollout-after-two-polls
+    kind: history
+    focus: github.change=repositories/555/deployments/4321/targets/k8s.deployment/shop/storefront
+  # The extent: `not present` and `not read at that time` are different answers.
+  - name: extent
+    kind: extent
+    valid_at: 2026-03-01T15:30:00Z
+    observed_at: 2026-03-01T15:30:00Z

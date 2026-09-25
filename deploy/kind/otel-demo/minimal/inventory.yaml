@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# inventory: the second callee of checkout, and the workload deploy/kind/scenarios/scale.sh
+# scales. Owned by team-payments, matching fixtures/baseline-topology-01.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: inventory
+    app.kubernetes.io/part-of: shop
+    team: team-payments
+  annotations:
+    resource.opentelemetry.io/service.name: inventory
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: inventory
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: inventory
+        app.kubernetes.io/part-of: shop
+        team: team-payments
+      annotations:
+        resource.opentelemetry.io/service.name: inventory
+    spec:
+      containers:
+        - name: app
+          image: nginx:1.31.5-alpine-slim
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: inventory
+    app.kubernetes.io/part-of: shop
+spec:
+  selector:
+    app.kubernetes.io/name: inventory
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

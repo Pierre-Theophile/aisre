@@ -1,0 +1,8 @@
+{"kind":"alert_policies","at":"2026-09-21T14:00:00Z","seq":0,"file":"alert_policies/000001.json"}
+{"kind":"poll","at":"2026-09-21T14:00:00Z","seq":0,"file":"poll/000001.json"}
+{"kind":"alerts","at":"2026-09-21T14:30:00Z","seq":0,"file":"alerts/000001.json"}
+{"kind":"poll","at":"2026-09-21T14:30:00Z","seq":0,"file":"poll/000002.json"}
+{"kind":"alerts","at":"2026-09-21T15:00:00Z","seq":0,"file":"alerts/000002.json"}
+{"kind":"poll","at":"2026-09-21T15:00:00Z","seq":0,"file":"poll/000003.json"}
+{"kind":"alerts","at":"2026-09-21T15:30:00Z","seq":0,"file":"alerts/000003.json"}
+{"kind":"poll","at":"2026-09-21T15:30:00Z","seq":0,"file":"poll/000004.json"}

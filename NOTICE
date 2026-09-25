@@ -1,0 +1,26 @@
+sre-agent
+Copyright 2026 The sre-agent Authors
+
+This product includes software developed by the sre-agent Authors and is licensed under the
+Apache License, Version 2.0. A copy of the License is in the LICENSE file at the root of this
+repository, and at http://www.apache.org/licenses/LICENSE-2.0.
+
+Third-party components
+----------------------
+
+This product depends on third-party Go modules. Each is distributed under its own licence;
+see the module's own LICENSE file in the Go module cache, and `go list -m all` for the exact
+versions a given build uses. All direct dependencies are Apache-2.0, BSD-3-Clause or MIT, as
+required by the project constitution ("Contributions MUST be compatible" with Apache-2.0).
+
+The protobuf schema in api/sreagent/graph/v1/ imports well-known types from
+github.com/protocolbuffers/protobuf, Copyright Google Inc., licensed under BSD-3-Clause.
+
+Fixtures
+--------
+
+Replay fixtures under fixtures/ may contain payloads recorded from third-party applications,
+sanitized. Where they do, the fixture directory carries its own NOTICE naming the upstream
+project and its licence. In particular, fixtures recorded from the OpenTelemetry Demo
+application (https://github.com/open-telemetry/opentelemetry-demo) are derived from software
+Copyright The OpenTelemetry Authors, licensed under the Apache License, Version 2.0.

@@ -1,0 +1,19 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: directory-01
+family: mcp-directory
+description: 'one MCP ownership directory, two polls: three channels, four runbooks, three announced flag flips'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: mcp:acme-directory
+      kind: mcp
+      ordering: none
+      reordering_window: 5s
+clock:
+    start: 2026-09-16T09:00:00Z
+    end: 2026-09-16T09:00:30Z

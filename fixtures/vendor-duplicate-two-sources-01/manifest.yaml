@@ -1,0 +1,35 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: vendor-duplicate-two-sources-01
+family: vendor-notice
+description: 'The same maintenance window carried by the mailbox and the vendor''s status page, four hours apart. Both observations are emitted — the feeder suppresses neither, because suppression is a silent merge with no audit trail — and they address one change ref because the vendor stated a notice identifier. Exactly one change node results, and the cycle report counts the second reading as merged. Synthetic structural twin: no identifier is derived from the organisation and no vendor it depends on appears (contracts/sanitisation.md §7). The payloads are already the sanitised form — the six typed fields and a pointer — because that is the shape the source emits, so no body and no sender exists to remove (FR-071, FR-072).'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: vendor-notice:twin
+      kind: vendor-notice
+      ordering: none
+      reordering_window: 6h0m0s
+clock:
+    start: 2026-09-17T10:00:00Z
+    end: 2026-10-02T05:00:00Z
+
+queries:
+  # One change node, not two adjacent rows for one window in front of somebody being paged.
+  - name: vendor-2hop
+    kind: subgraph
+    focus: vendor=twin-gpu
+    valid_at: 2026-10-02T03:00:00Z
+    observed_at: 2026-09-18T12:00:00Z
+    hops: 2
+    direction: both
+  # Both readings are in the change's history, each with its own pointer.
+  - name: notice-history
+    kind: history
+    focus: vendor.notice=twin-gpu/TWIN-2026-1002
+  - name: extent
+    kind: extent

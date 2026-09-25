@@ -1,0 +1,61 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# The recorded counterpart of rollout-regression-01 (T082, FR-050 b, SC-005). Where that
+# fixture is hand-authored around a scenario somebody designed, this one is what two feeders
+# saw when deploy/kind/scenarios/rollout.sh actually rolled `shop/payments` on a kind cluster
+# at 09:57:45Z on 2026-09-16. docs/benchmarks/live-run-2026-09-16.md is the run.
+#
+# It is deliberately not a copy of rollout-regression-01's shape: a real cluster offers no
+# four-hop decoy and no unattached change, because nothing here manufactured one. What it does
+# offer is the thing a hand-authored fixture cannot — that the ranking is computed over change
+# candidates a real feeder minted from a real rollout, with the valid and observed times a real
+# graph assigned them.
+id: rollout-regression-02
+family: rollout-regression
+description: >-
+  A payments rollout on a live kind cluster, recorded by both reference feeders. The shop runs
+  undisturbed for four minutes, `scenarios/rollout.sh` then takes shop/payments from
+  nginx:1.31.5-alpine-slim to 1.31.6-alpine-slim (Deployment revision 1 -> 2) and bumps the
+  service.version the emitters report from 1.4.0 to 1.5.0, and the run continues for another
+  fourteen minutes so that the OpenTelemetry feeder closes two further windows and reports the
+  version transition on its own. `checkout-diff` asks what changed in checkout's two-hop
+  neighbourhood across that window; the rollout is the only culprit there is.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+
+sources:
+  - source_id: k8s:kind
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+  - source_id: otel:kind
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-16T09:53:09Z
+  # Widened from 2026-09-16T10:12:18Z (004 T153): the recorder took the window from the payloads alone, and
+  # the feeder's final events were observed 1.1 s after the last payload arrived, outside it.
+  end:   2026-09-16T10:12:20Z
+
+queries:
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-16T09:53:09Z
+    t2: 2026-09-16T10:05:45Z       # the rollout at 09:57:45 plus eight minutes
+    hops: 2
+    direction: both
+  - name: checkout-2hop
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-16T10:12:18Z
+    hops: 2
+    direction: both
+
+ground_truth:
+  culprit_change: k8s.change=shop/payments@rev2
+  expected_top_k: 3

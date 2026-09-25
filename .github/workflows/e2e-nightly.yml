@@ -1,0 +1,324 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The live run, nightly (T082, FR-050 (b), SC-010, constitution VIII).
+#
+# `ci.yml` proves that the recordings the repository ships still replay. This proves the step
+# before it: that the feeders, pointed at a real cluster running a real application with real
+# tracing, produce a recording that replays into the same graph they built live. It is the only
+# job in this repository that needs a cluster, and it is the only evidence that the fixtures are
+# recordings of something rather than artefacts of the harness.
+#
+# What it does, in order:
+#
+#   1. bring up kind with the `minimal` otel-demo overlay and the read-only RBAC the Kubernetes
+#      feeder insists on (FR-046);
+#   2. run `serve` against a Postgres of its own and both feeders with `--record`;
+#   3. leave it alone for twelve minutes, so at least two five-minute OTLP windows close and the
+#      baseline is unambiguous;
+#   4. roll `shop/payments` with `scenarios/rollout.sh` and leave it alone for eleven more, so
+#      the rollout is seen by both feeders and the window after it closes;
+#   5. stop the feeders, `fixture assemble` the two recordings into one fixture directory,
+#      `fixture record` its goldens, `fixture verify --report` it from empty;
+#   6. **SC-010**: `fixture export` the *live* database through the same manifest and compare it
+#      with the goldens the replay produced. Byte-identical or the job fails.
+#
+# The recording is uploaded whatever happens. A green run that nobody keeps is a run that
+# produced nothing; `fixtures/rollout-regression-02` came from exactly this shape of run, and the
+# artifact is what a person downloads to promote one into the repository.
+#
+# Timings are the reason this is nightly and not a pull-request gate: step 3 and step 4 are
+# twenty-three minutes of waiting that no amount of machine buys back, because they are the
+# aggregation windows of the feeder under test.
+
+name: e2e-nightly
+
+on:
+  schedule:
+    # 03:17 UTC: after the day's merges, off the hour so it does not queue behind everyone
+    # else's nightly.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      baseline_minutes:
+        description: "Minutes of baseline before the rollout (>= 12)"
+        required: false
+        default: "12"
+      settle_minutes:
+        description: "Minutes to wait after the rollout (>= 11)"
+        required: false
+        default: "11"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.27"
+  KIND_VERSION: "v0.33.0"
+  KIND_NODE_IMAGE: "kindest/node:v1.37.0"
+  CGO_ENABLED: "0"
+  KIND_CLUSTER: sre-agent-demo
+  KUBE_CONTEXT: kind-sre-agent-demo
+  FIXTURE_ID: rollout-regression-nightly
+  # One database for the live graph, a second for the replay `fixture record` builds. They must
+  # be different: "the replay reproduces the live graph" is only a claim if the replay starts
+  # from empty (FR-047).
+  LIVE_DSN: postgres://sreagent:sreagent@localhost:5432/live?sslmode=disable
+  PG_DSN: postgres://sreagent:sreagent@localhost:5432/sreagent?sslmode=disable
+
+jobs:
+  # ---------------------------------------------------------------------------------------
+  # Runner minutes. A scheduled run on a commit the previous scheduled run already measured
+  # reproduces that result at full price, so it is skipped, and says so. A dispatch always runs:
+  # that is how to re-run a flaky night on the same commit.
+  # ---------------------------------------------------------------------------------------
+  gate:
+    name: new commits since the last scheduled run?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          last=$(gh run list -R "$GITHUB_REPOSITORY" --workflow e2e-nightly.yml --event schedule \
+            --limit 10 --json databaseId,headSha,conclusion \
+            --jq "[.[] | select(.databaseId != $GITHUB_RUN_ID)
+                       | select(.conclusion == \"success\" or .conclusion == \"failure\")][0].headSha // \"\"")
+          if [ "$last" = "$GITHUB_SHA" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "### Skipped: \`${GITHUB_SHA}\` was already measured by the previous scheduled run" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  live-run:
+    name: kind + otel-demo + both feeders
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sreagent
+          POSTGRES_PASSWORD: sreagent
+          POSTGRES_DB: sreagent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sreagent -d sreagent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: build
+        run: make build
+
+      # Into the runner user's own bin directory, not /usr/local/bin: the hosted image stopped
+      # granting the unprivileged runner write access there (`chmod: Operation not permitted`,
+      # run 35499920732), and a tool install that needs root is a tool install that breaks the
+      # next time the image is rebuilt.
+      - name: install kind and kubectl
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSLo "$HOME/.local/bin/kind" \
+            "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x "$HOME/.local/bin/kind"
+          curl -fsSLo "$HOME/.local/bin/kubectl" \
+            "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x "$HOME/.local/bin/kubectl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/kind" version
+          "$HOME/.local/bin/kubectl" version --client
+
+      # The graph the feeders write to live. `fixture record` later replays into a database of
+      # its own, which is what makes the SC-010 comparison mean something.
+      - name: create the live database
+        run: |
+          psql "$PG_DSN" -c 'DROP DATABASE IF EXISTS live'
+          psql "$PG_DSN" -c 'CREATE DATABASE live'
+          bin/aisre migrate --db "$LIVE_DSN"
+
+      - name: bring up the cluster
+        run: deploy/kind/up.sh minimal
+
+      # This is the step that has never run on Linux. On Docker Engine the detection falls
+      # through to the `kind` bridge network's gateway, which is the committed default in the
+      # overlays — so it should be a no-op that prints 172.18.0.1. It is run explicitly, and its
+      # answer printed, because a wrong address here is silent: the emitters keep going and log
+      # export failures, and the graph is simply empty (deploy/kind/README.md §Reaching the host).
+      - name: point the pods at the host
+        run: |
+          deploy/kind/host-endpoint.sh
+          deploy/kind/host-endpoint.sh --print
+
+      - name: read-only feeder credential
+        run: |
+          kubectl apply -k deploy/kind/rbac --context "$KUBE_CONTEXT"
+          deploy/kind/rbac/kubeconfig.sh > /tmp/sre-agent-feeder.kubeconfig
+          # FR-046: the feeder refuses a credential that can write. Proving the minted one
+          # cannot is cheaper here than debugging an exit 3 twenty minutes in.
+          kubectl --kubeconfig /tmp/sre-agent-feeder.kubeconfig --context sre-agent-feeder \
+            auth can-i patch deployments -n shop | grep -qx no
+
+      - name: deploy the shop and wait for it
+        run: |
+          kubectl apply -k deploy/kind/otel-demo/minimal --context "$KUBE_CONTEXT"
+          # host-endpoint.sh has to be re-run after any apply -k, which puts the committed
+          # default back (deploy/kind/README.md).
+          deploy/kind/host-endpoint.sh
+          kubectl --context "$KUBE_CONTEXT" wait --for=condition=Available \
+            --timeout=300s --all deployments -n shop
+          kubectl --context "$KUBE_CONTEXT" rollout status statefulset/redis -n shop --timeout=300s
+          kubectl --context "$KUBE_CONTEXT" get pods -A -o wide
+
+      - name: serve and feed, recording
+        run: |
+          mkdir -p /tmp/live/rec
+          nohup bin/aisre serve --db "$LIVE_DSN" --listen :8080 --auth dev --dev \
+            > /tmp/live/serve.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break
+            sleep 2
+          done
+
+          otel_token=$(bin/aisre dev-token --dev --user nightly-otel --roles f --source-id otel:kind)
+          k8s_token=$(bin/aisre dev-token --dev --user nightly-k8s --roles f --source-id k8s:kind)
+
+          # --batch-size=1 is not optional when recording: the event recorder writes a line per
+          # event the graph answered for, and a batching emitter has not asked yet, so the
+          # default batch size produces payloads and no events.jsonl at all (live run
+          # 2026-09-16, finding 1).
+          nohup bin/aisre feed otel --source-id otel:kind \
+            --listen-grpc :4317 --listen-http :4318 --window 5m \
+            --batch-size 1 --record /tmp/live/rec/otel \
+            --server http://localhost:8080 --token "$otel_token" \
+            > /tmp/live/feed-otel.log 2>&1 &
+          sleep 2
+          nohup bin/aisre feed k8s \
+            --kubeconfig /tmp/sre-agent-feeder.kubeconfig --context sre-agent-feeder \
+            --source-id k8s:kind --cluster-name "$KIND_CLUSTER" --namespaces shop \
+            --owner-labels team --environment prod \
+            --batch-size 1 --record /tmp/live/rec/k8s \
+            --server http://localhost:8080 --token "$k8s_token" \
+            > /tmp/live/feed-k8s.log 2>&1 &
+          sleep 10
+          test -s /tmp/live/rec/k8s/events.jsonl \
+            || { echo '::error::the Kubernetes feeder recorded no events'; tail -50 /tmp/live/feed-k8s.log; exit 1; }
+
+      # Two aggregation windows plus the lateness allowance. Nothing to do but wait: this is the
+      # feeder's own clock, and a shorter baseline is a fixture whose "before" is one window.
+      - name: baseline
+        run: sleep $(( ${{ github.event.inputs.baseline_minutes || 12 }} * 60 ))
+
+      - name: roll payments
+        run: deploy/kind/scenarios/rollout.sh
+
+      # The window the rollout falls in, plus the one after it, plus the lateness allowance: the
+      # OTLP feeder reports a service.version transition from the window where the new version
+      # stands alone.
+      - name: settle
+        run: sleep $(( ${{ github.event.inputs.settle_minutes || 11 }} * 60 ))
+
+      - name: stop the feeders
+        run: |
+          pkill -f 'aisre feed otel' || true
+          pkill -f 'aisre feed k8s' || true
+          # The feeders flush their open windows on SIGTERM; give them the shutdown flush.
+          sleep 15
+          wc -l /tmp/live/rec/*/events.jsonl
+
+      - name: assemble the fixture
+        run: |
+          # pipefail: the pipe below ends in `tee`, whose status is always 0, so without this a
+          # failed assemble would be reported as a successful step.
+          set -o pipefail
+          bin/aisre fixture assemble --out "/tmp/live/$FIXTURE_ID" \
+            --id "$FIXTURE_ID" --family rollout-regression \
+            --description "Nightly live run: the minimal shop on kind, payments rolled mid-window." \
+            /tmp/live/rec/k8s /tmp/live/rec/otel | tee -a "$GITHUB_STEP_SUMMARY"
+          # The manifest a recording writes has no queries, so copy the ones the shipped
+          # rollout-regression fixture asks, together with its ground truth. That is what makes
+          # the nightly run comparable with the committed one rather than a fresh unknown.
+          python3 scripts/nightly-manifest.py \
+            "/tmp/live/$FIXTURE_ID/manifest.yaml" fixtures/rollout-regression-02/manifest.yaml
+          cat "/tmp/live/$FIXTURE_ID/manifest.yaml"
+
+      - name: record and verify the fixture
+        run: |
+          set -o pipefail
+          bin/aisre fixture record "/tmp/live/$FIXTURE_ID" --db "$PG_DSN" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          bin/aisre fixture verify "/tmp/live/$FIXTURE_ID" --report \
+            --report-json /tmp/live/nightly-report.jsonl --db "$PG_DSN" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          ./scripts/check-report.sh /tmp/live/nightly-report.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # SC-010. `fixture record` above replayed the recording into a database of its own and
+      # wrote golden/. This runs the same queries against the database the feeders wrote to as
+      # it happened, in the same canonical serialization, and compares the two directories.
+      # Silence means the graph built live and the graph rebuilt from the recording are the same
+      # graph — entity ids, valid intervals, observed times and extent block included.
+      - name: SC-010 live versus replayed
+        run: |
+          set -o pipefail
+          bin/aisre fixture export --db "$LIVE_DSN" \
+            --manifest "/tmp/live/$FIXTURE_ID/manifest.yaml" --out /tmp/live-export \
+            --compare "/tmp/live/$FIXTURE_ID" | tee -a "$GITHUB_STEP_SUMMARY"
+          # The command's own comparison is the gate (exit 4 when they differ); diff -r is run
+          # too, because a person reading a failed job wants the files, not a count.
+          diff -r /tmp/live-export "/tmp/live/$FIXTURE_ID/golden"
+
+      - name: collect logs
+        if: always()
+        run: |
+          mkdir -p /tmp/live/logs
+          cp /tmp/live/*.log /tmp/live/logs/ 2>/dev/null || true
+          kubectl --context "$KUBE_CONTEXT" get pods -A -o wide > /tmp/live/logs/pods.txt 2>&1 || true
+          kubectl --context "$KUBE_CONTEXT" logs -n shop-traffic --all-containers --tail=200 \
+            -l app.kubernetes.io/part-of=shop-traffic > /tmp/live/logs/emitters.txt 2>&1 || true
+
+      # The recording is the product of this job. It is uploaded whatever the outcome: a run
+      # that failed verification is exactly the recording somebody needs to look at.
+      - name: upload the recording
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-recording
+          path: |
+            /tmp/live/${{ env.FIXTURE_ID }}
+            /tmp/live/nightly-report.jsonl
+            /tmp/live/logs
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: tear down
+        if: always()
+        run: deploy/kind/down.sh || true

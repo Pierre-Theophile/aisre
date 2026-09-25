@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The full overlay: the real OpenTelemetry Demo, ~20 services, instrumented for real, with its
+# collector teed to sre-agent.
+#
+#   deploy/kind/otel-demo/fetch-upstream.sh          once, to populate upstream/
+#   kubectl apply -k deploy/kind/otel-demo/full --context kind-sre-agent-demo
+#
+# Without the fetch, `kubectl kustomize` fails with "must build at directory" /
+# "no such file or directory: upstream/opentelemetry-demo.yaml". That is deliberate: the
+# upstream manifest is 20k lines and is not vendored into this repository. The fetch script
+# pins the release and verifies a SHA-256, so what lands in upstream/ is reproducible.
+#
+# Pinned upstream: opentelemetry-demo 2.2.0 (collector image otel/opentelemetry-collector-contrib:0.135.0).
+# 2.2.0 is the last release that ships a rendered Kubernetes manifest; 3.0.0 dropped
+# kubernetes/opentelemetry-demo.yaml in favour of the Helm chart alone. Bumping past 2.2.0 means
+# rendering the chart yourself and regenerating collector-config.yaml.
+#
+# Cost: the demo wants roughly 6 GB of memory and 4 CPUs for Docker. If that is more than you
+# want to spend, use ../minimal, which is what the fixtures are recorded from.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - upstream/opentelemetry-demo.yaml
+  - host-endpoint.yaml
+
+patches:
+  # Replace the collector's configuration with the same configuration plus an OTLP/gRPC
+  # exporter aimed at the host, added to the traces pipeline.
+  - path: collector-config.yaml
+  # Give that exporter its endpoint.
+  - path: collector-deployment.yaml

@@ -1,0 +1,7 @@
+{"entries":[{
+  "insertId": "scale-1",
+  "logName": "projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity",
+  "timestamp": "2026-09-21T14:24:00Z",
+  "receiveTimestamp": "2026-09-21T14:24:20Z",
+  "protoPayload": {"serviceName": "compute.googleapis.com", "methodName": "compute.autoscalers.patch", "resourceName": "projects/twin-production/locations/europe-west1/services/storefront", "status": {}}
+}]}

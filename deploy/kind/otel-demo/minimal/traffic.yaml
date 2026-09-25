@@ -1,0 +1,469 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# ==============================================================================================
+# Span emitters: telemetrygen, one container per edge of the shop.
+# ==============================================================================================
+#
+# What this is
+# ------------
+# The four nginx pods in `shop` do not talk to each other; nothing in this overlay makes a real
+# request. The `calls` half of the graph comes from telemetrygen, the span generator that ships
+# with opentelemetry-collector-contrib. It is a single static binary in a 20 MB image, which is
+# the whole reason it is here rather than a collector or the full demo.
+#
+# How an edge is expressed
+# ------------------------
+# The OTLP topology feeder derives one edge per (service, peer.service | db.system +
+# server.address | http host) pair per window (research §11). telemetrygen gives us exactly
+# those two levers:
+#
+#   --otlp-attributes       resource attributes — set once for the process, shared by every
+#                           span it emits. This is the CALLER: service.name, service.namespace,
+#                           service.version, deployment.environment.name, k8s.*.
+#   --telemetry-attributes  span attributes — set on every span it emits. This is the CALLEE:
+#                           peer.service, or db.system + server.address + server.port for a
+#                           third party.
+#
+# Because the caller is a *resource* attribute, one process can only ever be one service. One
+# container per outbound edge is therefore not a stylistic choice: it is the only way to express
+# a fan-out with telemetrygen. checkout has three callees, so traffic-checkout has three
+# containers, all claiming service.name=checkout.
+#
+# What telemetrygen cannot do
+# ---------------------------
+# Every span of a run carries the same span attributes, so both spans of each generated trace
+# (the `lets-go` client span and its `okey-dokey-0` server child) carry the same peer.service.
+# The feeder aggregates per window, so the duplicate collapses into the one edge; it is noise,
+# not error. --child-spans=0 would remove it but panics in telemetrygen v0.161.0 (worker.go
+# passes an unset SpanEndOption to span.End when no child span is generated), so the default of
+# 1 is kept. Nothing here needs real parent/child propagation between services: the feeder
+# reads attributes, never trace assembly.
+#
+# The emitters live in `shop-traffic`, not `shop`
+# -----------------------------------------------
+# They impersonate the shop services in their OTLP resource attributes; they are not the shop.
+# Keeping them out means `shop` contains exactly the six workloads of
+# fixtures/baseline-topology-01. Note the deliberate absence of a
+# `resource.opentelemetry.io/service.name` annotation and of a `team` label on these
+# Deployments: annotating them would make the Kubernetes feeder claim, say,
+# otel.service.name=checkout for shop-traffic/traffic-checkout as well as for shop/checkout, and
+# that ambiguity is a fixture of its own (ambiguous-identity), not something to create here by
+# accident.
+#
+# Rate
+# ----
+# --rate is spans per second per worker, and it is set by what a *recording* of this cluster
+# has to weigh, not by what the cluster can push.
+#
+# telemetrygen exports one OTLP request per generated trace: --batch is on but the generator
+# flushes each trace, and --interval paces generation rather than the exporter, so there is no
+# flag that makes it send fewer, larger requests. `aisre feed otel --record` writes one
+# file per request (pkg/feeder/record/payloads.go), so payload files track traces one for one.
+# Measured on 2026-09-16 at the original --rate=2/1: 363 files and 3.4 MB per minute, i.e. ~20
+# MB and ~6000 files for one twelve-minute recording — which is not a fixture anybody can
+# review or ship, and recording fixtures is what this directory exists for.
+#
+# So the rates are chosen to straddle a published weight-class boundary (pkg/feeder/weight.go:
+# class 1 is < 0.1 rps, class 2 is < 1 rps) at the smallest volume that still says something:
+#
+#   --rate=0.5   the four busy edges   -> ~0.5 rps  -> weight class 2
+#   --rate=0.05  the four quiet edges  -> ~0.05 rps -> weight class 1
+#
+# Together that is ~1.1 traces/s, ~66 payload files and ~230 KB a minute: a twelve-minute
+# recording is ~800 files and under 3 MB.
+#
+# What this costs, and it is worth saying plainly: the hand-authored
+# fixtures/baseline-topology-01 spans classes 4, 3 and 2, and class 4 needs >= 10 rps on an
+# edge, which is >= 5 exports/s on one container. No choice of rates reaches class 4 and stays
+# shippable while one payload file is one export. Restoring the full class range needs payload
+# compaction in pkg/feeder/record (many OTLP requests per file), not a change here.
+# ==============================================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-storefront
+  namespace: shop-traffic
+  labels:
+    app.kubernetes.io/name: traffic-storefront
+    app.kubernetes.io/part-of: shop
+    sre.role: traffic-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traffic-storefront
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: traffic-storefront
+        app.kubernetes.io/part-of: shop
+        sre.role: traffic-generator
+    spec:
+      containers:
+        - name: to-checkout
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.161.0
+          args:
+            - traces
+            - --otlp-endpoint=$(OTLP_GRPC_ENDPOINT)
+            - --otlp-insecure
+            - --duration=inf
+            - --rate=0.5
+            - --workers=1
+            - --span-duration=25ms
+            # Keep running while `aisre feed otel` is down. Without this telemetrygen exits
+            # on the first export failure and the pod turns into a crash loop, which would make
+            # the feeder-gap scenario impossible to script.
+            - --allow-export-failures
+            - --otlp-attributes=service.name="storefront"
+            - --otlp-attributes=service.namespace="shop"
+            - --otlp-attributes=service.version="$(SERVICE_VERSION)"
+            - --otlp-attributes=deployment.environment.name="prod"
+            - --otlp-attributes=k8s.cluster.name="sre-agent-demo"
+            - --otlp-attributes=k8s.namespace.name="shop"
+            - --otlp-attributes=k8s.deployment.name="storefront"
+            - --telemetry-attributes=peer.service="checkout"
+          envFrom:
+            - configMapRef:
+                name: sre-agent-otlp
+          env:
+            - name: SERVICE_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: shop-versions
+                  key: storefront
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 96Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-checkout
+  namespace: shop-traffic
+  labels:
+    app.kubernetes.io/name: traffic-checkout
+    app.kubernetes.io/part-of: shop
+    sre.role: traffic-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traffic-checkout
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: traffic-checkout
+        app.kubernetes.io/part-of: shop
+        sre.role: traffic-generator
+    spec:
+      containers:
+        - name: to-payments
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.161.0
+          args:
+            - traces
+            - --otlp-endpoint=$(OTLP_GRPC_ENDPOINT)
+            - --otlp-insecure
+            - --duration=inf
+            - --rate=0.5
+            - --workers=1
+            - --span-duration=25ms
+            - --allow-export-failures
+            - --otlp-attributes=service.name="checkout"
+            - --otlp-attributes=service.namespace="shop"
+            - --otlp-attributes=service.version="$(SERVICE_VERSION)"
+            - --otlp-attributes=deployment.environment.name="prod"
+            - --otlp-attributes=k8s.cluster.name="sre-agent-demo"
+            - --otlp-attributes=k8s.namespace.name="shop"
+            - --otlp-attributes=k8s.deployment.name="checkout"
+            - --telemetry-attributes=peer.service="payments"
+          envFrom:
+            - configMapRef:
+                name: sre-agent-otlp
+          env:
+            - name: SERVICE_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: shop-versions
+                  key: checkout
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 96Mi
+        - name: to-inventory
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.161.0
+          args:
+            - traces
+            - --otlp-endpoint=$(OTLP_GRPC_ENDPOINT)
+            - --otlp-insecure
+            - --duration=inf
+            - --rate=0.5
+            - --workers=1
+            - --span-duration=25ms
+            - --allow-export-failures
+            - --otlp-attributes=service.name="checkout"
+            - --otlp-attributes=service.namespace="shop"
+            - --otlp-attributes=service.version="$(SERVICE_VERSION)"
+            - --otlp-attributes=deployment.environment.name="prod"
+            - --otlp-attributes=k8s.cluster.name="sre-agent-demo"
+            - --otlp-attributes=k8s.namespace.name="shop"
+            - --otlp-attributes=k8s.deployment.name="checkout"
+            - --telemetry-attributes=peer.service="inventory"
+          envFrom:
+            - configMapRef:
+                name: sre-agent-otlp
+          env:
+            - name: SERVICE_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: shop-versions
+                  key: checkout
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 96Mi
+        - name: to-redis
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.161.0
+          args:
+            - traces
+            - --otlp-endpoint=$(OTLP_GRPC_ENDPOINT)
+            - --otlp-insecure
+            - --duration=inf
+            - --rate=0.05
+            - --workers=1
+            - --span-duration=5ms
+            - --allow-export-failures
+            - --otlp-attributes=service.name="checkout"
+            - --otlp-attributes=service.namespace="shop"
+            - --otlp-attributes=service.version="$(SERVICE_VERSION)"
+            - --otlp-attributes=deployment.environment.name="prod"
+            - --otlp-attributes=k8s.cluster.name="sre-agent-demo"
+            - --otlp-attributes=k8s.namespace.name="shop"
+            - --otlp-attributes=k8s.deployment.name="checkout"
+            # redis is a third party identified by peer.service *and* its address, exactly as
+            # fixtures/baseline-topology-01 records it (THIRD_PARTY, db.system=redis,
+            # server.address=redis.shop.svc.cluster.local, server.port=6379).
+            - --telemetry-attributes=peer.service="redis"
+            - --telemetry-attributes=db.system="redis"
+            - --telemetry-attributes=server.address="redis.shop.svc.cluster.local"
+            - --telemetry-attributes=server.port=6379
+          envFrom:
+            - configMapRef:
+                name: sre-agent-otlp
+          env:
+            - name: SERVICE_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: shop-versions
+                  key: checkout
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 96Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-payments
+  namespace: shop-traffic
+  labels:
+    app.kubernetes.io/name: traffic-payments
+    app.kubernetes.io/part-of: shop
+    sre.role: traffic-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traffic-payments
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: traffic-payments
+        app.kubernetes.io/part-of: shop
+        sre.role: traffic-generator
+    spec:
+      containers:
+        - name: to-payments-db
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.161.0
+          args:
+            - traces
+            - --otlp-endpoint=$(OTLP_GRPC_ENDPOINT)
+            - --otlp-insecure
+            - --duration=inf
+            - --rate=0.5
+            - --workers=1
+            - --span-duration=15ms
+            - --allow-export-failures
+            - --otlp-attributes=service.name="payments"
+            - --otlp-attributes=service.namespace="shop"
+            - --otlp-attributes=service.version="$(SERVICE_VERSION)"
+            - --otlp-attributes=deployment.environment.name="prod"
+            - --otlp-attributes=k8s.cluster.name="sre-agent-demo"
+            - --otlp-attributes=k8s.namespace.name="shop"
+            - --otlp-attributes=k8s.deployment.name="payments"
+            # No peer.service: the fixture keys this third party on server.address, so the
+            # feeder must not find a service name to prefer over it.
+            - --telemetry-attributes=db.system="postgresql"
+            - --telemetry-attributes=db.namespace="payments"
+            - --telemetry-attributes=server.address="payments-db.shop.svc.cluster.local"
+            - --telemetry-attributes=server.port=5432
+          envFrom:
+            - configMapRef:
+                name: sre-agent-otlp
+          env:
+            - name: SERVICE_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: shop-versions
+                  key: payments
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 96Mi
+        - name: to-stripe
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.161.0
+          args:
+            - traces
+            - --otlp-endpoint=$(OTLP_GRPC_ENDPOINT)
+            - --otlp-insecure
+            - --duration=inf
+            - --rate=0.05
+            - --workers=1
+            - --span-duration=120ms
+            - --allow-export-failures
+            - --otlp-attributes=service.name="payments"
+            - --otlp-attributes=service.namespace="shop"
+            - --otlp-attributes=service.version="$(SERVICE_VERSION)"
+            - --otlp-attributes=deployment.environment.name="prod"
+            - --otlp-attributes=k8s.cluster.name="sre-agent-demo"
+            - --otlp-attributes=k8s.namespace.name="shop"
+            - --otlp-attributes=k8s.deployment.name="payments"
+            # An external host, reached over HTTPS. Nothing is sent anywhere: these are span
+            # attributes describing a call that never happens.
+            - --telemetry-attributes=server.address="api.stripe.com"
+            - --telemetry-attributes=server.port=443
+            - --telemetry-attributes=url.scheme="https"
+            - --telemetry-attributes=http.request.method="POST"
+          envFrom:
+            - configMapRef:
+                name: sre-agent-otlp
+          env:
+            - name: SERVICE_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: shop-versions
+                  key: payments
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 96Mi
+        - name: to-redis
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.161.0
+          args:
+            - traces
+            - --otlp-endpoint=$(OTLP_GRPC_ENDPOINT)
+            - --otlp-insecure
+            - --duration=inf
+            - --rate=0.05
+            - --workers=1
+            - --span-duration=5ms
+            - --allow-export-failures
+            - --otlp-attributes=service.name="payments"
+            - --otlp-attributes=service.namespace="shop"
+            - --otlp-attributes=service.version="$(SERVICE_VERSION)"
+            - --otlp-attributes=deployment.environment.name="prod"
+            - --otlp-attributes=k8s.cluster.name="sre-agent-demo"
+            - --otlp-attributes=k8s.namespace.name="shop"
+            - --otlp-attributes=k8s.deployment.name="payments"
+            - --telemetry-attributes=peer.service="redis"
+            - --telemetry-attributes=db.system="redis"
+            - --telemetry-attributes=server.address="redis.shop.svc.cluster.local"
+            - --telemetry-attributes=server.port=6379
+          envFrom:
+            - configMapRef:
+                name: sre-agent-otlp
+          env:
+            - name: SERVICE_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: shop-versions
+                  key: payments
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 96Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-inventory
+  namespace: shop-traffic
+  labels:
+    app.kubernetes.io/name: traffic-inventory
+    app.kubernetes.io/part-of: shop
+    sre.role: traffic-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traffic-inventory
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: traffic-inventory
+        app.kubernetes.io/part-of: shop
+        sre.role: traffic-generator
+    spec:
+      containers:
+        - name: to-redis
+          image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.161.0
+          args:
+            - traces
+            - --otlp-endpoint=$(OTLP_GRPC_ENDPOINT)
+            - --otlp-insecure
+            - --duration=inf
+            - --rate=0.05
+            - --workers=1
+            - --span-duration=5ms
+            - --allow-export-failures
+            - --otlp-attributes=service.name="inventory"
+            - --otlp-attributes=service.namespace="shop"
+            - --otlp-attributes=service.version="$(SERVICE_VERSION)"
+            - --otlp-attributes=deployment.environment.name="prod"
+            - --otlp-attributes=k8s.cluster.name="sre-agent-demo"
+            - --otlp-attributes=k8s.namespace.name="shop"
+            - --otlp-attributes=k8s.deployment.name="inventory"
+            - --telemetry-attributes=peer.service="redis"
+            - --telemetry-attributes=db.system="redis"
+            - --telemetry-attributes=server.address="redis.shop.svc.cluster.local"
+            - --telemetry-attributes=server.port=6379
+          envFrom:
+            - configMapRef:
+                name: sre-agent-otlp
+          env:
+            - name: SERVICE_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: shop-versions
+                  key: inventory
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 96Mi

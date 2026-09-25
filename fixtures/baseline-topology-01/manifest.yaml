@@ -1,0 +1,92 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Recorded live on 2026-09-16 from the kind cluster of deploy/kind/ (T058, T063, FR-044,
+# FR-050 b). payloads/ is what the two feeders actually received; events.jsonl is what they
+# emitted into a graph that had never seen them, with the observed times that graph assigned.
+# docs/benchmarks/live-run-2026-09-16.md is the run itself: environment, timeline and every
+# way the recording differs from the hand-authored fixture it replaces.
+id: baseline-topology-01
+family: baseline-topology
+description: >-
+  The shop topology of deploy/kind/otel-demo/minimal as two real feeders saw it, recorded from
+  a disposable kind cluster. A Kubernetes feeder scoped to namespace `shop` (workloads, the
+  cluster and both node pools, config and secret versions, Services and an Ingress, owners from
+  the `team` label, one identity claim per workload) and an OpenTelemetry topology feeder
+  aggregating telemetrygen spans into five-minute windows (four services, three third parties,
+  eight calls edges in weight classes 1 and 2). The shop does not change during the window, so
+  every query at any instant after the first observation returns the same graph. Exercises
+  subgraph as-of, hub truncation, impact, pointers, extent and the before-history case.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+
+sources:
+  - source_id: k8s:kind
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+  - source_id: otel:kind
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-16T09:38:31Z
+  # Widened from 2026-09-16T09:51:22Z (004 T153): the recorder took the window from the payloads alone, and
+  # the feeder's final events were observed 300 ms after the last payload arrived, outside it.
+  end:   2026-09-16T09:51:23Z
+
+queries:
+  - name: checkout-2hop
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-16T09:51:22Z
+    hops: 2
+    direction: both
+  - name: redis-3hop-cap5
+    kind: subgraph
+    focus: otel.service.name=redis
+    valid_at: 2026-09-16T09:51:22Z
+    hops: 3
+    direction: both
+    per_hop_cap: 5                  # expects truncation (US1 scenario 3)
+  - name: before-history
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-08-01T00:00:00Z  # before the first observation
+    hops: 2
+    direction: both
+    # The one answer in this corpus that is MEANT to hold nothing: the graph is asked what it held
+    # before it held anything, and nothing is the right answer. Declared because T151 refuses an
+    # undeclared empty golden — an empty golden reads as coverage and compares equal to itself for
+    # ever, which is how eight deploy fixtures asserted nothing for months (T150).
+    expect_empty: >-
+      asked before the first observation, so the graph was watching nothing yet; the emptiness IS
+      the assertion, and truncation.reason says before_recorded_history rather than the query
+      having found an absence
+  - name: payments-impact
+    kind: impact
+    focus: otel.service.name=payments
+    valid_at: 2026-09-16T09:51:22Z
+  - name: payments-pointers-end
+    kind: pointers
+    focus: otel.service.name=payments
+    valid_at: 2026-09-16T09:51:22Z
+  - name: payments-pointers-mid
+    kind: pointers
+    focus: otel.service.name=payments
+    valid_at: 2026-09-16T09:45:00Z   # the graph is stable, so this must equal -end
+  - name: extent
+    kind: extent
+
+# rejected.jsonl is the one part of this fixture that is not a recording, and cannot be: a
+# feeder never emits a telemetry payload, so no cluster can produce the event SC-009 needs.
+# It is the hand-authored extension fixtures/README.md documents, re-pointed at the recorded
+# source and clock. `fixture verify` submits it after the accepted stream and asserts the
+# refusal and that the graph is unchanged.
+rejected_events: rejected.jsonl
+
+expect_rejected:
+  - event_id: otel:kind:bad-span-props-1
+    reason_code: telemetry_payload  # props.latency_samples is an array of numeric samples

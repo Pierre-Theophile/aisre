@@ -1,0 +1,45 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: github-deployment-01
+family: github
+description: 'One production deployment of one repository, rolled out at the platform''s completion instant. The deployment''s log_url carries a query string with a token in it, which is exactly where one arrives in practice: no pointer this feeder mints may carry it (FR-014). The run is matched to the deployment by head sha, because GitHub''s deployment object does not name the run that created it. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-03-01T14:00:00Z
+    end: 2026-03-01T15:30:00Z
+queries:
+  # The rollout itself, at the instant it happened. Nothing in this fixture describes its
+  # target, so the change stands alone with k8s.deployment=shop/storefront listed as
+  # unattached (FR-028): kept, not dropped, and linked when the target shows up. "What
+  # changed on storefront?" is a diff focused on the service, which
+  # deploy-cross-source-merge-01 asks (T152).
+  - name: rollout-2hop
+    kind: subgraph
+    focus: github.change=repositories/555/deployments/4321/targets/k8s.deployment/shop/storefront
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 2
+    direction: both
+  # The pointers the change carries: the deployment's and the run's SOURCE_LINKs
+  # and the run's LOG pointer — none of them carrying the token the status payload
+  # put in its log_url (FR-014).
+  - name: rollout-pointers
+    kind: pointers
+    focus: github.change=repositories/555/deployments/4321/targets/k8s.deployment/shop/storefront
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z
+  # The extent: `not present` and `not read at that time` are different answers.
+  - name: extent
+    kind: extent
+    valid_at: 2026-03-01T15:30:00Z
+    observed_at: 2026-03-01T15:30:00Z

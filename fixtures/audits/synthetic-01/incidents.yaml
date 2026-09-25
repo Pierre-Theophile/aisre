@@ -1,0 +1,172 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# A SYNTHETIC coverage-audit input (spec 002 User Story 0, FR-069 to FR-071b).
+#
+# Every incident below is invented. None of it is, is derived from, or is a reconstruction of a
+# real incident: the references are sequential, the dates are evenly spread across a nominal
+# nine months, and the categories were chosen to reproduce the SHAPE of the published September
+# 2026 aggregate (docs/evaluation/coverage-audit-2026-09.md) and nothing else about it.
+#
+# The categories use the finer members migration 0007 added on 2026-09-17, where the shape calls
+# for them: the deploy rung carries a `deployment` and a `configuration_change` (which is what
+# revision and CI/CD feeders actually carry), the vendor rung a `cloud_maintenance` and a
+# `vendor_api_change` (one per vendor feeder: maintenance notices, API changelogs), and the
+# symptom-only pair a `capacity_limit` — the vendor quota behaviour the published aggregate
+# describes. Only the categories moved: the verdicts, the ceiling and π₀ below are the same
+# numbers this fixture has always asserted. `other` is now absent as well as `credential_leak`,
+# which is the point of 0007: a real cause should have a real member.
+#
+# It reproduces that shape exactly, so the arithmetic the tests assert is the arithmetic the
+# published audit rests on:
+#
+#   feature-001 feeders only   0 of 13 observed, 2 symptom-only, 11 unobservable   ->  0 %
+#   + deploy feeders           3 of 13 observed, 2 symptom-only,  8 unobservable   -> 23 %
+#   + vendor-notice feeders    8 of 13 observed, 2 symptom-only,  3 unobservable   -> 62 %
+#
+#   ceiling = 8/13 = 0.615385     pi_0 = 1 - ceiling = 0.384615
+#
+# The unobservable remainder here is latent_bug, client_side_configuration and
+# business_data_change — three of the four categories the published audit names. credential_leak
+# is deliberately absent, so a reader can see that the remainder is whatever the list says it is
+# rather than a fixed set, and so the corpus-gap detector has a category it must NOT report.
+
+version: 1
+audit_id: synthetic-01
+run_at: 2026-09-17
+author: fixture|synthetic-auditor
+
+corpus:
+  label: synthetic-org
+  from: 2025-12-01
+  to: 2026-08-31
+  excluded:
+    - ref: SYN-X1
+      reason: security_incident
+    - ref: SYN-X2
+      reason: security_incident
+    - ref: SYN-X3
+      reason: unclassifiable
+
+# Cumulative: each set is the one below it plus the feeders it names.
+feeder_sets:
+  - name: feature-001
+    order: 1
+    feeders: [otel.spans, kubernetes.workloads]
+  - name: +deploy
+    order: 2
+    feeders: [serverless.revisions, cicd.deploys, frontend.hosting]
+  - name: +vendor-notice
+    order: 3
+    feeders: [vendor.status_pages, vendor.maintenance_notices, vendor.api_changelogs]
+
+incidents:
+  # --- observable once deploy feeders exist (3) -------------------------------------------
+  - ref: SYN-01
+    alert_at: 2025-12-04
+    cause: {category: deployment, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: observed
+      +vendor-notice: observed
+
+  - ref: SYN-02
+    alert_at: 2025-12-19
+    cause: {category: db_migration, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: observed
+      +vendor-notice: observed
+
+  - ref: SYN-03
+    alert_at: 2026-01-09
+    cause: {category: configuration_change, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: observed
+      +vendor-notice: observed
+
+  # --- observable only once vendor notices are fed (5) ------------------------------------
+  - ref: SYN-04
+    alert_at: 2026-01-27
+    cause: {category: third_party_outage, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: observed
+
+  - ref: SYN-05
+    alert_at: 2026-02-13
+    cause: {category: third_party_outage, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: observed
+
+  - ref: SYN-06
+    alert_at: 2026-03-02
+    cause: {category: third_party_outage, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: observed
+
+  - ref: SYN-07
+    alert_at: 2026-03-24
+    cause: {category: cloud_maintenance, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: observed
+
+  - ref: SYN-08
+    alert_at: 2026-04-11
+    cause: {category: vendor_api_change, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: observed
+
+  # --- symptom visible, cause external at every rung (2) ----------------------------------
+  # These are the incidents the ceiling must NOT count: the graph would have shown the effect
+  # and never the cause, and a ceiling that folded them in would be a recall bound no engine
+  # could reach.
+  - ref: SYN-09
+    alert_at: 2026-05-06
+    cause: {category: traffic_shift, class: change_induced}
+    observability:
+      feature-001: symptom_only
+      +deploy: symptom_only
+      +vendor-notice: symptom_only
+
+  - ref: SYN-10
+    alert_at: 2026-06-01
+    cause: {category: capacity_limit, class: change_induced}
+    observability:
+      feature-001: symptom_only
+      +deploy: symptom_only
+      +vendor-notice: symptom_only
+
+  # --- the unobservable remainder (3): each category owes the corpus a fixture (FR-071b) ---
+  - ref: SYN-11
+    alert_at: 2026-06-28
+    cause: {category: latent_bug, class: unobserved}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: not_observable
+
+  - ref: SYN-12
+    alert_at: 2026-07-20
+    cause: {category: client_side_configuration, class: not_change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: not_observable
+
+  - ref: SYN-13
+    alert_at: 2026-08-14
+    cause: {category: business_data_change, class: not_change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: not_observable

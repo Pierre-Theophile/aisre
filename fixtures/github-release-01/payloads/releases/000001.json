@@ -1,0 +1,13 @@
+{"repository":"acme/storefront","releases":[{"id":7001,"tag_name":"v1.2.3","name":"v1.2.3","target_commitish":"8f5bd3c0b0e4a1d2c3f4a5b6c7d8e9f0a1b2c3d4","draft":false,
+		"prerelease":false,"created_at":"2026-03-01T14:00:00Z","published_at":"2026-03-01T14:05:00Z",
+		"author":{"login":"ada","id":1,"type":"User"},
+		"html_url":"https://github.com/acme/storefront/releases/tag/v1.2.3"},{"id":7002,"tag_name":"v1.3.0-rc1","name":"v1.3.0-rc1","target_commitish":"1a2b3c4d5e6f70819a2b3c4d5e6f70819a2b3c4d","draft":false,
+		"prerelease":true,"created_at":"2026-03-01T14:00:00Z","published_at":"2026-03-01T14:10:00Z",
+		"author":{"login":"ada","id":1,"type":"User"},
+		"html_url":"https://github.com/acme/storefront/releases/tag/v1.3.0-rc1"},{"id":7003,"tag_name":"v1.3.0","name":"v1.3.0","target_commitish":"main","draft":false,
+		"prerelease":false,"created_at":"2026-03-01T14:00:00Z","published_at":"2026-03-01T14:15:00Z",
+		"author":{"login":"ada","id":1,"type":"User"},
+		"html_url":"https://github.com/acme/storefront/releases/tag/v1.3.0"},{"id":7004,"tag_name":"v1.4.0","name":"v1.4.0","target_commitish":"8f5bd3c0b0e4a1d2c3f4a5b6c7d8e9f0a1b2c3d4","draft":true,
+		"prerelease":false,"created_at":"2026-03-01T14:00:00Z","published_at":"2026-03-01T14:20:00Z",
+		"author":{"login":"ada","id":1,"type":"User"},
+		"html_url":"https://github.com/acme/storefront/releases/tag/v1.4.0"}]}

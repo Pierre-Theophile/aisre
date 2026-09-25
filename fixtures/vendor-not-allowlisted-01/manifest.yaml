@@ -1,0 +1,32 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: vendor-not-allowlisted-01
+family: vendor-notice
+description: 'Three announcements read, one acted on. One names a vendor nobody allowlisted, one names an allowlisted vendor and a product this organisation does not use, and one is in scope. The two drops are counted and carry their reasons, which is what makes "the graph knows about no upcoming vendor change" distinguishable from "the feeder dropped forty announcements" — only one of those is good news. Synthetic structural twin: no identifier is derived from the organisation and no vendor it depends on appears (contracts/sanitisation.md §7). The payloads are already the sanitised form — the six typed fields and a pointer — because that is the shape the source emits, so no body and no sender exists to remove (FR-071, FR-072).'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: vendor-notice:twin
+      kind: vendor-notice
+      ordering: none
+      reordering_window: 6h0m0s
+clock:
+    start: 2026-09-17T10:00:00Z
+    end: 2026-10-02T05:00:00Z
+
+queries:
+  # Only the in-scope announcement is in the graph. The other two exist as counted drops in the
+  # cycle report and nowhere else — never emitted "just in case" (FR-059).
+  - name: vendor-2hop
+    kind: subgraph
+    focus: vendor=twin-gpu
+    valid_at: 2026-10-02T03:00:00Z
+    observed_at: 2026-09-18T12:00:00Z
+    hops: 2
+    direction: both
+  - name: extent
+    kind: extent

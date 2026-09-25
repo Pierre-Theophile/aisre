@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The model configuration this feature runs in production, and therefore the one every
+# evaluation run must use and record (002 FR-061, plan §Model configuration §Providers).
+#
+# Production runs **Mistral**, which also serves the GLM models: the investigator is
+# `zai-glm-5-3`, a large thinking model with a 1M context at a fraction of the price of the
+# frontier reasoning models. The Anthropic configuration is kept beside this one as
+# `config/model.anthropic.yaml`, valid and priced, so switching back is a flag:
+#
+#     aisre serve --enable-investigation --model-config config/model.anthropic.yaml
+#
+# Each role names its `provider`, and the credential follows the provider: `$MISTRAL_API_KEY`
+# for mistral, `$ANTHROPIC_API_KEY` for anthropic. A command that cannot resolve the credential
+# its configuration names runs model-free and logs which variable was missing, rather than
+# failing on the first turn of an incident.
+#
+# FR-061 asks for what can actually be recorded: the model identifier, the provider, the
+# reasoning effort, the output settings and the beta set — together with the price-table version
+# — not a temperature. No sampling parameter is sent to either provider: the Anthropic models
+# reject them outright, and on Mistral they would be a knob nobody evaluated set to a value
+# nobody recorded a reason for.
+#
+# Every investigation stores a copy of this document in `investigation.investigations.model_config`
+# and in the `record_investigation` decision record, so a run stays interpretable after the
+# configuration changes. Changing anything here is a change that must be evaluated: the file is
+# versioned, and `version` is recorded with every run.
+
+version: "1.1.0"
+
+# Three roles, three models. The split is deliberate: the verifier runs a different model from
+# the investigator so that the error it exists to catch is decorrelated from the error that
+# produced it (FR-022a), and the logs labeller is the cheapest model on the platform because its
+# input is masked templates and counts and nothing else.
+roles:
+  investigator:
+    provider: mistral
+    model: zai-glm-5-3
+    purpose: >-
+      The investigation loop. A cheap large thinking model: reasoning and function calling both
+      on, and a 1,048,576-token context the ledger render and the evidence table are read
+      against — the same order of context the Anthropic investigator was chosen for, at roughly
+      a seventh of the input price.
+    # Mistral's spelling of the effort ladder is `reasoning_effort`, and its published set stops
+    # at `xhigh`; `max` exists only on the Anthropic side, which is why the two sets are
+    # validated separately rather than as a union.
+    effort: high
+    # On this provider `thinking_display` is a statement about what is recorded, not a request
+    # parameter: GLM returns its reasoning as a `thinking` chunk whether or not anything asks
+    # for it. The provider decodes that chunk into a thinking block, which keeps it out of the
+    # text the engine reasons over and puts it in the trajectory — which is exactly what
+    # `summarized` buys on the Anthropic side.
+    thinking_display: summarized
+
+  verifier:
+    provider: mistral
+    model: mistral-medium-latest
+    purpose: >-
+      The fresh-context pass that checks every rendered claim back against the evidence it cites
+      (FR-022a). A different model from the investigator, from a different family than GLM, so
+      the error it exists to catch is decorrelated from the error that produced it. A mechanical
+      claim-to-citation check, not open-ended reasoning.
+    # No effort: the check is mechanical, and a reasoning budget here would buy latency. The
+    # parameter is simply not sent.
+    effort: ""
+    thinking_display: ""
+
+  logs_labeller:
+    provider: mistral
+    model: ministral-8b-latest
+    purpose: >-
+      The optional labelling pass over mined log templates (FR-009a). Bounded, template-only
+      input; the model never sees a raw line, and the digest states what it added over the
+      algorithm. The cheapest model on the platform that still calls functions.
+    # No effort and no thinking: this model reports `reasoning: false`, and labelling a masked
+    # template is not a reasoning task.
+    effort: ""
+    thinking_display: ""
+
+# The beta features the engine depends on.
+#
+# Empty here, and that is a provider fact rather than a change of mind: `anthropic-beta` is an
+# Anthropic header, and the beta this engine depends on there — the per-turn ledger re-render
+# with `clear_at: "next_user_message"` — has no equivalent on Mistral. The same requirement is
+# met by rewriting the single system message each turn, which
+# `internal/investigation/model/mistral.go` documents and `contracts/prompting.md` §Providers
+# states: the stable prefix first, then whichever turn-scoped renders are still live, with the
+# cleared ones dropped rather than accumulated. The injection barrier is untouched either way —
+# worker output reaches the model only ever as a `tool` message (FR-017).
+#
+# `config/model.anthropic.yaml` still declares the beta, because there it is still needed.
+betas: []
+
+# The price table in force. Cost is recorded twice — as raw token counts per model and class,
+# which is the provider-independent unit that aggregates over time (FR-048), and as a derived
+# monetary figure from this table — so a historical cost stays interpretable after prices move.
+price_table_version: "2026-09-18"

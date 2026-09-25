@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Go toolchain plus a build cache that actually belongs to the job using it.
+#
+# setup-go's own cache is keyed on OS, arch, Go version and go.sum — nothing about the job. Every
+# job in ci.yml therefore shared one key, and the first job to finish saved it: the schema job,
+# forty seconds in, with a build cache holding two protoc plugins. Every other job restored that,
+# compiled the whole module from scratch (`go vet` 288 s, `make build` 136–209 s) and could not
+# save, because the key was taken. The cache was restored on every run and helped none of them.
+#
+# Here the key carries the job id, so `test` (race-instrumented objects) and `lint` (vet facts)
+# each keep their own. It also carries the ISO week: the build cache is content-addressed, so a
+# stale one is still mostly hits, but a key that never changes would never pick up new packages.
+# One save per job per week (or per go.sum change), falling back to the newest older one.
+name: setup Go with a per-job cache
+description: actions/setup-go without its shared cache, plus a build and module cache keyed by job.
+
+inputs:
+  go-version:
+    description: Go version to install
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        check-latest: true
+        cache: false
+
+    - id: week
+      shell: bash
+      run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}-${{ steps.week.outputs.week }}
+        restore-keys: |
+          go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.go-version }}-${{ hashFiles('**/go.sum') }}-
+          go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.go-version }}-

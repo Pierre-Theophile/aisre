@@ -1,0 +1,322 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: slow-burn-01
+family: slow-burn
+description: >-
+  FR-062b / SC-021, the first of the three adversarial fixtures: the culprit is THREE HOURS old
+  when the page arrives, and the deterministic prior ranks it last.
+
+  At 11:32 a ConfigMap edit lowers payments' connection-pool ceiling from 64 to 8. Nothing
+  breaks at 11:32 in the way a rollout regression breaks: eight connections are enough for the
+  late-morning request rate, and the pool only starts refusing work as the afternoon traffic
+  climbs against it. The monitor on checkout fires at 14:32, three hours and no minutes after
+  the change that caused it.
+
+  In between, two fresher changes land inside the last half hour — a scheduled inventory
+  rollout at 14:05 and the autoscaler widening storefront at 14:18 — and a third, a storefront
+  rollout at 10:50, sits 42 minutes the other side of the onset. The prior's temporal term is
+  `exp(-dt/tau)` with tau = 1800 s, so at dt = 10800 s the culprit's temporal weight is
+  exp(-6) = 0.002479 and it finishes FOURTH of four. `prior_rank_of_culprit: 4` below is read
+  off `golden/diff.checkout-diff.json`, which is the prior's own answer recorded as a file; it
+  is not an estimate.
+
+  That is the whole point of the fixture. Lift over the prior (FR-061a) is the investigator's
+  mean reciprocal rank minus the ranker's, and on a corpus where the prior is already right the
+  best an investigator can do is not make things worse. Here the prior contributes 1/4 and
+  every bit of the distance from 0.25 to 1.0 has to be earned with evidence: the onset estimate
+  puts the symptom at 11:32, which exonerates both fresh candidates on causal ordering alone,
+  and payments' own error rate is the thing that moved.
+
+  There is a second trap in the recorded world, and it is the one that catches an investigator
+  who never questions the alert instant. Referenced to 14:32 — which is what the deterministic
+  engine falls back to, because it estimates onset on the SUBJECT's pointer and checkout's own
+  series is flat — payments' error-rate comparison reads `flat`: 25.9 % against 25.7 %, because
+  by 14:32 both halves of the pair are inside the symptom. Referenced to the true onset at
+  11:32 the same comparison reads 1.07 % against 25.58 %, `up`, relative delta 22.8. Both
+  answers are in `world/` and both are correct; only one of them is an answer to the question.
+  Finding the onset first is therefore not a nicety on this fixture, it is the fixture.
+
+  A note on the shape, so that a reader can check the story against the telemetry. This fixture
+  declares `world.shape: slow-burn`, and the generator produces what the story describes: the
+  ConfigMap lowers a ceiling onto payments — a pool sized just above its baseline demand — and
+  demand then climbs into it over the afternoon under a 0.6 diurnal amplitude (trough at 04:00
+  UTC, peak at 16:00). Payments' error rate is about 3.8x baseline when the change lands at
+  11:32 and about 10.5x when the page arrives at 14:32: a burn that starts small and is nearly
+  three times worse three hours later, which is what "nobody noticed for three hours" actually
+  looks like. The ONSET is still the change instant — the ceiling bites from the moment it is
+  lowered, mildly — which is why the onset predicate below reads 11:32 and not some later
+  instant where the burn became obvious. The degradation also propagates to checkout, so the
+  subject's own series moves and `onset` on the subject has something real to find. The
+  adversarial property under test — the culprit's temporal distance from the alert and what
+  that does to the prior — is carried by the event log and is unchanged by the shape.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T10:30:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  # The prior, as a file. t1 is `fired_at - lookback`, exactly the window the engine's own
+  # `diff` call uses, so this golden IS the ranking `prior_rank_of_culprit` is read from.
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T10:32:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: payments-history
+    kind: history
+    focus: otel.service.name=payments
+
+ground_truth:
+  culprit_change: k8s.change=shop/payments-pool@rv5512
+  expected_top_k: 4
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20311:group=env:prod"
+    statement: "checkout error rate above 5 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    # Four hours, not ninety minutes. A ninety-minute lookback would put the culprit outside
+    # the window altogether and the fixture would be testing whether the engine can name a
+    # change it was never shown, which is a different and much less interesting question. The
+    # lookback is the one knob that has to be right for a slow burn, and stating it here is the
+    # fixture saying so. `engine.CompareHalfWidth` caps the comparison half-width at 30 minutes
+    # regardless, so the wider lookback widens the SEARCH for the onset and not the windows the
+    # comparisons are measured over.
+    lookback: 240m
+    profile: page
+
+  ground_truth:
+    culprit: k8s.change=shop/payments-pool@rv5512
+    causal_path:
+      - entity: k8s.change=shop/payments-pool@rv5512
+        via: changed-by
+        role: cause
+      - entity: otel.service.name=payments
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          onset:
+            pointer: "METRIC otel.service.name=payments"
+            search_window: "2026-09-01T10:32:00Z..2026-09-01T14:32:00Z"
+            method: SEASONAL_CUSUM
+        field_path: estimated_onset
+        op: eq
+        value: 2026-09-01T11:32:00Z
+        note: >-
+          the single predicate the whole fixture turns on, and it is in the recorded world: the
+          onset over the full four-hour search window lands on 11:32:00Z exactly. The symptom
+          did NOT start when the monitor fired. Every candidate change after that instant is an
+          effect or a coincidence, and the two fresh ones the prior prefers are both after it by
+          more than two and a half hours. The search window is the whole four-hour lookback,
+          which is why the lookback is what it is: the same term asked over the hour around the
+          alert instant — which the world also holds, because the recorder derives it from the
+          engine's comparison pair — answers `unavailable: no_crossing`, since by then the step
+          is behind both halves of the window.
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=payments"
+            window: "2026-09-01T11:32:00Z..2026-09-01T11:47:00Z"
+            version_attribute: service.version
+        field_path: versions[version=rv5512].error_rate
+        op: gt
+        value: 0.04
+        note: >-
+          requests on the configuration revision the change rolled are already failing in the
+          first quarter-hour after it, which is what makes the knowability instant 11:47 rather
+          than 14:32. The threshold is read off the re-recorded world: under `world.shape:
+          slow-burn` rv5512 reads 4.2640 % over 11:32..11:47 (36 errors in 861 requests) against
+          a 1.0737 % baseline, so the floor that the first quarter-hour clears is 4 % and not
+          the 5 % the step shape cleared by an order of magnitude. The burn keeps growing — the
+          same term over 11:32..12:02 reads 4.7526 % and over 14:02..14:32 reads 11.2286 % —
+          which is the shape, and 4 % is the figure that makes the first quarter-hour decisive.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=payments"
+            windows: {reference_at: 2026-09-01T11:32:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: up
+        note: >-
+          up across the onset, and `separable`: 1.0737 % against 4.2202 % over the quarter-hour
+          pair referenced to 11:32, a relative delta of 2.93. This is the comparison an
+          investigator only asks once it has stopped believing the alert instant is the
+          reference instant, and the re-recorded world says why in one line. The pair the engine
+          derives for the alert instant — 13:32..14:02 against 14:02..14:32, the half-hour pair
+          clamped to the 14:32 horizon — reads 9.8607 % against 11.2714 %: still `up`, because
+          under `slow-burn` the burn is nowhere near done at 14:32, but a relative delta of
+          0.1431 is below the published 0.20 separation threshold, so that comparison is NOT
+          separable. Asked at the alert instant the question does not discriminate; asked at the
+          onset it does.
+      - term:
+          error_spans:
+            src: otel.service.name=checkout
+            dst: otel.service.name=payments
+            edge_type: CALLS
+            window: "2026-09-01T11:32:00Z..2026-09-01T11:47:00Z"
+        field_path: groups[error_kind=deadline_exceeded].join_keys.version
+        op: eq
+        value: rv5512
+        note: >-
+          the mechanism, and the one predicate that ties the symptom to the culprit rather than
+          to payments in general: 483 deadline_exceeded spans on checkout's calls into payments
+          in the quarter-hour after the onset, all carrying rv5512 as their version join key.
+
+    decoys:
+      - entity: k8s.change=shop/storefront@scale-1418
+        causal_role: candidate_effect
+        why: >-
+          the horizontal pod autoscaler widening storefront from 3 to 6 replicas at 14:18,
+          fourteen minutes before the page and two hours and forty-six minutes AFTER the onset.
+          It is downstream of the symptom, not upstream of it: the extra replicas exist because
+          the queue in front of checkout was growing. The prior ranks it FIRST, on 0.5 x 0.627
+          of temporal weight alone.
+      - entity: k8s.change=shop/inventory@rev8
+        causal_role: coincident
+        why: >-
+          a scheduled inventory rollout at 14:05, one hop from checkout and twenty-seven minutes
+          before the page. It is an ordinary deploy that happens to land inside the window; it
+          touches nothing on the causal path and inventory's own telemetry does not move. The
+          prior ranks it second.
+      - entity: k8s.change=shop/storefront@rev12
+        causal_role: stale
+        why: >-
+          a storefront rollout at 10:50, forty-two minutes BEFORE the onset. If it had caused
+          this, the symptom would have started at 10:50 and not at 11:32; the onset estimate is
+          what rules it out, and it is the one decoy here the prior already ranks below the
+          fresh pair.
+
+    exonerating_evidence:
+      k8s.change=shop/storefront@scale-1418:
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=payments"
+              search_window: "2026-09-01T10:32:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: lt
+          value: 2026-09-01T14:18:00Z
+          note: >-
+            causal ordering, and nothing else is needed: the symptom began before the scaling
+            did, so the scaling cannot have caused it.
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=storefront"
+              windows: {reference_at: 2026-09-01T11:32:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: 0.731 % before the onset, 0.733 % after it; the scaled service is not the one that broke.
+      k8s.change=shop/inventory@rev8:
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=payments"
+              search_window: "2026-09-01T10:32:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: lt
+          value: 2026-09-01T14:05:00Z
+          note: the same ordering argument; the rollout is two and a half hours late to be a cause.
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=inventory"
+              windows: {reference_at: 2026-09-01T11:32:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: 0.785 % before the onset, 0.773 % after it — nothing on inventory to explain.
+      k8s.change=shop/storefront@rev12:
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=payments"
+              search_window: "2026-09-01T10:32:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: gt
+          value: 2026-09-01T10:50:00Z
+          note: >-
+            the mirror image of the other two: this change is EARLIER than the onset, so if it
+            were the cause the symptom would have begun with it. Forty-two minutes of clean
+            telemetry sit between the rollout and the onset.
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=storefront"
+              windows: {reference_at: 2026-09-01T11:32:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: 0.731 % before the onset, 0.733 % after it — the rollout 42 minutes earlier changed nothing.
+
+    # The decisive evidence exists once the first quarter-hour window after the change has
+    # closed: the change is observed at 11:32:30 and the version's error rate is measurable over
+    # 11:32..11:47. Asked before 11:47, `unknown` is the correct answer. The monitor does not
+    # fire for another two hours and forty-five minutes, so at the instant this fixture is
+    # actually asked the answer is knowable and `unknown` is a failure.
+    # Under `world.shape: slow-burn` the re-recorded world has rv5512 at 4.2640 % over
+    # 11:32..11:47 against a 1.0737 % baseline, which clears the decisive predicate's 4 % floor
+    # inside that first quarter-hour, so the knowability instant stays at 11:47 and the fixture
+    # keeps its point: the culprit IS knowable when the page arrives, two hours and forty-five
+    # minutes late.
+    knowability_time: 2026-09-01T11:47:00Z
+    onset: {at: 2026-09-01T11:32:00Z, tolerance_seconds: 300}
+    # Read off golden/diff.checkout-diff.json, which is the deterministic ranker's own answer at
+    # the alert instant over the investigation's own window. Fourth of four.
+    prior_rank_of_culprit: 4
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T11:32:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    shape: slow-burn
+    note: >-
+      One grid entry, centred on the ESTIMATED ONSET at 11:32 and not on the alert instant at
+      14:32. On this fixture the distinction is not a refinement, it is the difference between a
+      world that holds the answer and one that does not: a pair centred on 14:32 would put three
+      solid hours of degraded payments traffic into the BASELINE half, and every comparison in
+      the recording would read flat.
+
+      The grid is a supplement, not the plan. `fixture record-world` runs the deterministic
+      engine over this fixture's own question first and records every term that run issues — a
+      four-hour onset search and a comparison pair at `engine.CompareHalfWidth(240m)` = 30
+      minutes, capped — and then takes the cross product declared here on top. So the world is a
+      superset of the engine's plan by construction, and the miss rate below measures the
+      recording rather than the arithmetic.
+
+  runs: 3

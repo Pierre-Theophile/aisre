@@ -1,0 +1,45 @@
+# Hand-authored fixture. See fixtures/README.md.
+id: retraction-with-edges-01
+family: retraction-with-edges
+description: >-
+  legacy-cart is valid from 13:00 with two live calls edges (checkout -> legacy-cart and
+  legacy-cart -> redis). At 14:10 it stops being true; the retraction is observed at 14:11.
+  The projector must close both edges at the same valid end and record
+  closed_as_consequence_of on the cascaded edge versions. No retract_edge event is emitted:
+  the cascade is the behaviour under test (FR-013, spec edge case "retracting a node with
+  live edges").
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  - name: checkout-1400
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:00:00Z
+    hops: 2
+    direction: both
+    # legacy-cart and both its edges are present
+  - name: checkout-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+    # legacy-cart and both its edges are gone; redis is still reached via checkout
+  - name: legacy-cart-history
+    kind: history
+    focus: otel.service.name=legacy-cart
+    # two versions: valid [13:00, inf) observed [13:01:10, 14:11), then
+    # valid [13:00, 14:10) observed [14:11, inf)

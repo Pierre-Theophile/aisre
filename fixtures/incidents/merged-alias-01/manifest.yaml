@@ -1,0 +1,259 @@
+# Hand-authored fixture, derived from fixtures/ambiguous-identity-01.
+# See fixtures/incidents/README.md and docs/schema/resolution.md.
+id: merged-alias-01
+family: merged-alias
+description: >-
+  Two sources name the same shop three times and disagree about two of them. Kubernetes
+  declares an OpenTelemetry service name on `shop/payments` with a matching namespace and
+  environment, so a certain rule (C2) merges it. On `shop/checkout-svc` the label declares a
+  name but no environment, so no certain rule fires and only the probable rule P1 matches it
+  with `checkout` at 0.70 — a suggestion, never a merge. `ops/notifications-svc` resembles the
+  `notifications` service in another Kubernetes namespace and is a genuine false positive of
+  P1, which is what the calibration report measures. Alice confirms the checkout pair at
+  14:35; a later claim at 14:50 that a certain rule (C3) would use to merge the entity with
+  `checkout-legacy` is refused and filed as a conflict, because a human decision outranks it;
+  at 15:00 Alice splits the Kubernetes workload back out. Exercises US6 scenarios 1-4,
+  FR-031, FR-033, FR-036 to FR-041, SC-007 and SC-011.
+
+  Derived for feature 002 (FR-062): the same 17 events and two human decisions, byte for byte,
+  asked a different question. The alert names `k8s.deployment=shop/payments` -- an ALIAS of the
+  entity certain rule C2 merged at 14:00, not the identifier the telemetry uses -- and the
+  investigation has to resolve it to the merged entity before it can do anything else. An
+  engine that treated the alias as an unknown node would investigate a service with no metrics,
+  no callers and no history and conclude, correctly and uselessly, that it knows nothing.
+
+  Two queries were added for it: `subgraph.payments-alias-1hop`, which asks for the
+  neighbourhood by the alias and must return the merged entity carrying both identifiers, and
+  `diff.payments-alias-diff`, which asks what changed around it in the window and must return
+  nothing. Nothing did: this fixture holds identity decisions, not changes, so the correct
+  outcome is `unobserved` -- reached through the alias rather than around it.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:shop
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:shop
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T14:00:00Z
+  end:   2026-09-01T15:10:00Z
+
+# Every decision is replayed as an event from the named principal, at the stated observed time.
+# `sre-agent-dev|alice` is the principal key the dev identity provider mints for `alice`
+# (server.Principal.Key() = `<iss>|<sub>`, DefaultDevIssuer = `sre-agent-dev`).
+human_decisions:
+  - confirm: [otel.service.name=checkout, k8s.deployment=shop/checkout-svc]
+    at: 2026-09-01T14:35:00Z
+    reason: same service; the deployment is what runs checkout
+    principal: sre-agent-dev|alice
+  - split: otel.service.name=checkout
+    detach:
+      - k8s.deployment=shop/checkout-svc
+      - otel.service.name=checkout-svc
+    at: 2026-09-01T15:00:00Z
+    reason: the deployment was retired and reused; it is not this service any more
+    principal: sre-agent-dev|alice
+
+queries:
+  # US6 scenario 1: matched only by a probable rule, so still two nodes and a pending pair.
+  - name: pending
+    kind: suggestions
+    status: pending
+
+  # US6 scenario 3: the certain rule that disagrees with Alice's decision, surfaced not applied.
+  - name: conflict
+    kind: suggestions
+    status: conflict
+
+  # Everything the resolver has ever proposed, in score order.
+  - name: all
+    kind: suggestions
+
+  # US6 scenario 1, from the audit side: before the confirmation the pair is two entities.
+  - name: before
+    kind: audit
+    ref_a: otel.service.name=checkout
+    ref_b: k8s.deployment=shop/checkout-svc
+    observed_at: 2026-09-01T14:30:00Z
+
+  # US6 scenario 2: after the confirmation both names are one entity and the human decision is
+  # the deciding evidence.
+  - name: after
+    kind: audit
+    ref_a: otel.service.name=checkout
+    ref_b: k8s.deployment=shop/checkout-svc
+    observed_at: 2026-09-01T14:40:00Z
+
+  # US6 scenario 4, from the audit side: after the split they are two entities again.
+  - name: split
+    kind: audit
+    ref_a: otel.service.name=checkout
+    ref_b: k8s.deployment=shop/checkout-svc
+    observed_at: 2026-09-01T15:05:00Z
+
+  # The pair a certain rule (C2) merged with no human involved.
+  - name: payments
+    kind: audit
+    ref_a: otel.service.name=payments
+    ref_b: k8s.deployment=shop/payments
+    observed_at: 2026-09-01T15:05:00Z
+
+  # US6 scenario 4: the merged view as known at 14:40 and the separate view as known at 15:05,
+  # over the same valid instant.
+  - name: merged-1440
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:45:00Z
+    observed_at: 2026-09-01T14:40:00Z
+    hops: 1
+    direction: both
+  - name: split-1505
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:45:00Z
+    observed_at: 2026-09-01T15:05:00Z
+    hops: 1
+    direction: both
+  # The identifier that left: before the split it resolves to checkout, after it to the entity
+  # the split created.
+  - name: detached-1505
+    kind: subgraph
+    focus: k8s.deployment=shop/checkout-svc
+    valid_at: 2026-09-01T14:45:00Z
+    observed_at: 2026-09-01T15:05:00Z
+    hops: 1
+    direction: both
+
+  # Recorded once US7 lands; skipped by builds that cannot answer it.
+  - name: checkout
+    kind: history
+    focus: otel.service.name=checkout
+
+  # Feature 002 (T105): the alert names the Kubernetes alias of the entity C2 merged, and
+  # both of these must answer about the merged entity rather than about a stub.
+  - name: payments-alias-1hop
+    kind: subgraph
+    focus: k8s.deployment=shop/payments
+    valid_at: 2026-09-01T14:45:00Z
+    hops: 1
+    direction: both
+  - name: payments-alias-diff
+    kind: diff
+    focus: k8s.deployment=shop/payments
+    t1: 2026-09-01T14:00:00Z
+    t2: 2026-09-01T14:45:00Z
+    hops: 2
+    direction: both
+    expect_empty: "this fixture holds identity decisions, not changes, so nothing changed around the merged entity in the window; what the query proves is that the diff is REACHED through the alias rather than refused, which is why its answer is empty rather than an error (see the description above)"
+
+# Truth for `fixture verify --report` (constitution V). `same` is what a person who knows this
+# system would say, written down independently of what the rules decided.
+ground_truth:
+  certain_pairs:
+    - pair: [otel.service.name=payments, k8s.deployment=shop/payments]
+      same: true
+    - pair: [otel.service.name=checkout-legacy, k8s.deployment=shop/checkout-svc]
+      same: false
+  probable_pairs:
+    - pair: [otel.service.name=checkout, k8s.deployment=shop/checkout-svc]
+      same: true
+    - pair: [otel.service.name=notifications, k8s.deployment=ops/notifications-svc]
+      same: false
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20111:group=env:prod"
+    statement: "shop/payments 5xx above 2 % for 5 minutes"
+    fired_at: 2026-09-01T14:45:00Z
+    # The ALIAS, deliberately. `otel.service.name=payments` is the same entity and is what the
+    # telemetry pointers hang off; the monitor was written against Kubernetes and names the
+    # workload. Resolving one to the other is the first thing this incident requires.
+    subject: k8s.deployment=shop/payments
+    lookback: 45m
+    profile: page
+
+  ground_truth:
+    culprit: unobserved
+    causal_path:
+      - entity: otel.service.name=payments
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          graph:
+            resolution_audit:
+              ref_a: k8s.deployment=shop/payments
+              ref_b: otel.service.name=payments
+        field_path: same_entity
+        op: eq
+        value: true
+        note: >-
+          the two identifiers are one entity, merged by certain rule C2 with the deciding
+          evidence recorded. Every later answer in this investigation depends on this one, and
+          it is the audit query -- not a guess from the names -- that settles it.
+      - term:
+          graph:
+            subgraph:
+              focus: k8s.deployment=shop/payments
+              hops: 1
+              valid_at: 2026-09-01T14:45:00Z
+        field_path: focus.aliases[namespace=otel.service.name].value
+        op: eq
+        value: payments
+        note: >-
+          asked by the alias, the graph answers about the merged entity and carries both
+          identifiers on it, so the telemetry pointers are reachable from the name the monitor
+          used.
+      - term:
+          graph:
+            diff:
+              focus: k8s.deployment=shop/payments
+              t1: 2026-09-01T14:00:00Z
+              t2: 2026-09-01T14:45:00Z
+              hops: 2
+        field_path: changes.length
+        op: eq
+        value: 0
+        note: >-
+          and once the identity is settled, there is no change in the window to explain the
+          symptom. `unobserved`, reached honestly.
+
+    decoys: []
+    exonerating_evidence: {}
+
+    knowability_time: 2026-09-01T14:45:00Z
+    onset: {at: 2026-09-01T14:40:00Z, tolerance_seconds: 600}
+    prior_rank_of_culprit: 0
+    provenance:
+      kind: derived
+      sanitiser_policy_version: "1.0.0"
+      derived_from: ambiguous-identity-01
+      transformation: >-
+        incident-block-added; events and human decisions copied byte for byte, two queries
+        added for the alias, goldens re-recorded from this directory, world recorded from this
+        directory's graph.
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    # Centred on the estimated onset (14:40), five minutes before the alert.
+    window_grid:
+      - {reference_at: 2026-09-01T14:40:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry, and a neighbourhood that is small because this fixture's graph is small.
+      The cap is the grid, the hop radius and the drill-down depth, all read back from this
+      block by `fixture record-world`.
+
+  runs: 3

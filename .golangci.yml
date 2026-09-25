@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# golangci-lint v2 configuration. Install the matching binary with `make tools`.
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  # "standard" = errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - goheader
+    - misspell
+    - revive
+    - unconvert
+
+  settings:
+    goheader:
+      # Apache-2.0 with SPDX headers (plan §CI, research §17). Every Go file in the tree,
+      # generated code included, must start with this exact line; `make gen` re-applies it to
+      # protoc output via scripts/add-spdx-headers.sh.
+      template: |-
+        SPDX-License-Identifier: Apache-2.0
+    misspell:
+      # No `locale` on purpose: the project's prose mixes UK and US spellings (the spec says
+      # "organisation" and "serialization"), so misspell catches genuine typos only.
+      ignore-rules:
+        - serialisation
+        - serialization
+    revive:
+      rules:
+        - name: package-comments
+        - name: exported
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      # Generated protobuf and Connect code keeps its own conventions; only the licence
+      # header is enforced there.
+      - path: ^api/
+        linters:
+          - errcheck
+          - errorlint
+          - misspell
+          - revive
+          - staticcheck
+          - unconvert
+          - unused
+      # Test helpers may ignore errors that production code may not.
+      - path: _test\.go$
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/Pierre-Theophile/aisre
+  exclusions:
+    generated: lax

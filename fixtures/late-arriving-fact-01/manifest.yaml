@@ -1,0 +1,39 @@
+# Hand-authored fixture. See fixtures/README.md.
+id: late-arriving-fact-01
+family: late-arriving-fact
+description: >-
+  Four services are observed from 13:00. A fifth service, inventory-search, and the
+  checkout -> inventory-search call were true from 14:20 but only observed at 15:00.
+  Asking as of valid time 14:32 with observed time "now" includes them; pinning observed
+  time to 14:32 excludes them. This is US1 scenario 4 and US7 scenario 2.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T15:05:00Z
+
+queries:
+  - name: checkout-1432-now
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+    # observed_at unset = as known now: inventory-search IS present
+  - name: checkout-1432-pinned
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    observed_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+    # as known at 14:32: inventory-search is NOT present

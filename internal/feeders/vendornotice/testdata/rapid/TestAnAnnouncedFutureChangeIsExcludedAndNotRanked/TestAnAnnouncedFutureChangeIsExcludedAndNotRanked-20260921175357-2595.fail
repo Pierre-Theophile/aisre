@@ -1,0 +1,10 @@
+# 2026/09/21 17:53:57.109089 [TestAnAnnouncedFutureChangeIsExcludedAndNotRanked] [rapid] draw valid_start_delta: 1
+# 2026/09/21 17:53:57.109093 [TestAnAnnouncedFutureChangeIsExcludedAndNotRanked] [rapid] draw state: 0
+# 2026/09/21 17:53:57.109095 [TestAnAnnouncedFutureChangeIsExcludedAndNotRanked] a change in state ANNOUNCEMENT_STATE_UNSPECIFIED valid from 2026-09-21 02:10:01 +0000 UTC against a reference of 2026-09-21 02:10:00 +0000 UTC was excluded: announced change valid from 2026-09-21T02:10:01Z, after the reference instant 2026-09-21T02:10:00Z: it has not happened, so it is not a candidate cause (FR-065)
+# 
+v0.4.8#974949760309111613
+0x0
+0x0
+0x1
+0x0
+0x0

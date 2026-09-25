@@ -1,0 +1,116 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# T067, FR-052, and the "feeder gap" edge case. Recorded from the kind cluster of deploy/kind/
+# on 2026-09-16; docs/benchmarks/live-run-2026-09-16.md is the run.
+#
+# READ THIS BEFORE THE QUERIES. The timeline is:
+#
+#   11:50:10Z  the Kubernetes feeder is stopped. The OpenTelemetry feeder keeps running, so the
+#              graph is never wholly blind and the gap belongs to one source.
+#   11:50:11Z  service/checkout is deleted with nobody watching.
+#   12:00:16Z  the feeder reconnects INTO THE ABSENCE and lists the namespace.
+#   12:01:08Z  service/checkout is restored, and comes back at resourceVersion 9265.
+#
+# The recording was made by a feeder that could not see any of that. It listed, upserted, and
+# said nothing about what had gone; its reconnection checkpoint carried no `gap_before`, because
+# the only memory it had was a resync counter that a restart sets back to zero. That is what the
+# goldens used to record, and T067 was left unticked for it (live run 2026-09-16, finding 8).
+#
+# TWO MARKER PAYLOADS IN payloads/ ARE RECONSTRUCTED, and nothing else is. Both are markers —
+# neither carries an object, and no recorded byte of the cluster's own state was touched.
+#
+#   payloads/start/000001.json, and its index entry at 2026-09-16T12:00:16.519Z. It is the
+#   `start` marker the reconnecting process would push today: the instant it began watching,
+#   taken from the run's own log line ("k8s: watching" at 14:00:16.519+02:00), the last
+#   checkpoint the first process wrote (10:43:42.722705Z, which is `ckpt:20260916T104342Z` in
+#   events.jsonl), and the sixteen objects that process had asserted, read back out of the
+#   payloads it received. A feeder writes all of that to `--state-dir` after every checkpoint
+#   and its successor pushes it as a payload, so a live run and a replay reconcile from the same
+#   bytes (internal/feeders/k8s/state.go). The old feeder persisted nothing, so there was
+#   nothing to record; this is that file, reconstructed from the run's own evidence.
+#
+#   The position of payloads/sync/000002.pb in index.jsonl. As recorded, the marker that says
+#   "the initial list is complete" arrived 100 microseconds BEFORE the list it closes — a race
+#   between client-go's cache sync and its handler dispatch that every one of the four
+#   recordings shows. Informers.Run now waits for the handler registrations as well, so a
+#   recording made today does not have it; here the line is moved to where a fixed informer
+#   puts it, because a reconciliation cannot diff a list that has not arrived. The three other
+#   recordings keep their raced markers: the feeder tolerates them through
+#   Feeder.ListSettle, which is only about how a fact is dated.
+#
+# WHAT THE GOLDENS NOW ASSERT, and what a reviewer should check has not regressed:
+#
+#   - `extent` reports exactly one gap for `k8s:kind`, [10:43:42.722705Z, 12:00:16.519Z): from
+#     the coverage the first process claimed to the instant the second began watching. `otel:kind`
+#     reports none — it never stopped. That is FR-052's "known gaps" with a fixture behind it.
+#   - `checkout-2hop-during-gap`, asked as of an instant inside the gap, returns
+#     `k8s.service=shop/checkout` with valid `[10:43:42.722705Z, 12:00:16.519Z)` — bounded,
+#     ending at the reconnection — and observed from `12:00:16.556725Z`, the reconnection. That
+#     is the edge case's "retracted with a valid end inside the gap and an observed start at
+#     reconnection", with one caveat stated plainly: the valid end is the gap's upper bound
+#     rather than an instant strictly inside it. The object stopped existing somewhere in the
+#     hole and nothing can say where; `RetractNode` carries a `valid_end` and no `end_unknown`
+#     (`Interval` has one, the event does not, and the schema is frozen this phase), so the
+#     feeder asserts the one boundary it can prove — the instant it could see again — and the
+#     `gap_before` checkpoint beside it is what says the truth lies inside.
+#   - The `exposed-via` edge into that Service is closed at the same instant with
+#     `closed_as_consequence_of` set: nobody emitted a retract_edge for it, the projector closed
+#     it because its endpoint stopped existing (edge case "retracting a node with live edges").
+#   - `checkout-2hop-after` shows the Service back, valid from `12:01:08.330884Z` at
+#     resourceVersion 9265, with a hole in valid time between the two. The graph says the
+#     Service did not exist for 52 seconds and was unobserved for 76 minutes before that, and
+#     those are two different statements.
+#
+id: feeder-gap-01
+family: feeder-gap
+description: >-
+  The Kubernetes feeder is stopped for ten minutes, `svc/checkout` is deleted while nobody is
+  watching, the feeder reconnects into the absence and the Service is restored a minute later.
+  The OpenTelemetry feeder runs throughout. On reconnection the feeder reports its gap and
+  retracts the Service it can no longer find, and the `exposed-via` edge into it is closed as a
+  consequence; `extent` shows the hole for `k8s:kind` and none for `otel:kind`.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+
+sources:
+  - source_id: k8s:kind
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+  - source_id: otel:kind
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-16T10:43:42Z
+  end:   2026-09-16T12:06:16Z
+
+queries:
+  - name: checkout-2hop-during-gap
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-16T11:55:00Z   # inside the gap, with the Service deleted in the cluster
+    hops: 2
+    direction: both
+  - name: checkout-2hop-after
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-16T12:06:16Z
+    hops: 2
+    direction: both
+  # The retraction itself, asked directly rather than read out of a neighbourhood: the Service
+  # the feeder could not find when it came back, as of an instant inside the gap. Its valid
+  # interval must be bounded at the reconnection and its observed interval must start there
+  # (T067's verification clause), and the `exposed-via` edge into it must be closed with
+  # `closed_as_consequence_of` set.
+  - name: checkout-service-during-gap
+    kind: subgraph
+    focus: k8s.service=shop/checkout
+    valid_at: 2026-09-16T11:55:00Z
+    hops: 1
+    direction: both
+  - name: extent
+    kind: extent

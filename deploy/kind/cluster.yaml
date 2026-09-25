@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Disposable kind cluster for the live end-to-end run (quickstart §7, FR-050 b, SC-010).
+#
+#   kind create cluster --config deploy/kind/cluster.yaml
+#   kubectl config use-context kind-sre-agent-demo
+#
+# Or, idempotently:  deploy/kind/up.sh
+#
+# This cluster exists to be thrown away. It records the payloads that become
+# fixtures/baseline-topology-01 (T058, T063) and runs the nightly e2e job (T082). Nothing here
+# is production-shaped: no CNI tuning, no resource requests, no TLS.
+#
+# ---------------------------------------------------------------------------------------------
+# Where does the OTLP traffic go?
+# ---------------------------------------------------------------------------------------------
+# `aisre feed otel` runs ON THE HOST and listens on 4317 (gRPC) and 4318 (HTTP). Pods must
+# therefore reach the host, which is the *outbound* direction. `extraPortMappings` below are the
+# *inbound* direction (host → node) and do not help with that; see deploy/kind/README.md
+# "Reaching the host from inside the cluster". The outbound address is:
+#
+#   Docker Desktop (macOS, Windows)  host.docker.internal → an address the VM routes to the host
+#   kind on Linux                    the gateway of the `kind` Docker bridge, usually 172.18.0.1
+#
+# Neither name resolves from inside a pod (kind rewrites the node's resolv.conf away from
+# Docker's embedded DNS), so the address is resolved on the host and written as a literal into
+# the ConfigMap `sre-agent-otlp` that both overlays mount:
+#
+#   deploy/kind/host-endpoint.sh          # detect, write, roll the emitters
+#
+# The committed default is the Linux kind gateway, so Linux users can skip the script.
+# ---------------------------------------------------------------------------------------------
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+# `kind create cluster --name` would override this. The kubeconfig context kind writes is the
+# cluster name prefixed with "kind-", i.e. `kind-sre-agent-demo`. kind has no field to change
+# that prefix; every script and every README command in deploy/kind/ uses
+# `--context kind-sre-agent-demo` and honours the KUBE_CONTEXT environment variable.
+name: sre-agent-demo
+
+networking:
+  # Bind the API server to loopback only: this cluster has no authentication worth the name.
+  apiServerAddress: "127.0.0.1"
+  # apiServerPort is deliberately unset: kind then picks a free port, so a leftover cluster
+  # never blocks a new one.
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/16"
+
+nodes:
+  - role: control-plane
+    # Pinned to the default node image of kind v0.33.0. Bumping kind means bumping this line;
+    # `kind create cluster` prints the image it would have used by default.
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    labels:
+      # Two spellings of the same fact. `sre.node_pool` is what the Kubernetes feeder reads by
+      # default (research §12: "runs-on → cluster and node pool, from node labels");
+      # `node-pool` is the key the pointer selectors in fixtures/baseline-topology-01 use
+      # (`v1/nodes?labelSelector=node-pool%3Dgeneral`). Keeping both means the recorded fixture
+      # matches the hand-authored one whichever key the feeder is configured with.
+      sre.node_pool: control-plane
+      node-pool: control-plane
+    extraPortMappings:
+      # Inbound (host → cluster). Nothing in the overlays serves these by default: the
+      # storefront Ingress is a topology object and there is no ingress controller installed.
+      # They are here so that adding one (`kubectl apply -f .../ingress-nginx/.../kind/deploy.yaml`)
+      # makes http://localhost:8080 work without recreating the cluster.
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+        listenAddress: "127.0.0.1"
+      - containerPort: 30443
+        hostPort: 8443
+        protocol: TCP
+        listenAddress: "127.0.0.1"
+
+  - role: worker
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    labels:
+      # The one pool the demo workloads run on. `runs-on` edges from every workload in `shop`
+      # land on the node-pool node derived from this label.
+      sre.node_pool: general
+      node-pool: general

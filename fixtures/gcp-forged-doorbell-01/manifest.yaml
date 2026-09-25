@@ -1,0 +1,38 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: gcp-forged-doorbell-01
+family: gcp-alerts
+description: 'What a forged doorbell costs: one extra poll, and nothing else. The stream polls the same open incident twice — the scheduled poll, and the early poll a forged or replayed notification would trigger — and the graph ends with exactly one transition and one state. The doorbell''s body reaches nothing, which is enforced by `Doorbell.Ring` having nowhere to receive it rather than by a rule this fixture could only observe indirectly; what the fixture proves is the other half, that an extra poll creates, alters and retracts nothing. Polling is the source of truth, and this corpus runs with the doorbell absent. Synthetic structural twin: no identifier is derived from the organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — US7''s recording replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:30:00Z
+
+queries:
+  # One alert, one state — after two polls of the same incident. The instant is inside the open
+  # interval, so a second transition invented by the extra poll would show here as a different
+  # state or a split version.
+  - name: forged-doorbell-asof-1430
+    kind: subgraph
+    focus: gcp.monitoring.alert_policy=projects/twin-production/alertPolicies/1122334455
+    valid_at: 2026-09-21T14:30:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 1
+    direction: both
+  - name: forged-doorbell-2hop
+    kind: subgraph
+    focus: gcp.monitoring.alert_policy=projects/twin-production/alertPolicies/1122334455
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both

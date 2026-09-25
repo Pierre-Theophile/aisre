@@ -1,0 +1,348 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: distant-culprit-01
+family: distant-culprit
+description: >-
+  FR-062b / SC-021, the second of the three adversarial fixtures: the culprit is THREE HOPS from
+  the alerting node, and the prior's topological term punishes it for that all the way down the
+  list.
+
+  The call chain is checkout -> payments -> ledger -> fx-rates. The monitor fires on checkout.
+  fx-rates — a service the on-call has never paged for, two levels below the one they own — is
+  rolled out to revision 4 at 14:12 and starts failing. Nothing between it and checkout changed
+  in a way that explains anything; the errors simply travel up the chain.
+
+  Around checkout, one hop out, sit three changes the prior likes much better: an inventory
+  rollout at 14:10, a human redeploy of ledger at 14:18 (the on-call raising the fx-rates client
+  timeout, which is a reaction to the symptom rather than a cause of it), the autoscaler
+  widening storefront at 14:26, and a stale payments ConfigMap edit at 13:15. The prior scores
+  `0.5*temporal + 0.35*topological + 0.15*traffic` with `topological = 1/(1+h)`, so at h = 3 the
+  culprit gives up 0.35*(0.5 - 0.25) = 0.0875 of score against every one-hop candidate before
+  the clock is even consulted — and the clock does not help it either. It finishes FOURTH of
+  five. `prior_rank_of_culprit: 4` is read off `golden/diff.checkout-diff.json`.
+
+  Two structural facts a reviewer should check before anything else.
+
+  First, the culprit IS a candidate. `engine.NeighbourhoodHops` is 2 and
+  `query.DefaultChangeHopMargin` is 1, so a change whose target lies at hop 3 is inside the
+  candidate set by exactly one hop of margin and no more. Move fx-rates one further out and this
+  fixture stops testing ranking and starts testing exclusion, which is `rollout-regression-01-
+  incident`'s `out_of_scope` decoy's job. `golden/subgraph.checkout-3hop-1432.json` is where the
+  distance is a file; `golden/subgraph.checkout-2hop-1432.json` is where fx-rates' absence from
+  the two-hop neighbourhood is.
+
+  Second, `world.hop_radius` is 3 and not the corpus default of 2 — this is the only fixture in
+  the corpus that departs from it, and the reason is narrow: at radius 2 the recorded world
+  would hold no pointer on fx-rates at all, so the decisive evidence below would name terms the
+  corpus cannot answer and every run would fail for a reason that has nothing to do with the
+  engine. The radius is the evidence's reach, not the engine's: the deterministic engine still
+  reads a two-hop neighbourhood, which is why its first wave cannot resolve the culprit's target
+  to a reference and falls back to testing the subject's own telemetry. That is a true and
+  deliberate property of this fixture. The deterministic engine does not solve it; an
+  investigator that widens the subgraph, follows the CALLS chain and asks fx-rates the question
+  can, and the gap between those two is exactly the lift FR-061a measures.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  # The prior, as a file: hops 2 is `engine.NeighbourhoodHops` and the window is the
+  # investigation's own, so this golden IS the ranking `prior_rank_of_culprit` is read from.
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:02:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  # The distance, as a file: fx-rates appears here and not above.
+  - name: checkout-3hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 3
+    direction: both
+  - name: fx-rates-history
+    kind: history
+    focus: otel.service.name=fx-rates
+
+ground_truth:
+  culprit_change: k8s.change=shop/fx-rates@rev4
+  expected_top_k: 4
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20412:group=env:prod"
+    statement: "checkout error rate above 5 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: k8s.change=shop/fx-rates@rev4
+    causal_path:
+      - entity: k8s.change=shop/fx-rates@rev4
+        via: changed-by
+        role: cause
+      - entity: otel.service.name=fx-rates
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=ledger
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=payments
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=fx-rates"
+            window: "2026-09-01T14:12:00Z..2026-09-01T14:27:00Z"
+            version_attribute: service.version
+        field_path: versions[version=rev4].error_rate
+        op: gt
+        value: 0.05
+        note: >-
+          12.14 % of requests on the new fx-rates revision fail. It is the same predicate that
+          settles `rollout-regression-01-incident`, asked three hops further out — which is the
+          only thing this fixture changes and the whole of what it tests.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=fx-rates"
+            windows: {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: up
+        note: >-
+          fx-rates' own error rate is what moves first and moves most. The services between it
+          and the alert move too, attenuated by 0.6 per hop and delayed one resolution step per
+          hop, which is what makes the chain followable at all; what "look further out" rests on
+          is that the excess GROWS towards fx-rates rather than that everything else is flat.
+          The re-recorded world reads the chain over the quarter-hour pair ending at 14:27 as
+          fx-rates 0.5105 % -> 12.1549 %, ledger 1.1308 % -> 15.7596 %, payments 0.4948 % ->
+          4.0728 % and checkout 0.4093 % -> 2.0587 %: relative excesses of 22.81, 12.94, 7.23
+          and 4.03, each about 0.56 of the one behind it, which is the 0.6-per-hop attenuation
+          seen from the alert end.
+      - term:
+          onset:
+            pointer: "METRIC otel.service.name=fx-rates"
+            search_window: "2026-09-01T13:02:00Z..2026-09-01T14:32:00Z"
+            method: SEASONAL_CUSUM
+        field_path: estimated_onset
+        op: eq
+        value: 2026-09-01T14:12:00Z
+        note: >-
+          the onset lands on the rollout instant, which is the temporal half of attribution and
+          also what exonerates the two candidates that follow it.
+      - term:
+          error_spans:
+            src: otel.service.name=ledger
+            dst: otel.service.name=fx-rates
+            edge_type: CALLS
+            window: "2026-09-01T14:12:00Z..2026-09-01T14:27:00Z"
+        field_path: groups[error_kind=deadline_exceeded].join_keys.version
+        op: eq
+        value: rev4
+        note: >-
+          the mechanism at the far end of the chain: 999 deadline_exceeded spans on ledger's
+          calls into fx-rates in the quarter-hour after the onset, all carrying rev4 as their
+          version join key. The comparable group on `checkout -> payments` holds 12. This is the
+          edge the graph has to be walked three hops to reach.
+
+    decoys:
+      - entity: k8s.change=shop/storefront@scale-1426
+        causal_role: candidate_effect
+        why: >-
+          the horizontal pod autoscaler widening storefront at 14:26, one hop from checkout,
+          fourteen minutes AFTER the onset and six minutes before the page. The prior ranks it
+          first: it is the most recent thing that happened and it is adjacent. It is also
+          downstream of the symptom, which is what the onset estimate says in one comparison.
+      - entity: k8s.change=shop/ledger@rev3
+        causal_role: candidate_effect
+        why: >-
+          the on-call's own redeploy of ledger at 14:18, six minutes after the onset, raising
+          the fx-rates client timeout because ledger had started timing out. It is two hops from
+          checkout and ON the causal path, which makes it the most seductive candidate in the
+          fixture: it is a real change, to a real component of the failure, by a human, minutes
+          before the page. It is still an effect. Reporting it as the cause is the specific
+          mistake this fixture exists to catch, and the exonerating predicate is the ordering.
+      - entity: k8s.change=shop/inventory@rev8
+        causal_role: coincident
+        why: >-
+          a scheduled inventory rollout at 14:10, two minutes BEFORE the onset and one hop from
+          checkout. Causal ordering does not rule it out — it is early enough to be a cause —
+          so it has to be refuted on its own target's telemetry, which is flat across the onset.
+      - entity: k8s.change=shop/payments-config@rv8800
+        causal_role: stale
+        why: >-
+          a payments ConfigMap edit at 13:15, fifty-seven minutes before the onset. If raising
+          the log sampling rate had broken payments, payments would have broken at 13:15. It is
+          the one candidate the prior already ranks below the culprit, and it is here so that
+          the ranked list has a floor as well as a ceiling.
+
+    exonerating_evidence:
+      k8s.change=shop/storefront@scale-1426:
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=fx-rates"
+              search_window: "2026-09-01T13:02:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: lt
+          value: 2026-09-01T14:26:00Z
+          note: >-
+            causal ordering, on its own: the symptom began fourteen minutes before the scaling
+            did.
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=storefront"
+              windows: {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: storefront's own error rate does not move across the onset.
+      k8s.change=shop/ledger@rev3:
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=fx-rates"
+              search_window: "2026-09-01T13:02:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: lt
+          value: 2026-09-01T14:18:00Z
+          note: >-
+            the same ordering argument, and the one that matters most here: ledger was
+            redeployed six minutes after the failure it was redeployed because of.
+        - term:
+            errors_by_version:
+              pointer: "METRIC otel.service.name=ledger"
+              window: "2026-09-01T14:12:00Z..2026-09-01T14:27:00Z"
+              version_attribute: service.version
+          field_path: versions[version=rev3].error_rate
+          op: lt
+          value: 0.02
+          note: >-
+            the second half of the exoneration, and the one that distinguishes "ruled out" from
+            "outranked". ledger's own breakdown over the quarter-hour after the onset holds two
+            buckets, `baseline` and `rev3`, at 1.1387 % each — the same number to four decimals.
+            The redeploy changed ledger's own error rate by nothing at all; what is failing on
+            ledger is the call it makes to fx-rates.
+      k8s.change=shop/inventory@rev8:
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=inventory"
+              windows: {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: >-
+            inventory is flat across the onset. This decoy is EARLIER than the onset, so the
+            ordering argument does not touch it and evidence on its own target is the only thing
+            that rules it out.
+        - term:
+            errors_by_version:
+              pointer: "METRIC otel.service.name=inventory"
+              window: "2026-09-01T14:12:00Z..2026-09-01T14:27:00Z"
+              version_attribute: service.version
+          field_path: versions[version=rev8].error_rate
+          op: lt
+          value: 0.02
+          note: >-
+            and the version the rollout shipped is carrying 0.8166 % of errors, which is
+            inventory's ordinary rate. The version split convicts rev4 on fx-rates and acquits
+            rev8 here, from the same term asked of two pointers.
+      k8s.change=shop/payments-config@rv8800:
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=fx-rates"
+              search_window: "2026-09-01T13:02:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: gt
+          value: 2026-09-01T13:15:00Z
+          note: >-
+            fifty-seven minutes of clean telemetry sit between the ConfigMap edit and the onset;
+            a cause with an hour's incubation is a cause nobody can distinguish from a
+            coincidence, and the fixture says so rather than pretending otherwise.
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=payments"
+              windows: {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: up
+          note: >-
+            payments is a conduit here, not a participant. It is two hops from fx-rates along
+            CALLS, and the generator propagates a callee's excess attenuated by 0.6 per hop, so
+            payments carries roughly 0.36 of fx-rates' excess and does not read the flat line
+            this predicate was first written against: the re-recorded world has it at 4.0728 %
+            against a baseline of 0.4948 % over the quarter-hour pair ending at 14:27, which is
+            `up`. It is `up` at 7.23 relative where fx-rates is `up` at 22.81, and that ratio,
+            not the direction, is what says which end of the chain to walk towards.
+
+    # The rollout is observed at 14:12:30 and the first quarter-hour window that contains its
+    # effect closes at 14:27 — five minutes before the monitor fires. So at the instant this
+    # fixture is asked the answer IS knowable, and `unknown` is a failure rather than the
+    # correct hedge.
+    knowability_time: 2026-09-01T14:27:00Z
+    onset: {at: 2026-09-01T14:12:00Z, tolerance_seconds: 120}
+    # Read off golden/diff.checkout-diff.json: fourth of five, behind three one-hop changes.
+    prior_rank_of_culprit: 4
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    # THREE, not the corpus default of two. See the description: at radius 2 the world holds no
+    # pointer on fx-rates and the decisive evidence above names terms nothing can answer. The
+    # radius is what the EVIDENCE can reach; the engine still reads a two-hop neighbourhood.
+    hop_radius: 3
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    shape: step
+    note: >-
+      One grid entry, centred on the estimated onset at 14:12 rather than on the alert instant.
+      The extra hop makes this the largest world in the corpus after
+      `rollout-regression-01-incident`: six entities with two telemetry pointers each and five
+      edges, times the grid, times the recorder's statistic set, plus monitor_state, log
+      patterns, onset, errors_by_version per pointer that publishes a version join key,
+      error_spans per edge, and the depth-1 drill-downs all of those mint.
+
+      As everywhere else in this corpus the grid is a supplement: `fixture record-world` runs
+      the deterministic engine over this fixture's own question first and records every term
+      that run issues, so the world is a superset of the engine's plan by construction.
+
+  runs: 3

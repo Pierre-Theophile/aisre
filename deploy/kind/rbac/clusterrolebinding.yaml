@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Binds the read-only role to the feeder's ServiceAccount, cluster-wide.
+#
+# Cluster-wide rather than one RoleBinding per namespace because the feeder reads Nodes and
+# Namespaces, which are cluster-scoped, and because `feed k8s --namespaces shop` narrows what is
+# *watched* without needing the grant narrowed too. To restrict the grant as well, replace this
+# with a ClusterRoleBinding covering only nodes/namespaces and a RoleBinding per watched
+# namespace for the rest.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sre-agent-feeder
+  labels:
+    app.kubernetes.io/part-of: sre-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sre-agent-feeder
+subjects:
+  - kind: ServiceAccount
+    name: sre-agent-feeder
+    namespace: sre-agent

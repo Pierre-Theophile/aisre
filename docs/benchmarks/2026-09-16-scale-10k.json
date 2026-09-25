@@ -1,0 +1,161 @@
+{
+  "scale": "10k",
+  "seed": 1,
+  "queries_per_family": 1000,
+  "started_at": "2026-09-16T20:09:59.967418Z",
+  "finished_at": "2026-09-16T21:23:12.945856Z",
+  "environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "cpu_count": 10,
+    "memory_bytes": 17179869184,
+    "go_version": "go1.27.1",
+    "postgres_version": "PostgreSQL 16.13 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "postgres_server": "172.18.0.2",
+    "note": "Docker compose postgres:16-alpine on an Apple M5 laptop, graph and database on the same host. Replay skipped here and measured separately in the same session: Projector.Replay commits one transaction per event, and a 995 222-event replay was still at 66% (638 471 of 969 459 entity versions, ~39 events/s) after 4 h 29 min — the ADR-0002 60-minute replay criterion is MISSED, by the per-event commit in the replay loop rather than by the store."
+  },
+  "workload": {
+    "entities": 10000,
+    "edges": 100000,
+    "changes": 50000,
+    "claims": 200000,
+    "events": 995222,
+    "span_days": 90
+  },
+  "graph": {
+    "entities": 58800,
+    "entity_versions": 969459,
+    "edge_versions": 332669,
+    "identity_claims": 258800,
+    "merged_entities": 1200,
+    "suggestions": 0,
+    "logged_events": 995222
+  },
+  "ingest": {
+    "events": 995222,
+    "seconds": 2287.994644333,
+    "events_per_second": 434.9756685168552
+  },
+  "replay": {
+    "measured": false,
+    "events": 0,
+    "seconds": 0,
+    "events_per_second": 0
+  },
+  "latencies": [
+    {
+      "name": "diff-1h",
+      "detail": "1 h window over a 2-hop neighbourhood, with ranked changes",
+      "count": 1000,
+      "mean_ms": 423.675,
+      "p50_ms": 418.462,
+      "p95_ms": 499.132,
+      "p99_ms": 574.839,
+      "max_ms": 1553.49
+    },
+    {
+      "name": "diff-24h",
+      "detail": "24 h window over a 2-hop neighbourhood, with ranked changes",
+      "count": 1000,
+      "mean_ms": 432.343,
+      "p50_ms": 431.317,
+      "p95_ms": 487.732,
+      "p99_ms": 561.432,
+      "max_ms": 1629.07
+    },
+    {
+      "name": "diff-7d",
+      "detail": "7 d window over a 2-hop neighbourhood, with ranked changes",
+      "count": 1000,
+      "mean_ms": 513.753,
+      "p50_ms": 530.999,
+      "p95_ms": 590.219,
+      "p99_ms": 617.311,
+      "max_ms": 663.003
+    },
+    {
+      "name": "impact",
+      "detail": "blast radius, weight-ranked, default caps",
+      "count": 1000,
+      "mean_ms": 187.167,
+      "p50_ms": 195.385,
+      "p95_ms": 250.268,
+      "p99_ms": 281.87,
+      "max_ms": 308.612
+    },
+    {
+      "name": "subgraph-2hop-asof",
+      "detail": "2 hops, both directions, random focus and random valid instant",
+      "count": 1000,
+      "mean_ms": 106.268,
+      "p50_ms": 102.09,
+      "p95_ms": 144.042,
+      "p99_ms": 196.207,
+      "max_ms": 1065.868
+    },
+    {
+      "name": "subgraph-3hop-capped",
+      "detail": "3 hops with the published caps (50 per hop, 500 total)",
+      "count": 1000,
+      "mean_ms": 101.198,
+      "p50_ms": 98.851,
+      "p95_ms": 133.88,
+      "p99_ms": 206.25,
+      "max_ms": 437.162
+    }
+  ],
+  "database_bytes": 2290891799,
+  "criteria": [
+    {
+      "id": "SC-001",
+      "what": "subgraph 2-hop as-of, p95",
+      "target": "\u003c 1.00 s",
+      "actual": "144 ms",
+      "passed": true,
+      "gate": true
+    },
+    {
+      "id": "SC-002",
+      "what": "diff over 24 h with ranking, p95",
+      "target": "\u003c 2.00 s",
+      "actual": "488 ms",
+      "passed": true,
+      "gate": true
+    },
+    {
+      "id": "ADR-0002",
+      "what": "subgraph 2-hop as-of, p95 (2× exit criterion)",
+      "target": "\u003c 2.00 s",
+      "actual": "144 ms",
+      "passed": true,
+      "gate": true
+    },
+    {
+      "id": "ADR-0002",
+      "what": "diff over 24 h, p95 (2× exit criterion)",
+      "target": "\u003c 4.00 s",
+      "actual": "488 ms",
+      "passed": true,
+      "gate": true
+    },
+    {
+      "id": "ADR-0002",
+      "what": "full replay of the event log",
+      "target": "\u003c 60 min",
+      "actual": "not measured",
+      "passed": true,
+      "gate": true,
+      "skipped": true
+    },
+    {
+      "id": "plan",
+      "what": "sustained ingestion",
+      "target": "≥ 500 events/s",
+      "actual": "435 events/s",
+      "passed": false,
+      "gate": false
+    }
+  ],
+  "passed": true
+}

@@ -1,0 +1,43 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: deploy-rollback-01
+family: vercel
+description: 'A deploy, the incident it causes, and the rollback that stops it, with the rollback flagged because the platform SAID so: Vercel''s single-project read states `lastAliasRequest.type = rollback`, the only place either deploy platform states one (research §5.4). The rollback is reported in progress first and emits nothing until its job succeeds. A later redeploy of the older commit, which is also a rollback candidate, is an ordinary rollout: neither an older commit nor candidacy is the platform stating a rollback (FR-016, SC-009). Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: vercel:twin
+      kind: vercel
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # What changed on the project around the incident, with the reference at its ONSET (14:30) rather than
+  # the window's end, because that is the instant a cause has to precede. Four rollouts: the good deploy
+  # and the bad one before it, and after it the rollback — flagged, naming dpl_good, post_reference — and
+  # the unflagged redeploy. A rollback that ranked as a cause of the incident it stopped would be the
+  # engine blaming the fix.
+  - name: what-changed-around-the-incident
+    kind: diff
+    focus: vercel.project=prj_storefront
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T15:00:00Z
+    reference_at: 2026-09-21T14:30:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 1
+    direction: both
+  # The rollback as its own change, at its own instant: what it restored and what it moved away from.
+  - name: the-rollback-names-what-it-restored
+    kind: history
+    focus: vercel.change=rollback/prj_storefront/dpl_good@1790001600000
+    observed_at: 2026-09-21T20:00:00Z
+  - name: extent
+    kind: extent
+    observed_at: 2026-09-21T20:00:00Z

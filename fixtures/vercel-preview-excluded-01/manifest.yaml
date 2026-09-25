@@ -1,0 +1,38 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: vercel-preview-excluded-01
+family: vercel
+description: 'Two preview deployments and a staging one, all PROMOTED, and the cycle emits no change. Exclusion rests on the platform-stated `target` rather than on a heuristic over the URL or the branch name (FR-032), so a preview is unreachable by this connector rather than skipped by policy. The project the deployments belong to IS described, so the refusal is asserted on it: a diff over the whole window, focused on the project, finds no change — which an empty graph could not distinguish from a broken fixture. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: vercel:twin
+      kind: vercel
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The refusal, asserted where an investigation would look: the project exists (the projects read
+  # describes it), and across the whole window nothing changed it. Three PROMOTED deployments arrived;
+  # none targeted production, so none is a rollout (FR-032).
+  - name: no-change-touched-the-project
+    kind: diff
+    focus: vercel.project=prj_storefront
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T15:00:00Z
+    reference_at: 2026-09-21T15:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 1
+    direction: both
+    expect_empty: "every deployment in the window was a preview or staging build, and a build that did not target production is not a rollout (FR-032); a change here would mean the exclusion leaked"
+  # The extent: this source was read, which is what separates "nothing changed" from "nobody looked".
+  - name: the-source-was-read
+    kind: extent
+    observed_at: 2026-09-21T20:00:00Z

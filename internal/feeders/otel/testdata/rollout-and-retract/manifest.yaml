@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The change corpus of the OpenTelemetry topology feeder: seven consecutive windows in which
+# something is different each time. events.jsonl here *was* recorded by this feeder (the SDK
+# guide §9), read line by line, and frozen; the assertions it pins are listed under
+# ground_truth below.
+id: rollout-and-retract
+family: otel-topology
+description: >-
+  Seven five-minute windows of a three-service shop. Window 13:00 introduces everything;
+  13:05 says nothing new and emits a checkpoint alone; 13:10 is the first window at inventory
+  0.9.8 and reports the rollout; 13:15 is the first at the lower storefront->checkout weight
+  class and 13:20 is where a second window confirms it, so the edge is emitted then but stamped
+  13:15, where it became true; 13:30 is six windows after payments last called api.stripe.com,
+  so that edge is retracted with valid_end 13:05 — the end of the window it was last seen in,
+  not the moment the feeder gave up. Payloads are synthetic (constitution VIII).
+schema_version: 1.0.0
+sdk_version: 0.1.0
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-01T13:01:00Z
+  end:   2026-09-01T13:31:20Z
+
+ground_truth:
+  id_format: full
+  window: 5m
+  retract_after: 6
+  windows: 7
+  events: 27
+  # What the frozen stream asserts, in the order it asserts it.
+  rollout:
+    change_ref: otel.change=inventory@0.9.8
+    valid_at: 2026-09-01T13:10:00Z
+    summary: service.version 0.9.7 → 0.9.8 observed in traces
+  hysteresis:
+    edge: storefront->checkout
+    from_class: 4
+    to_class: 3
+    first_observed: 2026-09-01T13:15:00Z
+    confirmed_in_window: 2026-09-01T13:20:00Z
+    valid_at: 2026-09-01T13:15:00Z
+  retraction:
+    edge: payments->api.stripe.com
+    last_seen_window: 2026-09-01T13:00:00Z
+    valid_end: 2026-09-01T13:05:00Z
+    emitted_in_window: 2026-09-01T13:30:00Z
+  quiet_windows:
+    # A window in which nothing changed emits its checkpoint and nothing else: the graph is
+    # told it was watched, not told again what it already knows.
+    - 2026-09-01T13:05:00Z
+    - 2026-09-01T13:25:00Z

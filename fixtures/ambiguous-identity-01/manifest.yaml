@@ -1,0 +1,138 @@
+# Hand-authored fixture. See fixtures/README.md and docs/schema/resolution.md.
+id: ambiguous-identity-01
+family: ambiguous-identity
+description: >-
+  Two sources name the same shop three times and disagree about two of them. Kubernetes
+  declares an OpenTelemetry service name on `shop/payments` with a matching namespace and
+  environment, so a certain rule (C2) merges it. On `shop/checkout-svc` the label declares a
+  name but no environment, so no certain rule fires and only the probable rule P1 matches it
+  with `checkout` at 0.70 — a suggestion, never a merge. `ops/notifications-svc` resembles the
+  `notifications` service in another Kubernetes namespace and is a genuine false positive of
+  P1, which is what the calibration report measures. Alice confirms the checkout pair at
+  14:35; a later claim at 14:50 that a certain rule (C3) would use to merge the entity with
+  `checkout-legacy` is refused and filed as a conflict, because a human decision outranks it;
+  at 15:00 Alice splits the Kubernetes workload back out. Exercises US6 scenarios 1-4,
+  FR-031, FR-033, FR-036 to FR-041, SC-007 and SC-011.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:shop
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:shop
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T14:00:00Z
+  end:   2026-09-01T15:10:00Z
+
+# Every decision is replayed as an event from the named principal, at the stated observed time.
+# `sre-agent-dev|alice` is the principal key the dev identity provider mints for `alice`
+# (server.Principal.Key() = `<iss>|<sub>`, DefaultDevIssuer = `sre-agent-dev`).
+human_decisions:
+  - confirm: [otel.service.name=checkout, k8s.deployment=shop/checkout-svc]
+    at: 2026-09-01T14:35:00Z
+    reason: same service; the deployment is what runs checkout
+    principal: sre-agent-dev|alice
+  - split: otel.service.name=checkout
+    detach:
+      - k8s.deployment=shop/checkout-svc
+      - otel.service.name=checkout-svc
+    at: 2026-09-01T15:00:00Z
+    reason: the deployment was retired and reused; it is not this service any more
+    principal: sre-agent-dev|alice
+
+queries:
+  # US6 scenario 1: matched only by a probable rule, so still two nodes and a pending pair.
+  - name: pending
+    kind: suggestions
+    status: pending
+
+  # US6 scenario 3: the certain rule that disagrees with Alice's decision, surfaced not applied.
+  - name: conflict
+    kind: suggestions
+    status: conflict
+
+  # Everything the resolver has ever proposed, in score order.
+  - name: all
+    kind: suggestions
+
+  # US6 scenario 1, from the audit side: before the confirmation the pair is two entities.
+  - name: before
+    kind: audit
+    ref_a: otel.service.name=checkout
+    ref_b: k8s.deployment=shop/checkout-svc
+    observed_at: 2026-09-01T14:30:00Z
+
+  # US6 scenario 2: after the confirmation both names are one entity and the human decision is
+  # the deciding evidence.
+  - name: after
+    kind: audit
+    ref_a: otel.service.name=checkout
+    ref_b: k8s.deployment=shop/checkout-svc
+    observed_at: 2026-09-01T14:40:00Z
+
+  # US6 scenario 4, from the audit side: after the split they are two entities again.
+  - name: split
+    kind: audit
+    ref_a: otel.service.name=checkout
+    ref_b: k8s.deployment=shop/checkout-svc
+    observed_at: 2026-09-01T15:05:00Z
+
+  # The pair a certain rule (C2) merged with no human involved.
+  - name: payments
+    kind: audit
+    ref_a: otel.service.name=payments
+    ref_b: k8s.deployment=shop/payments
+    observed_at: 2026-09-01T15:05:00Z
+
+  # US6 scenario 4: the merged view as known at 14:40 and the separate view as known at 15:05,
+  # over the same valid instant.
+  - name: merged-1440
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:45:00Z
+    observed_at: 2026-09-01T14:40:00Z
+    hops: 1
+    direction: both
+  - name: split-1505
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:45:00Z
+    observed_at: 2026-09-01T15:05:00Z
+    hops: 1
+    direction: both
+  # The identifier that left: before the split it resolves to checkout, after it to the entity
+  # the split created.
+  - name: detached-1505
+    kind: subgraph
+    focus: k8s.deployment=shop/checkout-svc
+    valid_at: 2026-09-01T14:45:00Z
+    observed_at: 2026-09-01T15:05:00Z
+    hops: 1
+    direction: both
+
+  # Recorded once US7 lands; skipped by builds that cannot answer it.
+  - name: checkout
+    kind: history
+    focus: otel.service.name=checkout
+
+# Truth for `fixture verify --report` (constitution V). `same` is what a person who knows this
+# system would say, written down independently of what the rules decided.
+ground_truth:
+  certain_pairs:
+    - pair: [otel.service.name=payments, k8s.deployment=shop/payments]
+      same: true
+    - pair: [otel.service.name=checkout-legacy, k8s.deployment=shop/checkout-svc]
+      same: false
+  probable_pairs:
+    - pair: [otel.service.name=checkout, k8s.deployment=shop/checkout-svc]
+      same: true
+    - pair: [otel.service.name=notifications, k8s.deployment=ops/notifications-svc]
+      same: false

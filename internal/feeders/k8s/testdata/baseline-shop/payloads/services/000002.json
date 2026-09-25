@@ -1,0 +1,1 @@
+{"type":"ADDED","object":{"metadata":{"name":"storefront","namespace":"shop","resourceVersion":"1102","labels":{"app.kubernetes.io/name":"storefront","app.kubernetes.io/part-of":"shop"}},"spec":{"ports":[{"name":"http","port":80,"targetPort":"http"}],"selector":{"app.kubernetes.io/name":"storefront"}},"status":{"loadBalancer":{}}}}

@@ -1,0 +1,33 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: gcp-lb-dns-omitted-01
+family: gcp-exposure
+description: 'The same estate with the load balancers and Cloud DNS deliberately not read, which FR-057 makes the ordinary case: they are P3 and the first surface the deferral order drops. The checkpoint names both surfaces and the reason, so a reader who gets no exposure relation can tell "we did not look" from "it is not exposed" — and every other requirement holds unchanged, which is what the topology golden asserts. Synthetic structural twin: no identifier is derived from the organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — US7''s recording replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The extent, which is the whole fixture: both surfaces named, with the reason.
+  - name: extent
+    kind: extent
+    observed_at: 2026-09-21T20:00:00Z
+  # And the topology, unchanged: omitting a P3 surface leaves every other requirement alone (FR-057).
+  - name: storefront-2hop
+    kind: subgraph
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both

@@ -1,0 +1,331 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: adjacent-decoy-01
+family: adjacent-decoy
+description: >-
+  FR-062b / SC-021, the third of the three adversarial fixtures, and the only one on which the
+  prior does not merely rank the culprit low but ranks something else FIRST, confidently, for
+  reasons that are individually all correct.
+
+  At 14:30 — two minutes before the page — the on-call rolls inventory to revision 9 to drop a
+  cart-badge call "while checkout is unhealthy". inventory is one hop from checkout. The change
+  is two minutes old, human, adjacent, and inside the window: every term of the published score
+  rewards it. It scores 0.742753 and the prior puts it at the top of the list.
+
+  The actual cause is a ledger rollout at 14:07, twenty-five minutes earlier, two hops out
+  behind payments. It scores 0.433966 and the prior puts it FOURTH of five.
+  `prior_rank_of_culprit: 4` is read off `golden/diff.checkout-diff.json`.
+
+  This is the harm-rate fixture as much as the lift fixture. FR-061a defines harm as the
+  fraction of runs in which the prior put the culprit first and the investigation did not; the
+  mirror of it — the prior puts a REMEDIATION first and the investigation repeats it — is the
+  failure mode that makes an investigator worse than no investigator, because the report then
+  tells the on-call that their own rollback caused the outage. A run that names
+  `shop/inventory@rev9` here is not a near miss.
+
+  Why `candidate_effect` and not `coincident` for that decoy, since the published roles turn on
+  the same instant. `coincident` is for a change that lands near the onset and touches nothing
+  on the causal path: an unrelated deploy that happens to be in the window, refuted by evidence
+  on its own target. `candidate_effect` is for a change that started AFTER the estimated onset
+  and is therefore downstream of the symptom. The inventory rollout is twenty-three minutes
+  after the onset and its commit message says why it exists — it is a response to the symptom,
+  authored by a person who was already looking at the alert. Calling it coincident would be
+  saying it happened to be there; it did not happen to be there, it was caused to be there, by
+  the same incident. The distinction matters to grading rather than to prose: the engine is
+  expected to exonerate a `candidate_effect` by the causal ordering and to show it AS an effect
+  in the timeline, and only to fall back to evidence on its own target for a `coincident`.
+  `shop/storefront@rev12` at 14:04, three minutes BEFORE the onset, is the `coincident` in this
+  fixture, and it is here so that both exoneration routes are exercised on one graph.
+
+  A note on the shape and on what the subject's own series does. This fixture declares
+  `world.shape: step`: the ledger rollout at 14:07 is a step, and what the fixture needs is not a
+  different shape but the travelling — the degradation propagates along the call edges, so
+  checkout's own series moves and `onset` on the SUBJECT has something real to find at 14:07.
+  An earlier recording of this fixture had the engine estimating 13:27 on a flat checkout series
+  — a crossing in noise, forty minutes before the true onset — and the first wave then tested
+  payments alone. That branch is gone and will not come back by accident: the estimator now
+  refuses a crossing whose effect size is under the published `k_effect` floor of 3.0 MADs (that
+  one measured 1.30) and answers the typed `no_onset_detected` instead of an instant nobody can
+  act on. An estimate this fixture's telemetry does not support is now absent rather than wrong.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  # The prior, as a file: hops 2 is `engine.NeighbourhoodHops` and the window is the
+  # investigation's own, so this golden IS the ranking `prior_rank_of_culprit` is read from.
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:02:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: ledger-history
+    kind: history
+    focus: otel.service.name=ledger
+
+ground_truth:
+  culprit_change: k8s.change=shop/ledger@rev5
+  expected_top_k: 4
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20515:group=env:prod"
+    statement: "checkout error rate above 5 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: k8s.change=shop/ledger@rev5
+    causal_path:
+      - entity: k8s.change=shop/ledger@rev5
+        via: changed-by
+        role: cause
+      - entity: otel.service.name=ledger
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=payments
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          onset:
+            pointer: "METRIC otel.service.name=ledger"
+            search_window: "2026-09-01T13:02:00Z..2026-09-01T14:32:00Z"
+            method: SEASONAL_CUSUM
+        field_path: estimated_onset
+        op: eq
+        value: 2026-09-01T14:07:00Z
+        note: >-
+          the instant everything else is measured against, and the single predicate that
+          exonerates two of the four decoys outright. The symptom is twenty-five minutes old
+          when the monitor fires; the candidate the prior ranks first is two minutes old.
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=ledger"
+            window: "2026-09-01T14:07:00Z..2026-09-01T14:22:00Z"
+            version_attribute: service.version
+        field_path: versions[version=rev5].error_rate
+        op: gt
+        value: 0.05
+        note: >-
+          19.00 % of requests on rev5 fail, and rev5 is the only bucket in the breakdown: the
+          symptom window opens at the rollout.
+
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=ledger"
+            windows: {reference_at: 2026-09-01T14:07:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: up
+        note: >-
+          0.78 % before the onset, 19.23 % after it — a relative delta of 23.7, and `separable`.
+          ledger is the only entity in the neighbourhood whose error rate moves: payments reads
+          0.8431 % against 0.8417 % across the same instant, and checkout 1.096 % against
+          1.089 %.
+
+      - term:
+          error_spans:
+            src: otel.service.name=payments
+            dst: otel.service.name=ledger
+            edge_type: CALLS
+            window: "2026-09-01T14:07:00Z..2026-09-01T14:22:00Z"
+        field_path: groups[error_kind=deadline_exceeded].join_keys.version
+        op: eq
+        value: rev5
+        note: >-
+          the mechanism: the failing calls are payments' calls into ledger, and they carry rev5.
+          This is the edge two hops out that the prior's topological term is discounting.
+
+    decoys:
+      - entity: k8s.change=shop/inventory@rev9
+        causal_role: candidate_effect
+        why: >-
+          the on-call's own remediation, rolled at 14:30 — two minutes before the page and
+          twenty-three minutes after the onset — on a service one hop from checkout, by a
+          person. It is the top of the prior's list by a wide margin (0.742753 against the
+          culprit's 0.433966) and it is an effect of the incident, not a cause of it. A run that
+          names it has told the on-call that their own mitigation broke production.
+      - entity: k8s.change=shop/storefront@scale-1420
+        causal_role: candidate_effect
+        why: >-
+          the horizontal pod autoscaler widening storefront from 3 to 6 replicas at 14:20,
+          thirteen minutes after the onset. The classic downstream artefact: the queue in front
+          of checkout grew because ledger was timing out. The prior ranks it second.
+      - entity: k8s.change=shop/storefront@rev12
+        causal_role: coincident
+        why: >-
+          a scheduled storefront rollout at 14:04, three minutes BEFORE the onset. This is the
+          decoy the ordering argument does not reach — it is early enough to be a cause — so it
+          has to be refuted on its own target's telemetry. It is here to make sure the engine
+          has both routes and uses the right one for each.
+      - entity: k8s.change=shop/payments-config@rv8800
+        causal_role: stale
+        why: >-
+          a payments ConfigMap edit at 13:20, forty-seven minutes before the onset, one hop from
+          checkout. If raising the log sampling rate had broken payments, payments would have
+          broken at 13:20.
+
+    exonerating_evidence:
+      k8s.change=shop/inventory@rev9:
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=ledger"
+              search_window: "2026-09-01T13:02:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: lt
+          value: 2026-09-01T14:30:00Z
+          note: >-
+            causal ordering, and it is decisive on its own: the symptom is twenty-three minutes
+            older than the change the prior wants to blame.
+        - term:
+            errors_by_version:
+              pointer: "METRIC otel.service.name=inventory"
+              window: "2026-09-01T14:07:00Z..2026-09-01T14:22:00Z"
+              version_attribute: service.version
+          field_path: versions[version=rev9].error_rate
+          op: absent
+          note: >-
+            and the second, independent route: inventory's own error breakdown over the
+            quarter-hour after the onset holds ONE bucket, `baseline`, at 0.9461 %. There is no
+            rev9 in it, because rev9 did not exist until 14:30. The errors this investigation is
+            about predate the revision the prior wants to blame them on entirely.
+      k8s.change=shop/storefront@scale-1420:
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=ledger"
+              search_window: "2026-09-01T13:02:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: lt
+          value: 2026-09-01T14:20:00Z
+          note: the same ordering argument, thirteen minutes' worth of it.
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=storefront"
+              windows: {reference_at: 2026-09-01T14:07:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: 0.7578 % before the onset, 0.7553 % after it — the scaled service is not the one that broke.
+      k8s.change=shop/storefront@rev12:
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=storefront"
+              windows: {reference_at: 2026-09-01T14:07:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: >-
+            the only route available for this decoy, because it precedes the onset: the service
+            it rolled is flat across the instant the symptom started.
+        - term:
+            error_spans:
+              src: otel.service.name=storefront
+              dst: otel.service.name=checkout
+              edge_type: CALLS
+              window: "2026-09-01T14:07:00Z..2026-09-01T14:22:00Z"
+          field_path: groups[error_kind=deadline_exceeded].join_keys.version
+          op: ne
+          value: rev5
+          note: >-
+            and the edge storefront rolled onto is not the edge that is failing: 25
+            deadline_exceeded spans on `storefront -> checkout` in the quarter-hour after the
+            onset, carrying `baseline`, against 507 on `payments -> ledger` carrying rev5.
+      k8s.change=shop/payments-config@rv8800:
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=ledger"
+              search_window: "2026-09-01T13:02:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: gt
+          value: 2026-09-01T13:20:00Z
+          note: >-
+            forty-seven minutes of clean telemetry sit between the edit and the onset, and the
+            world holds a second comparison that says so: payments across the half hour ending
+            at 13:57 reads 0.8456 % against 0.8448 %, which is the same flat line it reads
+            everywhere else in this fixture.
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=payments"
+              windows: {reference_at: 2026-09-01T14:07:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: up
+          note: >-
+            what fails on payments are its calls into ledger, which is the edge the decisive
+            `error_spans` predicate names. payments CALLS ledger, and the generator propagates a
+            callee's excess error rate to its caller attenuated by 0.6 per hop, so payments no
+            longer reads the flat line this predicate was first written against: the re-recorded
+            world has it at 11.7089 % against a baseline of 0.8431 % over the quarter-hour pair
+            ending at 14:22, which is `up`. That the caller moves too is the point of this
+            decoy — the direction alone does not tell payments from ledger, and only the
+            `error_spans` predicate on the payments->ledger edge does.
+
+    # The rollout is observed at 14:07:30 and the first quarter-hour window that contains its
+    # effect closes at 14:22, ten minutes before the monitor fires. The answer is knowable at
+    # the instant the question is asked, so `unknown` is a failure here rather than the correct
+    # hedge.
+    knowability_time: 2026-09-01T14:22:00Z
+    onset: {at: 2026-09-01T14:07:00Z, tolerance_seconds: 120}
+    # Read off golden/diff.checkout-diff.json: fourth of five, behind the remediation, the
+    # autoscaler and a scheduled rollout.
+    prior_rank_of_culprit: 4
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:07:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    shape: step
+    note: >-
+      One grid entry, centred on the estimated onset at 14:07 rather than on the alert instant
+      at 14:32 — which on this fixture would put the whole symptom into the baseline half and
+      make ledger read flat, exactly the failure the corpus README describes.
+
+      The grid is a supplement: `fixture record-world` runs the deterministic engine over this
+      fixture's own question first and records every term that run issues, so the world is a
+      superset of the engine's plan by construction and the miss rate measures the recording
+      rather than the arithmetic.
+
+  runs: 3

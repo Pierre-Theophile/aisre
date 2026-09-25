@@ -1,0 +1,1 @@
+{"items":[{"name":"shop-neg","selfLink":"https://www.googleapis.com/compute/v1/projects/twin-production/regions/europe-west1/networkEndpointGroups/shop-neg","region":"https://www.googleapis.com/compute/v1/projects/twin-production/regions/europe-west1","networkEndpointType":"SERVERLESS","cloudRun":{"service":"storefront"}}]}

@@ -1,0 +1,166 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: deploy-cross-source-merge-01
+family: deploy-cross-source
+description: 'One repository''s rollouts seen by three connectors: the GCP feeder polls Cloud Run and reports revisions carrying the commit they were built from, and the GitHub feeder polls the same pipeline''s deployments, and the Vercel feeder reports the promotion of the monorepo''s third service, which Vercel serves. The operator''s target map names each rollout''s target in the platform''s own vocabulary — the Cloud Run service, the Vercel project — so the connectors address one entity and C8 merges each rollout''s observations across three sources — while refusing the two near misses that share one of C8''s two conditions and not the other: a REDEPLOY (one target, two commits) and a MONOREPO run (one commit, two targets). It is the only fixture in the corpus in which a deploy pipeline''s observation meets a platform''s, which is what makes SC-004 a measurement rather than 100% of nothing. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+    - source_id: vercel:twin
+      kind: vercel
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T16:00:00Z
+
+queries:
+  # The C8 merge itself: the pipeline's record of a rollout and the platform's, on one commit and one
+  # target. Its golden carries the decision, its rule, and the CORRELATION keys it stood on.
+  - name: why-the-two-rollouts-are-one
+    kind: audit
+    ref_a: github.change=repositories/555/deployments/4321/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+    ref_b: gcp.change=rollout-created/twin-production/europe-west1/storefront/storefront-00042-bbb@2026-09-21T14:18:00Z
+    observed_at: 2026-09-21T20:00:00Z
+  # The REDEPLOY. One target, two commits: these are two rollouts of one service, and merging them
+  # collapses a rollout with the one it replaced.
+  - name: why-the-redeploy-is-not-the-rollout-it-replaced
+    kind: audit
+    ref_a: github.change=repositories/555/deployments/4320/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+    ref_b: github.change=repositories/555/deployments/4321/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+    observed_at: 2026-09-21T20:00:00Z
+  # The MONOREPO run. One commit, two targets: FR-017 makes this N changes, and a commit reaching
+  # several services is the normal case rather than evidence that the services are one.
+  - name: why-one-commit-to-two-services-is-two-rollouts
+    kind: audit
+    ref_a: github.change=repositories/555/deployments/4321/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+    ref_b: github.change=repositories/555/deployments/4321/targets/gcp.cloudrun.service/twin-production/europe-west1/orders
+    observed_at: 2026-09-21T20:00:00Z
+  # The CANARY rollout against the platform's production revision: one commit, one target, two
+  # environments. C8's third condition is the only thing refusing this one.
+  - name: why-the-canary-is-not-the-production-rollout
+    kind: audit
+    ref_a: github.change=repositories/555/deployments/4322/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+    ref_b: gcp.change=rollout-created/twin-production/europe-west1/storefront/storefront-00042-bbb@2026-09-21T14:18:00Z
+    observed_at: 2026-09-21T20:00:00Z
+  # The third source. Vercel's own promotion of web and the pipeline's web change: one commit, one target
+  # (the project the Vercel feeder describes), one environment — C8, across a platform that states the
+  # instant and one that does not.
+  - name: why-the-vercel-promotion-is-the-pipelines-rollout
+    kind: audit
+    ref_a: github.change=repositories/555/deployments/4321/targets/vercel.project/prj_web
+    ref_b: vercel.change=dpl_web_42
+    observed_at: 2026-09-21T20:00:00Z
+  # The same question on the Vercel-served service: ONE rollout, carrying the pipeline's instant and
+  # actor and Vercel's promotion, because C8 merged the two. The preview of the same commit is absent,
+  # because it was never a rollout (FR-032).
+  - name: what-changed-on-web
+    kind: diff
+    focus: vercel.project=prj_web
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T16:00:00Z
+    reference_at: 2026-09-21T14:40:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 1
+    direction: both
+  # The question an investigation actually asks, and the one this fixture exists to answer: what
+  # changed on storefront in the window before the incident? (004 T152)
+  #
+  # A DIFF over the window, focused on the service — not a subgraph. A change's valid interval is one
+  # microsecond, so a subgraph at any instant but the change's own shows no change, and an investigation
+  # never knows that instant in advance; it knows the window. This replaced a subgraph whose comment said
+  # it showed "one change, the service it targeted" and whose golden held no change at all.
+  #
+  # The assertion is in the COUNT: the production rollout GitHub and Cloud Run both observed appears
+  # ONCE, carrying both sources' facts, because C8 merged it — and the canary appears separately,
+  # because C8 refused it on environment. Two rollouts where there should be one would mean the merge
+  # did not reach what an investigation reads. The same commit's orders rollout is there too, two hops
+  # out and merged on its own: one commit to two services is two rollouts (FR-017).
+  - name: what-changed-on-storefront
+    kind: diff
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T16:00:00Z
+    reference_at: 2026-09-21T14:40:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The suggestion queue. C8 is certain, so the monorepo near miss must appear here as P7's
+  # SUGGESTION rather than as a merge — an empty queue would mean the case was dropped, not refused.
+  - name: the-monorepo-run-is-suggested-not-merged
+    kind: suggestions
+    observed_at: 2026-09-21T20:00:00Z
+
+ground_truth:
+  # The pairs SC-004 is measured over: one rollout observed by two connectors, which must merge
+  # automatically under a CERTAIN rule.
+  cross_source_pairs:
+    - pair:
+        - github.change=repositories/555/deployments/4321/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+        - gcp.change=rollout-created/twin-production/europe-west1/storefront/storefront-00042-bbb@2026-09-21T14:18:00Z
+      same: true
+      rule: C8
+    # The second service's pair, from the SAME deployment. It is here because C8 must fire per
+    # target: a rule that merged the monorepo run into one change would still satisfy a ground truth
+    # that only named one of the two.
+    - pair:
+        - github.change=repositories/555/deployments/4321/targets/gcp.cloudrun.service/twin-production/europe-west1/orders
+        - gcp.change=rollout-created/twin-production/europe-west1/orders/orders-00018-ddd@2026-09-21T14:18:00Z
+      same: true
+      rule: C8
+    # The third source: the pipeline's web change and Vercel's promotion (T093).
+    - pair:
+        - github.change=repositories/555/deployments/4321/targets/vercel.project/prj_web
+        - vercel.change=dpl_web_42
+      same: true
+      rule: C8
+  # And the two near misses. Each shares exactly ONE of C8's two conditions, so a rule generous
+  # enough to merge on either alone fails here — which is what stops the pairs above from being
+  # satisfiable by a rule that merges everything.
+  distinct_pairs:
+    # The redeploy: same target, different commits.
+    - pair:
+        - github.change=repositories/555/deployments/4320/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+        - github.change=repositories/555/deployments/4321/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+      same: false
+    # The monorepo run: same commit, different targets.
+    - pair:
+        - github.change=repositories/555/deployments/4321/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+        - github.change=repositories/555/deployments/4321/targets/gcp.cloudrun.service/twin-production/europe-west1/orders
+      same: false
+    # The CANARY rollout: same commit, same target, different environment. This is the pair that
+    # makes C8's third condition load-bearing — without it, deleting the environment check changes
+    # nothing anywhere in this corpus, which is how a condition becomes decoration.
+    - pair:
+        - github.change=repositories/555/deployments/4322/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+        - gcp.change=rollout-created/twin-production/europe-west1/storefront/storefront-00042-bbb@2026-09-21T14:18:00Z
+      same: false
+    # The redeploy again, across sources: Vercel's promotion of NEW and the pipeline's OLD deploy of web.
+    # Same target, different commits.
+    - pair:
+        - github.change=repositories/555/deployments/4320/targets/vercel.project/prj_web
+        - vercel.change=dpl_web_42
+      same: false
+    # The monorepo run across platforms: Vercel's web promotion and Cloud Run's storefront rollout carry
+    # one commit and share no target.
+    - pair:
+        - vercel.change=dpl_web_42
+        - gcp.change=rollout-created/twin-production/europe-west1/storefront/storefront-00042-bbb@2026-09-21T14:18:00Z
+      same: false
+    # And across the two services, for completeness: neither condition holds.
+    - pair:
+        - github.change=repositories/555/deployments/4320/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront
+        - gcp.change=rollout-created/twin-production/europe-west1/orders/orders-00018-ddd@2026-09-21T14:18:00Z
+      same: false

@@ -1,0 +1,97 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: gcp-cross-source-merge-01
+family: gcp-cross-source
+description: 'One Cloud Run service seen by two connectors: the GCP feeder polls it and reports two revisions, and the OpenTelemetry feeder receives spans from a process running inside the newer one, carrying the resource attributes the GCP detector sets. Neither connector knows the other exists, and C4 merges the observed service with the revision''s Cloud Run service — citing the revision as its evidence, and never merging the revisions with each other. It carries one labelled pair per certain GCP rule: C4 on a service whose telemetry name differs from its Cloud Run name, C5 on one that declares OTEL_SERVICE_NAME, and C7 on a Cloud SQL instance reached over the connector''s Unix socket, where the caller''s own address carries the connection name. It is the only fixture in the corpus in which a GCP claim meets another source''s, which is what makes SC-021''s two cross-source figures measurements rather than 100% and 95% of nothing. Synthetic structural twin: no identifier is derived from the organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — US7''s recording replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: otel:twin
+      kind: otel
+      ordering: none
+      reordering_window: 30s
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The audit: are these two the same entity, and why? This is `resolve why`'s own query.
+  - name: why-observed-is-the-cloud-run-service
+    kind: audit
+    ref_a: otel.service.name=storefront-web
+    ref_b: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    observed_at: 2026-09-21T20:00:00Z
+  # And the pair C4 must NOT have merged. The revision is the evidence for the merge, not a party
+  # to it; merging with it made two revisions of one service one entity across a rollout.
+  - name: why-the-two-revisions-are-not-one
+    kind: audit
+    ref_a: gcp.cloudrun.revision=twin-production/europe-west1/storefront/storefront-00041-aaa
+    ref_b: gcp.cloudrun.revision=twin-production/europe-west1/storefront/storefront-00042-bbb
+    observed_at: 2026-09-21T20:00:00Z
+  # The neighbourhood around the merged entity, so the merge is visible as a graph rather than only
+  # as a decision: one service, its two revisions, its owner, and the dependency the spans showed.
+  - name: merged-service-2hop
+    kind: subgraph
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The second pair, and its rule. C5 rests on somebody having configured OTEL_SERVICE_NAME, so
+  # the audit's golden is where "the declaration is the evidence" stops being a sentence.
+  - name: why-the-declared-name-is-the-service
+    kind: audit
+    ref_a: otel.service.name=orders-api
+    ref_b: gcp.cloudrun.service=twin-production/europe-west1/orders
+    observed_at: 2026-09-21T20:00:00Z
+  # The suggestion queue, empty. SC-021's first clause is that no probable rule merged on its own,
+  # and a fixture in which two sources meet is where a probable rule would have the chance.
+  - name: no-probable-merge
+    kind: suggestions
+    observed_at: 2026-09-21T20:00:00Z
+    expect_empty: "SC-021's first clause: no probable rule merged or proposed on its own in a fixture where two sources meet, so the suggestion queue must hold nothing"
+
+ground_truth:
+  # The cross-source pair SC-021's 95% figure is measured over: one entity present in both GCP and
+  # another source, with an agreed environment, that must merge automatically under a CERTAIN rule.
+  cross_source_pairs:
+    - pair:
+        - otel.service.name=storefront-web
+        - gcp.cloudrun.service=twin-production/europe-west1/storefront
+      same: true
+      rule: C4
+    - pair:
+        - otel.service.name=orders-api
+        - gcp.cloudrun.service=twin-production/europe-west1/orders
+      same: true
+      rule: C5
+    # C7: the instance as GCP lists it, and the socket address a caller reached it at. The two
+    # sides share no identifier and no namespace — the only thing joining them is the connection
+    # name both were configured with, which is what makes this rule certain rather than a
+    # resemblance.
+    - pair:
+        - gcp.cloudsql.instance=twin-production:europe-west1:orders-primary
+        - server.address=/cloudsql/twin-production:europe-west1:orders-primary
+      same: true
+      rule: C7
+  # And the pair that must stay apart, for the same reason the second audit query exists.
+  distinct_pairs:
+    - pair:
+        - gcp.cloudrun.revision=twin-production/europe-west1/storefront/storefront-00041-aaa
+        - gcp.cloudrun.revision=twin-production/europe-west1/storefront/storefront-00042-bbb
+      same: false
+    # Two different services, both observed, both in the same environment, both with a declared
+    # OpenTelemetry name. Nothing may merge them, and a rule loose enough to do it would satisfy
+    # every figure above.
+    - pair:
+        - gcp.cloudrun.service=twin-production/europe-west1/storefront
+        - gcp.cloudrun.service=twin-production/europe-west1/orders
+      same: false

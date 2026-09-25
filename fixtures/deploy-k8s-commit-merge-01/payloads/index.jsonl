@@ -1,0 +1,9 @@
+{"kind":"namespaces","at":"2026-09-21T14:00:00Z","seq":100,"file":"namespaces/000001.json"}
+{"kind":"deployments","at":"2026-09-21T14:00:00Z","seq":1003,"file":"deployments/000001.json"}
+{"kind":"sync","at":"2026-09-21T14:01:00Z","seq":1100,"file":"sync/000001.pb"}
+{"kind":"deployments","at":"2026-09-21T14:10:00Z","seq":1050,"file":"deployments/000002.json"}
+{"kind":"deployments","at":"2026-09-21T14:30:00Z","seq":1080,"file":"deployments/000003.json"}
+{"kind":"installation-repositories","at":"2026-09-21T14:40:00Z","seq":0,"file":"installation-repositories/000001.json"}
+{"kind":"deployments","at":"2026-09-21T14:40:00Z","seq":0,"file":"deployments/000001.json"}
+{"kind":"deployment-statuses","at":"2026-09-21T14:40:00Z","seq":0,"file":"deployment-statuses/000001.json"}
+{"kind":"poll-marker","at":"2026-09-21T14:40:00Z","seq":0,"file":"poll-marker/000001.json"}

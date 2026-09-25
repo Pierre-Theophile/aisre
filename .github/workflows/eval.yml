@@ -1,0 +1,535 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The evaluation gate for the investigation engine (002 FR-058, FR-060, FR-067, SC-001, SC-016,
+# SC-017, SC-020, SC-021; ADR-0003 D9; plan §Evaluation and CI; tasks.md T113).
+#
+# This is the job that decides whether the engine is good enough to ship, and it is deliberately
+# separate from ci.yml. ci.yml proves the plumbing — every recorded trajectory replays
+# byte-identically with zero network, and calibration falls out of that replay with no model
+# call. This one runs the corpus × k against the recorded worlds in **world-replay** mode with
+# the production model configuration, which costs money and takes minutes, so it runs nightly and
+# on demand rather than on every pull request.
+#
+# THE TWO CORPORA (ADR-0003 D9). Real recordings stay private. The public repository ships
+# synthetic structural twins and runs the full gate on them; the recorded corpus lives in a
+# private repository and runs the same job with the same thresholds. The matrix runs both legs,
+# each result records which corpus produced it, and the `private` leg **skips visibly, with a
+# reason** when the private corpus is not reachable from this checkout. A release statement names
+# both results.
+#
+# THE MODEL, AND THE ONE WAY THIS JOB COULD LIE. FR-061 requires production's model
+# configuration, and FR-067 requires the engine to be fully operable with none. Both are true
+# here: with `ANTHROPIC_API_KEY` the legs run live and publish the production result; without it
+# they run `--model-free` and **every published number is labelled `model-free`** — in the rows,
+# in the job summary, in the artifact name and in the release statement — because a model-free
+# number that could be mistaken for the production result is the one way this job could mislead
+# somebody who was not looking for it.
+#
+# THE BATCH API. FR-058's runs are not latency-bound, so the corpus is exactly the workload the
+# Batch API exists for. `aisre eval run --batch` is plumbed and RESERVED: as of T113
+# `internal/investigation/model` has no batch client — it speaks the Messages API and the
+# streaming transport — so the flag is accepted, reported and does nothing. It is passed below
+# anyway, and deliberately: when the batch client lands, this workflow does not have to change,
+# and the flag's own output line is what will announce that it started meaning something.
+#
+# THE THRESHOLD. The aggregate pass@1 gate is set by the first full corpus run (FR-060) with
+# `scripts/check-report.sh --investigation --set-threshold`, by hand, once. Until then the gate
+# prints it as `unset`, annotates the job, and does not pass as though it had been met — every
+# other gate is in force from the first run. No threshold may exceed the coverage ceiling of the
+# audit it cites (FR-071); the gate checks that too.
+
+name: eval
+
+on:
+  schedule:
+    # 04:23 UTC, after e2e-nightly has finished with the runners.
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+    inputs:
+      k:
+        description: "Runs per fixture (extended to 7 on disagreement)"
+        required: false
+        default: "3"
+      model_free:
+        description: "Force a model-free run even when a key is configured"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.27"
+  CGO_ENABLED: "0"
+
+jobs:
+  # ---------------------------------------------------------------------------------------
+  # Runner minutes. A scheduled run on a commit the previous scheduled run already measured
+  # reproduces that result at full price, so it is skipped, and says so. A dispatch always runs:
+  # that is how to re-run a flaky night on the same commit.
+  # ---------------------------------------------------------------------------------------
+  gate:
+    name: new commits since the last scheduled run?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          last=$(gh run list -R "$GITHUB_REPOSITORY" --workflow eval.yml --event schedule \
+            --limit 10 --json databaseId,headSha,conclusion \
+            --jq "[.[] | select(.databaseId != $GITHUB_RUN_ID)
+                       | select(.conclusion == \"success\" or .conclusion == \"failure\")][0].headSha // \"\"")
+          if [ "$last" = "$GITHUB_SHA" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "### Skipped: \`${GITHUB_SHA}\` was already measured by the previous scheduled run" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  investigation:
+    name: investigation eval (${{ matrix.corpus }} corpus)
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    strategy:
+      # Both legs always report. A private corpus that is absent is a fact about this checkout,
+      # not a failure of the public one, and the public result must not be withheld because of it.
+      fail-fast: false
+      matrix:
+        corpus: [public, private]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sreagent
+          POSTGRES_PASSWORD: sreagent
+          POSTGRES_DB: sreagent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sreagent -d sreagent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      PG_DSN: postgres://sreagent:sreagent@localhost:5432/sreagent?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      # Is this corpus reachable from this checkout? The private corpus needs BOTH its location
+      # and a credential; either one missing means there is nothing to run against here, and that
+      # is reported with its reason rather than passing silently or failing the workflow.
+      #
+      # `secrets` is not available in a step-level `if`, so the decision is made in a `run` step
+      # that copies what it needs into env and publishes an output.
+      - name: is this corpus available here?
+        id: corpus
+        shell: bash
+        env:
+          PRIVATE_CORPUS_REPO: ${{ secrets.PRIVATE_CORPUS_REPO }}
+          PRIVATE_CORPUS_TOKEN: ${{ secrets.PRIVATE_CORPUS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.corpus }}" != "private" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          reason=""
+          [ -z "${PRIVATE_CORPUS_REPO}" ] && reason="no \`PRIVATE_CORPUS_REPO\` secret is configured"
+          if [ -n "${PRIVATE_CORPUS_REPO}" ] && [ -z "${PRIVATE_CORPUS_TOKEN}" ]; then
+            reason="\`PRIVATE_CORPUS_REPO\` is configured but no \`PRIVATE_CORPUS_TOKEN\` is, so the corpus cannot be fetched"
+          fi
+          if [ -z "$reason" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "available=false" >> "$GITHUB_OUTPUT"
+          echo "skip_reason=$reason" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Private corpus: SKIPPED'
+            echo
+            echo "**Reason**: ${reason}."
+            echo
+            echo 'This is the expected state of the public repository: real recordings stay private'
+            echo '(ADR-0003 D9), and the public gate runs the same job with the same thresholds on'
+            echo 'synthetic structural twins. A skipped private leg is a fact about this checkout and'
+            echo 'is never a pass: the release statement below names it as skipped, with this reason.'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The private corpus replaces fixtures/incidents wholesale, under its own credential, and
+      # only on the private leg. It is never fetched on the public leg, so a misconfiguration
+      # cannot leak a recorded fixture into a public result.
+      - name: fetch the private corpus
+        if: matrix.corpus == 'private' && steps.corpus.outputs.available == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.PRIVATE_CORPUS_REPO }}
+          token: ${{ secrets.PRIVATE_CORPUS_TOKEN }}
+          path: .private-corpus
+          persist-credentials: false
+
+      - name: place the private corpus
+        if: matrix.corpus == 'private' && steps.corpus.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf fixtures/incidents
+          mv .private-corpus/fixtures/incidents fixtures/incidents
+          echo "private corpus placed: $(find fixtures/incidents -maxdepth 1 -mindepth 1 -type d | wc -l) fixture(s)"
+
+      - name: build
+        if: steps.corpus.outputs.available == 'true'
+        run: make build
+
+      # Live or model-free, decided once and recorded. `--model-free` is not a degraded mode: it
+      # is FR-067's requirement that the engine be fully operable with no vendor account, and the
+      # deterministic engine, the first wave, the ledger and the whole gate run under it.
+      - name: choose the model configuration
+        id: model
+        if: steps.corpus.outputs.available == 'true'
+        shell: bash
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FORCE_MODEL_FREE: ${{ github.event.inputs.model_free }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ANTHROPIC_API_KEY}" ] && [ "${FORCE_MODEL_FREE}" != "true" ]; then
+            {
+              echo "flag="
+              echo "label=production model configuration (config/model.yaml)"
+              echo "suffix="
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "flag=--model-free"
+              echo "label=MODEL-FREE (no model call was made; these are NOT the production numbers)"
+              echo "suffix=-model-free"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: migrate
+        if: steps.corpus.outputs.available == 'true'
+        run: bin/aisre migrate --db "$PG_DSN"
+
+      # The metamorphic multiples (FR-062a, SC-020). They are GENERATED, never checked in, so
+      # they are derived here, into a directory outside the corpus, and each one carries its
+      # parent, its transformation and the published image of its parent's ground truth in its
+      # own `derived.json`. A transform that does not apply to a fixture — a culprit-deleted
+      # variant of an incident whose ground truth is already `unobserved`, say — is reported and
+      # skipped; without this step the invariance gate prints NOT RUN rather than passing.
+      - name: derive the metamorphic variants
+        if: steps.corpus.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p .variants
+          for dir in fixtures/incidents/*/; do
+            id=$(basename "$dir")
+            for transform in culprit-deleted decoy-injected time-shifted name-permuted; do
+              if ! bin/aisre fixture derive "$dir" --transform "$transform" \
+                   --out ".variants/${id}-${transform}" --db "$PG_DSN" --force >/dev/null 2>&1; then
+                echo "derive ${id} ${transform}: not applicable to this fixture, skipped"
+              fi
+            done
+          done
+          echo "derived $(find .variants -maxdepth 1 -mindepth 1 -type d | wc -l) variant(s)"
+
+      # The corpus × k in world-replay mode. Every worker is answered from the fixture's own
+      # `world/`; nothing is improvised and nothing is live. `--corpus` is written into the rows,
+      # so a number is never separated from the corpus that produced it.
+      - name: run the corpus x k in world-replay mode
+        id: run
+        if: steps.corpus.outputs.available == 'true'
+        shell: bash
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          K: ${{ github.event.inputs.k || '3' }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          fixtures=(fixtures/incidents/*/)
+          {
+            echo "### Investigation eval — ${{ matrix.corpus }} corpus"
+            echo
+            echo "- model: ${{ steps.model.outputs.label }}"
+            echo "- runs per fixture: ${K} (extended to 7 only when the first 3 disagree)"
+            echo "- commit: \`${GITHUB_SHA}\`"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ ${#fixtures[@]} -eq 0 ]; then
+            {
+              echo
+              echo '**0 incident fixtures in this corpus.** Nothing was measured, and nothing passed.'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          bin/aisre eval run \
+            --fixtures fixtures/incidents \
+            --runs "$K" \
+            --corpus "${{ matrix.corpus }}" \
+            --db "$PG_DSN" \
+            --variants .variants \
+            --batch \
+            ${{ steps.model.outputs.flag }} \
+            --report-json "eval-rows-${{ matrix.corpus }}.jsonl" \
+            --summary "eval-summary-${{ matrix.corpus }}.md" \
+            --doc docs/evaluation/investigation-metrics.md
+          cat "eval-summary-${{ matrix.corpus }}.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # The gate. Every gate below the pass@1 threshold is in force from the first run; the
+      # threshold itself prints as `unset` until the first full corpus run publishes it, and
+      # says so rather than passing silently.
+      - name: investigation gate
+        id: gate
+        if: always() && steps.corpus.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/check-report.sh --investigation "eval-rows-${{ matrix.corpus }}.jsonl" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # What this leg concluded, in one machine-readable file the release statement reads. It is
+      # written whatever the gate did, because "the gate failed" is part of the statement.
+      - name: record this leg's result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Every value is written shell-quoted (%q): the release statement sources this file,
+          # and the model label carries parentheses and spaces ("model configuration 1.1.0
+          # (digest …)"), which an unquoted assignment cannot survive. The first run on origin
+          # failed on exactly that line.
+          {
+            printf 'corpus=%q\n' '${{ matrix.corpus }}'
+            printf 'available=%q\n' '${{ steps.corpus.outputs.available }}'
+            printf 'skip_reason=%q\n' '${{ steps.corpus.outputs.skip_reason }}'
+            printf 'model=%q\n' '${{ steps.model.outputs.label }}'
+            printf 'gate=%q\n' '${{ steps.gate.outcome }}'
+            printf 'commit=%q\n' "${GITHUB_SHA}"
+          } > "eval-leg-${{ matrix.corpus }}.env"
+          cat "eval-leg-${{ matrix.corpus }}.env"
+
+      - name: upload this leg
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-${{ matrix.corpus }}${{ steps.model.outputs.suffix }}
+          path: |
+            eval-rows-${{ matrix.corpus }}.jsonl
+            eval-summary-${{ matrix.corpus }}.md
+            eval-leg-${{ matrix.corpus }}.env
+            docs/evaluation/investigation-metrics.md
+          if-no-files-found: ignore
+
+  # -------------------------------------------------------------------------------------------
+  # The release statement. Constitution §Compliance review requires every release to state that
+  # replay CI and calibration reporting passed; this is where the evaluation half of that
+  # sentence is composed, and it names BOTH legs — including a private leg that skipped, with its
+  # reason. A statement that quietly omitted the leg it could not run would be the exact failure
+  # the private-corpus split exists to avoid.
+  release-statement:
+    name: release statement
+    runs-on: ubuntu-latest
+    needs: [gate, investigation]
+    # always(): a failed leg is part of the statement. Not when the gate skipped the night.
+    if: always() && needs.gate.outputs.run == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: collect both legs
+        uses: actions/download-artifact@v4
+        with:
+          path: legs
+          merge-multiple: true
+
+      - name: compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '## Evaluation release statement'
+            echo
+            echo "Commit \`${GITHUB_SHA}\`, run \`${GITHUB_RUN_ID}\`."
+            echo
+            echo '| corpus | ran? | model | gate | aggregate pass@1 | lift | harm | citations |'
+            echo '|---|---|---|---|---:|---:|---:|---:|'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          for corpus in public private; do
+            leg="legs/eval-leg-${corpus}.env"
+            rows="legs/eval-rows-${corpus}.jsonl"
+            if [ ! -f "$leg" ]; then
+              echo "| ${corpus} | **no result** | — | — | — | — | — | — |" | tee -a "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            # shellcheck disable=SC1090 # a key=value file this workflow just wrote.
+            . "$leg"
+            ran="yes"
+            [ "${available:-false}" = "true" ] || ran="**skipped** — ${skip_reason:-no reason recorded}"
+            value() {
+              [ -f "$rows" ] || { echo '—'; return; }
+              jq -r --arg m "$1" 'select(.metric == $m and .scope == "corpus")
+                | if .value == null then "n/a" else (.value | tostring) end' "$rows" | head -1
+            }
+            printf '| %s | %s | %s | %s | %s | %s | %s | %s |\n' \
+              "$corpus" "$ran" "${model:-—}" "${gate:-—}" \
+              "$(value pass_at_1)" "$(value lift_over_prior)" \
+              "$(value harm_rate)" "$(value citation_validity)" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          {
+            echo
+            echo 'The aggregate pass@1 threshold is set by the first full corpus run (FR-060) and'
+            echo 'until then prints as "unset"; every other gate is in force from the first run. A'
+            echo 'leg labelled MODEL-FREE made no model call and its numbers are not the production'
+            echo 'result. Detection power for each gate is printed in that leg'"'"'s own summary.'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # -------------------------------------------------------------------------------------------
+  # Publishing the regenerated document. The nightly on `main` opens or updates a pull request
+  # with `docs/evaluation/investigation-metrics.md` as this run produced it. It NEVER pushes to
+  # main: the published numbers are a claim about the engine, and a claim about the engine gets
+  # reviewed like any other change (constitution §Code review).
+  publish:
+    name: publish investigation-metrics.md
+    runs-on: ubuntu-latest
+    needs: investigation
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: take the public leg's document
+        uses: actions/download-artifact@v4
+        with:
+          pattern: eval-public*
+          path: legs
+          merge-multiple: true
+
+      - name: stage the regenerated document
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f legs/docs/evaluation/investigation-metrics.md ]; then
+            echo 'the public leg published no document; nothing to open a pull request with'
+            echo 'staged=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cp legs/docs/evaluation/investigation-metrics.md docs/evaluation/investigation-metrics.md
+          echo 'staged=true' >> "$GITHUB_OUTPUT"
+
+      # The document is uploaded before the pull request is attempted, so a run whose pull
+      # request cannot be opened still hands a maintainer the numbers it measured.
+      - name: upload the regenerated document
+        if: steps.stage.outputs.staged == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: investigation-metrics-${{ github.run_id }}
+          path: docs/evaluation/investigation-metrics.md
+          if-no-files-found: error
+
+      # `continue-on-error` is not a way of ignoring a failure here: the only expected failure is
+      # the repository forbidding Actions to open pull requests, and the step after this one says
+      # so in the summary rather than leaving a red nightly that means nothing about the engine.
+      - name: open or update the pull request
+        id: pr
+        if: steps.stage.outputs.staged == 'true'
+        continue-on-error: true
+        uses: peter-evans/create-pull-request@v7
+        with:
+          add-paths: docs/evaluation/investigation-metrics.md
+          branch: eval/investigation-metrics
+          base: main
+          title: "docs(002): regenerate investigation-metrics.md from the nightly eval"
+          commit-message: |
+            docs(002): regenerate investigation-metrics.md from the nightly eval
+
+            Generated by .github/workflows/eval.yml from the public corpus. The prose is
+            untouched; only the block between the generated markers is rewritten.
+          body: |
+            The nightly evaluation regenerated the tables in
+            `docs/evaluation/investigation-metrics.md` from its own rows.
+
+            * corpus: **public** (synthetic structural twins; the recorded corpus runs the same
+              job with the same thresholds in the private repository — ADR-0003 D9)
+            * run: ${{ github.run_id }}
+            * commit: ${{ github.sha }}
+
+            Only the block between `<!-- BEGIN GENERATED: eval rows -->` and
+            `<!-- END GENERATED: eval rows -->` is rewritten; every line of prose in that document
+            is written by people and is left alone.
+
+            If this pull request says `pass@1 … unset`, that is correct and deliberate: the
+            aggregate threshold is set by the first full corpus run (FR-060), by hand, with
+            `scripts/check-report.sh --investigation --set-threshold`.
+          labels: |
+            evaluation
+            automated
+          delete-branch: false
+
+      # What happened to the document, in the summary, in both directions. Expressions are
+      # copied into env rather than interpolated into the script, the way the legs above do it.
+      - name: report what was published
+        if: always()
+        shell: bash
+        env:
+          STAGED: ${{ steps.stage.outputs.staged }}
+          PR_URL: ${{ steps.pr.outputs.pull-request-url }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$STAGED" != 'true' ]; then
+            {
+              echo '## investigation-metrics.md: nothing to publish'
+              echo 'The public leg produced no document.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -n "${PR_URL:-}" ]; then
+            {
+              echo '## investigation-metrics.md published for review'
+              echo "$PR_URL"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo '## investigation-metrics.md regenerated, pull request NOT opened'
+            echo
+            echo "The document is attached to this run as the \`investigation-metrics-$RUN_ID\`"
+            echo 'artifact.'
+            echo
+            echo 'The usual cause is the repository setting **Settings -> Actions -> General ->'
+            echo 'Workflow permissions -> Allow GitHub Actions to create and approve pull'
+            echo 'requests**, which is off by default and which this job needs. Until it is on,'
+            echo 'a maintainer downloads the artifact and commits the numbers by hand - the'
+            echo 'numbers themselves are unaffected, and no gate in this workflow was skipped.'
+          } >> "$GITHUB_STEP_SUMMARY"

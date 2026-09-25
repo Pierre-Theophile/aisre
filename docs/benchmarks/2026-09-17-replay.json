@@ -1,0 +1,113 @@
+{
+  "scale": "10k",
+  "seed": 1,
+  "queries_per_family": 1000,
+  "started_at": "2026-09-17T07:49:52.908939Z",
+  "finished_at": "2026-09-17T08:32:01.532305Z",
+  "environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "cpu_count": 10,
+    "memory_bytes": 17179869184,
+    "go_version": "go1.27.1",
+    "postgres_version": "PostgreSQL 16.13 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "postgres_server": "172.18.0.2",
+    "note": "Docker compose postgres:16-alpine on an Apple M5 laptop (10 logical cores, 16 GiB), graph and database on the same host; replay-only run at 500 events per transaction. A second agent was running fixture verify and go test on the same machine throughout."
+  },
+  "workload": {
+    "entities": 10000,
+    "edges": 100000,
+    "changes": 50000,
+    "claims": 200000,
+    "events": 995222,
+    "span_days": 90
+  },
+  "graph": {
+    "entities": 0,
+    "entity_versions": 0,
+    "edge_versions": 0,
+    "identity_claims": 0,
+    "merged_entities": 0,
+    "suggestions": 0,
+    "logged_events": 0
+  },
+  "ingest": {
+    "events": 0,
+    "seconds": 0,
+    "events_per_second": 0
+  },
+  "replay": {
+    "measured": true,
+    "events": 995222,
+    "seconds": 2263.8050475,
+    "events_per_second": 439.62354492453267,
+    "batch_size": 500
+  },
+  "latencies": null,
+  "database_bytes": 0,
+  "criteria": [
+    {
+      "id": "SC-001",
+      "what": "subgraph 2-hop as-of, p95",
+      "target": "\u003c 1.00 s",
+      "actual": "not measured",
+      "passed": true,
+      "gate": true,
+      "skipped": true
+    },
+    {
+      "id": "SC-002",
+      "what": "diff over 24 h with ranking, p95",
+      "target": "\u003c 2.00 s",
+      "actual": "not measured",
+      "passed": true,
+      "gate": true,
+      "skipped": true
+    },
+    {
+      "id": "ADR-0002",
+      "what": "subgraph 2-hop as-of, p95 (2× exit criterion)",
+      "target": "\u003c 2.00 s",
+      "actual": "not measured",
+      "passed": true,
+      "gate": true,
+      "skipped": true
+    },
+    {
+      "id": "ADR-0002",
+      "what": "diff over 24 h, p95 (2× exit criterion)",
+      "target": "\u003c 4.00 s",
+      "actual": "not measured",
+      "passed": true,
+      "gate": true,
+      "skipped": true
+    },
+    {
+      "id": "ADR-0002",
+      "what": "full replay of the event log",
+      "target": "\u003c 60 min",
+      "actual": "37m44s",
+      "passed": true,
+      "gate": true
+    },
+    {
+      "id": "plan",
+      "what": "sustained ingestion",
+      "target": "≥ 500 events/s",
+      "actual": "not measured",
+      "passed": true,
+      "gate": false,
+      "skipped": true
+    },
+    {
+      "id": "plan",
+      "what": "replay of the event log",
+      "target": "\u003c 30 min",
+      "actual": "37m44s",
+      "passed": false,
+      "gate": false
+    }
+  ],
+  "passed": true
+}

@@ -1,0 +1,165 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: unobserved-latent-bug-01
+family: unobserved
+description: >-
+  FR-071b and SC-023: an incident the graph cannot explain, because the cause was never
+  observable. checkout starts returning 500s at 14:20 under a traffic pattern that first
+  appeared that afternoon -- a race in its own cart-merge path that has been in the binary
+  since the 09:00 release, three hours before the fixture's clock even starts. Nothing was
+  deployed, scaled or configured on the failing path inside the window.
+
+  What IS inside the window is one innocent change: the inventory log level went from info to
+  debug at 14:10, one hop from checkout and twenty-two minutes before the alert. That is the
+  shape a ranker rewards, and naming it is the failure this fixture grades. The correct answer
+  is that no observed change explains the symptom, with the symptom still localised to
+  checkout.
+
+  The recorded world is deliberately flat: it was recorded with no culprit, so every comparison
+  in it reads `direction: flat` and nothing supports any candidate. A run that names the log
+  level change has to have got there from the graph's topology and timing alone, which is
+  exactly the failure mode SC-023 exists to measure.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20101:group=env:prod"
+    statement: "checkout error rate above 5 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: unobserved
+    category: latent_bug
+    causal_path:
+      # No cause is observable, so the path is one step long: the symptom, localised. This is
+      # what "unobserved with the symptoms still localised" means and it is graded separately
+      # from attribution, with partial credit (FR-061b).
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=checkout"
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+            version_attribute: service.version
+        field_path: versions.length
+        op: eq
+        value: 1
+        note: >-
+          checkout has been serving one version across the whole window, so there is no version
+          split for the errors to sit on. This is the positive form of "nothing was deployed":
+          the question was asked and answered, not skipped.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=inventory"
+            windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: flat
+        note: >-
+          the one changed neighbour does not move across the onset. Together with the version
+          split above, the pair is what makes `no_observed_change` the supported hypothesis
+          rather than merely the surviving one.
+
+    decoys:
+      - entity: k8s.change=shop/inventory-config@rv1188
+        causal_role: coincident
+        why: >-
+          a log-level change on a neighbour, twenty-two minutes before the alert. It is the
+          only change in the window, which is exactly why a ranker that must name something
+          names it.
+
+    exonerating_evidence:
+      k8s.change=shop/inventory-config@rv1188:
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=inventory"
+              windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: inventory's own error rate is unchanged, and checkout does not fail on its calls to it.
+        - term:
+            error_spans:
+              src: otel.service.name=checkout
+              dst: otel.service.name=inventory
+              edge_type: CALLS
+              window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+          field_path: groups[error_kind=deadline_exceeded].count
+          op: lt
+          value: 100
+          note: the checkout -> inventory call path carries its usual handful of timeouts and no more.
+
+    # Nobody sees the future: this investigation observes the world at `fired_at` (14:32), so the
+    # decisive windows above end there and no predicate rests on telemetry after it
+    # (constitution II). Both halves of the `unobserved` answer are settled earlier: the symptom
+    # is established by the five one-minute samples after the 14:20 onset —
+    # `onset.MinSustainedPoints` — which are complete at 14:25, and the graph already holds every
+    # change there is to hold, none of which explains it. Asked before 14:25 the symptom itself
+    # is not yet established, and `unknown` rather than `unobserved` is the correct answer.
+    knowability_time: 2026-09-01T14:25:00Z
+    onset: {at: 2026-09-01T14:20:00Z, tolerance_seconds: 300}
+    # The deterministic prior ranks the log-level change first, because it is the only change
+    # in the window. There is no culprit for it to rank, which is recorded as 0: the prior
+    # cannot be right here, and lift on this fixture is entirely about not being wrong.
+    prior_rank_of_culprit: 0
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry centred on the estimated onset, which is the cap every fixture in this
+      directory takes: the world is the cross product of (pointers in the neighbourhood) x
+      (grid) x (the recorder's statistic set: ERROR_RATE, P95, RATE) plus monitor_state, log
+      patterns, onset, errors_by_version where a version join key exists, error_spans per edge
+      and the depth-1 drill-downs those answers mint, so each further grid entry doubles the
+      directory. No culprit was supplied to the recorder, which is the point of this fixture:
+      every comparison in the world reads flat, so nothing in it supports any candidate.
+
+  runs: 3

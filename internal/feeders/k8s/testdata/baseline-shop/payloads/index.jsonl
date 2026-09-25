@@ -1,0 +1,17 @@
+{"kind":"namespaces","at":"2026-09-01T13:00:00Z","seq":100,"file":"namespaces/000001.json"}
+{"kind":"nodes","at":"2026-09-01T13:00:00Z","seq":900,"file":"nodes/000001.json"}
+{"kind":"nodes","at":"2026-09-01T13:00:00Z","seq":901,"file":"nodes/000002.json"}
+{"kind":"nodes","at":"2026-09-01T13:00:00Z","seq":902,"file":"nodes/000003.json"}
+{"kind":"nodes","at":"2026-09-01T13:00:00Z","seq":903,"file":"nodes/000004.json"}
+{"kind":"nodes","at":"2026-09-01T13:00:00Z","seq":904,"file":"nodes/000005.json"}
+{"kind":"nodes","at":"2026-09-01T13:00:00Z","seq":905,"file":"nodes/000006.json"}
+{"kind":"deployments","at":"2026-09-01T13:00:00Z","seq":1001,"file":"deployments/000001.json"}
+{"kind":"deployments","at":"2026-09-01T13:00:00Z","seq":1002,"file":"deployments/000002.json"}
+{"kind":"deployments","at":"2026-09-01T13:00:00Z","seq":1003,"file":"deployments/000003.json"}
+{"kind":"deployments","at":"2026-09-01T13:00:00Z","seq":1004,"file":"deployments/000004.json"}
+{"kind":"services","at":"2026-09-01T13:00:00Z","seq":1101,"file":"services/000001.json"}
+{"kind":"services","at":"2026-09-01T13:00:00Z","seq":1102,"file":"services/000002.json"}
+{"kind":"ingresses","at":"2026-09-01T13:00:00Z","seq":1120,"file":"ingresses/000001.json"}
+{"kind":"configmaps","at":"2026-09-01T13:00:00Z","seq":1201,"file":"configmaps/000001.json"}
+{"kind":"secrets","at":"2026-09-01T13:00:00Z","seq":1202,"file":"secrets/000001.json"}
+{"kind":"sync","at":"2026-09-01T13:01:20Z","seq":1500,"file":"sync/000001.pb"}

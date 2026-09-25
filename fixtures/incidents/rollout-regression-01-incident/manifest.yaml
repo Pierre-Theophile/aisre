@@ -1,0 +1,339 @@
+# Hand-authored fixture, derived from fixtures/rollout-regression-01. See
+# fixtures/incidents/README.md.
+id: rollout-regression-01-incident
+family: rollout-regression
+description: >-
+  The MVP incident (US1, US2, US3), derived from 001's `rollout-regression-01`: the same 95
+  events, byte for byte, plus the `incident:` block that says what the on-call was asked and
+  what the true answer is, and a recorded `world/` the investigation's telemetry questions are
+  served from.
+
+  The scenario is the parent's. payments is rolled out to revision 7 (1.4.1) at 14:20 and its
+  database call path gets heavier; that is the culprit. Around it sit four decoys: inventory
+  rolled out at 13:10 (one hop away, 82 minutes stale), reporting rolled out at 13:40 (four
+  hops away, outside the neighbourhood), storefront scaled from 3 to 6 replicas at 14:15 (one
+  hop away and recent) and a rollout of `shop/checkout-worker` at 14:22 whose target no source
+  has described. The monitor on checkout fires at 14:32.
+
+  Nothing was added to the event stream. In particular the alert is NOT an event here: adding
+  an ALERT node with a WATCHES edge to checkout would put a node into checkout's two-hop
+  neighbourhood inside the diff window, and the parent's whole claim is that nothing enters or
+  leaves it (`nodes_added` and `nodes_removed` are empty, which is how US2 scenario 2 is
+  asserted). The question therefore lives in `incident.question`, which is where the format
+  puts a monitor intake anyway. `declared-incident-01` is the fixture whose intake IS an event,
+  because there the declaration is the thing under test.
+
+  The goldens are the parent's, re-recorded here from this directory's own copy of the events,
+  so the derivation is auditable as a file comparison rather than as an assertion.
+
+  One thing about the recorded world a reader should know before writing an assertion against
+  it: `pkg/backend/synthetic` degrades the change's own targets and does not propagate the
+  degradation to their callers, so payments' error rate rises by a factor of 23 and checkout's
+  own metric reads flat. The symptom on checkout is carried by the monitor (the `question`) and
+  by the failing spans on the checkout -> payments CALLS edge, which do move and which carry
+  `version: rev7`; it is not carried by checkout's own error-rate series. The decisive evidence
+  below is written over what the world actually holds rather than over what a real backend
+  would hold, because a ground truth naming evidence the corpus cannot produce is a ground
+  truth that fails every run for a reason that has nothing to do with the engine. Feature 003's
+  GCP backend records the first world with real propagation; this note is the marker for
+  re-stating the checkout half of the evidence when it does.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: payments-impact
+    kind: impact
+    focus: otel.service.name=payments
+    valid_at: 2026-09-01T14:32:00Z
+  - name: payments-pointers-1432
+    kind: pointers
+    focus: otel.service.name=payments
+    valid_at: 2026-09-01T14:32:00Z
+  - name: payments-history
+    kind: history
+    focus: otel.service.name=payments
+
+# The 001 ground truth the parent carries, kept so that `fixture verify --report` measures the
+# same ranking here that it measures there. The investigation's own ground truth is the
+# `incident.ground_truth` block below; the two are deliberately separate, because one grades a
+# ranked list and the other grades an explanation.
+ground_truth:
+  culprit_change: k8s.change=shop/payments@rev7
+  expected_top_k: 3
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:12345:group=env:prod"
+    statement: "checkout error rate above 5 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: k8s.change=shop/payments@rev7
+    causal_path:
+      - entity: k8s.change=shop/payments@rev7
+        via: changed-by
+        role: cause
+      - entity: otel.service.name=payments
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      # The rollout's own version carries the errors. This is the single most decisive question
+      # in the corpus and it is only askable because the metric pointer publishes
+      # `join_keys: {version: service.version}` (ADR-0005 D6) — without that key the version
+      # breakdown is not a term the algebra can form at all, which is what the Phase 4 review
+      # found and this fixture's parent now fixes.
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=payments"
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+            version_attribute: service.version
+        field_path: versions[version=rev7].error_rate
+        op: gt
+        value: 0.05
+        note: >-
+          10.7 % of requests on rev7 fail. The symptom window opens at the rollout, so rev7 is
+          the only version in the breakdown; what it is compared against is the same pointer's
+          own baseline half, below.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=payments"
+            windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 720}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: up
+        note: >-
+          0.44 % before the onset, 10.7 % after it — a relative delta of 23. The baseline half
+          of this pair is the fifteen minutes the previous revision was still serving.
+      - term:
+          onset:
+            pointer: "METRIC otel.service.name=payments"
+            search_window: "2026-09-01T14:05:00Z..2026-09-01T14:32:00Z"
+            method: SEASONAL_CUSUM
+        field_path: estimated_onset
+        op: eq
+        value: 2026-09-01T14:20:00Z
+        note: >-
+          the onset lands on the rollout instant, which is the temporal half of attribution: a
+          change that happened after the onset cannot have caused it.
+      - term:
+          error_spans:
+            src: otel.service.name=checkout
+            dst: otel.service.name=payments
+            edge_type: CALLS
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+        field_path: groups[error_kind=deadline_exceeded].join_keys.version
+        op: eq
+        value: rev7
+        note: >-
+          the mechanism, and the one predicate that ties the symptom to the culprit rather than
+          to payments in general: the failing spans on the checkout → payments call carry rev7
+          as their version join key (ADR-0005 D6 again — the join key is what relates two
+          answers to each other and to the graph).
+
+    decoys:
+      - entity: k8s.change=shop/storefront@scale-1415
+        causal_role: coincident
+        why: >-
+          one hop from checkout and five minutes before the onset, which is exactly the shape a
+          ranker rewards. It is still innocent, but not for the reason this fixture first gave:
+          storefront is two hops UPSTREAM of payments-v2 along `storefront -> checkout ->
+          payments`, and the generator propagates a callee's excess error rate to its callers, so
+          storefront's error rate does move across the onset. What exonerates the scaling is the
+          ORDER and the SIZE of that movement: storefront's onset lands at 14:21, a minute after
+          payments-v2's 14:20, and its relative excess is 19.4453 against payments-v2's 22.9998
+          — the attenuated image of the fault, arriving after the thing it is an image of. A
+          cause cannot postdate its effect. Note also that the scaling *precedes* the onset here
+          rather than following it — the parent fixture places it at 14:15 on purpose, so that
+          "it happened just before the alert" is not enough to convict.
+      - entity: k8s.change=shop/inventory@rev8
+        causal_role: stale
+        why: one hop away, but 70 minutes before the onset, and inventory's telemetry is flat.
+      - entity: k8s.change=shop/reporting@rev3
+        causal_role: out_of_scope
+        why: four hops from checkout, on its own node pool; it must be excluded, not ranked low.
+      - entity: k8s.change=shop/checkout-worker@rev12
+        causal_role: unattached
+        why: >-
+          its target is a workload no source has described, so it is reported flagged unattached
+          rather than dropped — and a change whose target the graph cannot name carries no
+          causal path to anything.
+
+    exonerating_evidence:
+      k8s.change=shop/storefront@scale-1415:
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=storefront"
+              windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].relativeDelta
+          op: lt
+          value: 22.0
+          note: >-
+            storefront reads 1.0709 % before the onset and 21.8948 % after it, a relative excess
+            of 19.4453, where payments-v2 over the same pair reads 0.4378 % against 10.5071 %, a
+            relative excess of 22.9998. Storefront is two hops upstream and carries the
+            attenuated image of the fault, not a fault of its own: the scaled service is not the
+            one that broke, and the number that says so is the ratio between the two, not a flat
+            line on either.
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=storefront"
+              search_window: "2026-09-01T14:05:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: gt
+          value: 2026-09-01T14:20:00Z
+          note: >-
+            storefront's onset is estimated at 14:21 with 120 s of uncertainty, one resolution
+            step AFTER payments-v2's 14:20 — which is the propagation delay, one step per hop.
+            The scaling at 14:15 is not the cause of something that begins on payments-v2 first
+            and reaches storefront afterwards.
+      k8s.change=shop/inventory@rev8:
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=inventory"
+              windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: 0.830 % before, 0.819 % after — the rollout 70 minutes earlier changed nothing.
+      k8s.change=shop/reporting@rev3:
+        - term:
+            graph:
+              subgraph:
+                focus: otel.service.name=checkout
+                hops: 2
+                valid_at: 2026-09-01T14:32:00Z
+          field_path: nodes[*].display_name
+          op: not_contains
+          value: reporting
+          note: >-
+            reporting is not in the two-hop neighbourhood, so it never becomes a candidate.
+            Ranking it low would already be a failure: it is excluded, not out-argued. The
+            golden `subgraph.checkout-2hop-1432.json` is where this is asserted as a file.
+      k8s.change=shop/checkout-worker@rev12:
+        - term:
+            graph:
+              diff:
+                focus: otel.service.name=checkout
+                t1: 2026-09-01T13:00:00Z
+                t2: 2026-09-01T14:32:00Z
+                hops: 2
+          field_path: changes[change.display_name=rollout checkout-worker to revision 12].unattached
+          op: eq
+          value: true
+          note: >-
+            the change is reported with its target unresolved — visible, flagged, and unable to
+            carry an explanation. The golden `diff.checkout-diff.json` holds it.
+
+    # Knowability is bounded on one side by observation and on the other by the horizon.
+    #
+    # Nobody sees the future: this investigation observes the world at `fired_at`, 14:32, and no
+    # telemetry after that instant exists for it (constitution II). So the decisive evidence
+    # above is stated over windows that END at 14:32, and the question is when the earliest of
+    # them becomes satisfiable from data at or before it.
+    #
+    # The source's own checkpoint answers it. `otel:demo:ckpt:w1420` carries extent
+    # [14:20:00Z, 14:25:00Z) — "aggregation window [14:20, 14:25) closed" — and is observed at
+    # 14:25:30Z. That window is the first one that contains the 14:20 rollout, and once it is
+    # observed all four decisive predicates are satisfiable: rev7's error rate over it is about
+    # 10.7 % against a 0.44 % baseline, an order of magnitude above the 5 % floor the predicate
+    # asks for; the five one-minute points it holds are exactly `onset.MinSustainedPoints`, so
+    # the estimator can report 14:20 rather than refusing; and the failing checkout -> payments
+    # spans in it already carry rev7 as their version join key.
+    #
+    # 14:25:30Z is therefore the instant, and it sits seven minutes before the page. Asked
+    # before it, `unknown` is the correct answer and naming payments is a lucky guess. The old
+    # value, 14:35, was after `fired_at`: it was derived from decisive windows that ran past the
+    # horizon, which is evidence this investigation could never have had.
+    knowability_time: 2026-09-01T14:25:30Z
+    onset: {at: 2026-09-01T14:20:00Z, tolerance_seconds: 120}
+    prior_rank_of_culprit: 1
+    provenance:
+      kind: derived
+      sanitiser_policy_version: "1.0.0"
+      derived_from: rollout-regression-01
+      transformation: >-
+        incident-block-added; events copied byte for byte, goldens re-recorded from this
+        directory, world recorded from this directory's graph.
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    # Centred on the estimated onset; see `note:` below for why, and for what the recorder adds
+    # to this block of its own accord.
+    window_grid:
+      - {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry, and it is a SUPPLEMENT rather than the plan.
+
+      `fixture record-world` records the union of two sets. The first is every term the
+      deterministic engine actually issues for the `question:` above: the recorder runs that
+      engine — the same wiring `fixture record-trajectory --model-free` runs — against the
+      world's generator and records what it asks. That set is not declared here, because it is
+      not a choice: it is whatever the engine's published plan
+      (`internal/investigation/engine/plan.go`) derives from fired_at, the lookback and the
+      onset the metrics worker estimates. The second set is the cross product declared by this
+      block — (every pointer in the neighbourhood) × (the grid) × (the recorder's statistic set,
+      ERROR_RATE, P95 and RATE) plus monitor_state, log patterns, onset, errors_by_version where
+      a version join key exists, error_spans per edge, and the depth-1 drill-downs those answers
+      mint — which is what a MODEL's exploration draws on.
+
+      The entry below is centred on the ESTIMATED ONSET (14:20), not on the alert instant
+      (14:32). Centring on the alert puts the last twelve minutes of the symptom in the
+      *baseline* half of every pair, so every comparison is symptom-against-symptom and the
+      culprit's own metric reads flat. That is still the single most consequential number in the
+      block and still the one a reviewer should check first. The recorder additionally derives
+      the engine's own comparison pair at the alert instant, through the same exported functions
+      the engine calls, so the branch where onset cannot be estimated is covered too.
+
+      The size that buys: 565 terms, about 2.3 MB. It was 275 terms and 1.2 MB when the grid was
+      the whole story — and the engine's own terms intersected it in *nothing*, so the
+      trajectory-replay gate reported 15 not_recorded of 15 checked and a miss rate of 1.0000.
+      The extra megabyte is what makes the gate mean something. A second hand-written grid entry
+      would still be the wrong way to spend it: the cap is the grid, the hop radius and the
+      drill-down depth, and all three are read back by `fixture record-world` from this block,
+      so widening one is an edit a reviewer sees.
+
+  runs: 3

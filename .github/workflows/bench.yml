@@ -1,0 +1,143 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The reference-workload benchmark (plan §CI, research §2, T091).
+#
+# Constitution X gates the storage decision on a reproducible benchmark: no dedicated graph
+# database may be introduced unless this run shows PostgreSQL cannot meet the query budget on
+# ~10k entities / 100k edges / 1M events. So this workflow is not a performance nicety, it is
+# the evidence behind ADR-0002, and it fails the job when a published criterion is missed —
+# `fixture bench` exits 4 in that case, the same code `fixture verify` uses for a regression.
+#
+# Monthly rather than per-pull-request: the run generates and projects a million events and takes
+# tens of minutes, which is not a pull-request gate. The cheap signal is the `1k` smoke test in
+# `go test` (internal/fixture, guarded by SRE_AGENT_BENCH=1), which proves the harness still
+# works without measuring anything anyone should quote.
+#
+# The report is uploaded as an artifact and rendered into the job summary. It is deliberately
+# NOT committed by the workflow: `docs/benchmarks/` is evidence in an architecture decision and
+# a bot pushing to it would make the history of that decision a history of CI runs. A maintainer
+# downloads the artifact and commits the ones worth keeping, with the machine they were measured
+# on in the commit message.
+
+name: bench
+
+on:
+  schedule:
+    # The 1st of the month at 04:17 UTC. Off the hour, so it does not queue behind everything
+    # else. Monthly, not weekly: one 10k run is ~3h10m of billed runner time, and the storage
+    # decision it evidences does not move week to week. Dispatch it after a change to the
+    # store, the projection or the query paths.
+    - cron: "17 4 1 * *"
+  workflow_dispatch:
+    inputs:
+      scale:
+        description: "Workload size"
+        type: choice
+        options: ["10k", "1k"]
+        default: "10k"
+      queries:
+        description: "Randomized queries per family"
+        type: string
+        default: "1000"
+      seed:
+        description: "Generator seed"
+        type: string
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.27"
+  CGO_ENABLED: "0"
+
+jobs:
+  bench:
+    name: reference workload (${{ inputs.scale || '10k' }})
+    runs-on: ubuntu-latest
+    # A 1M-event generation, a full replay and 6,000 queries. Generous, because a timeout that
+    # cut the run would look like a failure of the storage decision rather than of the runner —
+    # which is exactly what 180 minutes did on run 35501858650: ingest 1h22m, queries 1h30m, and
+    # the replay phase cancelled mid-way at 2h52m with no report written. Measured cost of the
+    # 10k workload on a hosted runner is ~3h10m, so this sits well clear of it and still inside
+    # the 6h ceiling for a GitHub-hosted job.
+    timeout-minutes: 330
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sreagent
+          POSTGRES_PASSWORD: sreagent
+          POSTGRES_DB: sreagent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sreagent -d sreagent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      PG_DSN: postgres://sreagent:sreagent@localhost:5432/sreagent?sslmode=disable
+      BENCH_SCALE: ${{ inputs.scale || '10k' }}
+      BENCH_QUERIES: ${{ inputs.queries || '1000' }}
+      BENCH_SEED: ${{ inputs.seed || '1' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: build
+        run: make build
+
+      - name: describe the runner
+        id: runner
+        run: |
+          {
+            echo "cpu=$(nproc) vCPU"
+            echo "mem=$(awk '/MemTotal/ {printf "%.1f GiB", $2/1048576}' /proc/meminfo)"
+          } >> "$GITHUB_OUTPUT"
+          echo "runner: $(nproc) vCPU, $(awk '/MemTotal/ {printf "%.1f GiB", $2/1048576}' /proc/meminfo)"
+
+      - name: run the benchmark
+        # The role needs CREATEDB: every run works in databases of its own, created and
+        # dropped by the run, and never touches the one the DSN names.
+        run: |
+          mkdir -p bench-out
+          ./bin/aisre fixture bench \
+            --db "$PG_DSN" \
+            --scale "$BENCH_SCALE" \
+            --seed "$BENCH_SEED" \
+            --queries "$BENCH_QUERIES" \
+            --out bench-out \
+            --note "GitHub Actions ubuntu-latest, ${{ steps.runner.outputs.cpu }}, ${{ steps.runner.outputs.mem }}, postgres:16 service container" \
+            > bench-out/report.md
+
+      - name: job summary
+        # Always: a failed run is the interesting one, and its numbers are why it failed.
+        if: always()
+        run: |
+          if [ -f bench-out/report.md ]; then
+            cat bench-out/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '## benchmark produced no report' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ env.BENCH_SCALE }}-${{ github.run_id }}
+          path: bench-out/
+          retention-days: 90
+          if-no-files-found: warn

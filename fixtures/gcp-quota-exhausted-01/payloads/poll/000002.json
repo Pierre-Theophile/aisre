@@ -1,0 +1,1 @@
+{"outcome":"partial","projects":["twin-production"],"regions":["europe-west1"],"reason":"the logging.read share reached its human reserve, so the poll stopped before it had covered its extent","stop_reason":"quota_exhausted","deferred":["load_balancers_and_dns","general_audit_stream"]}

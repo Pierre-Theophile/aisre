@@ -1,0 +1,35 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: gcp-partial-poll-01
+family: gcp-topology
+description: 'Two services observed by a complete poll, then a poll that fails part-way: the second poll sees only one of them. It emits **zero retractions**, declares the gap in its checkpoint, and does not count toward the silence rule''s consecutive-poll total (FR-012, §8.1). This is the single rule that keeps a network blip from looking like the organisation deleting half its estate. Synthetic structural twin: no identifier is derived from the organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — US7''s recording replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T16:00:00Z
+
+queries:
+  # The service is still there after three partial polls. Three complete polls would have retracted
+  # it; three partial ones are not evidence of absence.
+  - name: storefront-asof-end
+    kind: subgraph
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The extent declares the gap, which is what distinguishes "nothing happened" from "nobody was
+  # watching" (FR-026).
+  - name: extent
+    kind: extent
+    observed_at: 2026-09-21T20:00:00Z

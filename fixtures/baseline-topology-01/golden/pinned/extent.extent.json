@@ -1,0 +1,1 @@
+{"earliestObserved":"2026-09-16T09:38:32.550952Z","latestObserved":"2026-09-16T09:51:22.300515Z","sources":[{"lastCheckpoint":"2026-09-16T09:49:00.153986Z","sourceId":"k8s:kind"},{"lastCheckpoint":"2026-09-16T09:51:22.300515Z","sourceId":"otel:kind"}]}

@@ -1,0 +1,1 @@
+{"rrsets":[{"kind":"dns#resourceRecordSet","name":"shop.twin.test.","type":"A","ttl":300,"rrdatas":["34.111.0.7"]}],"zone":"twin-zone"}

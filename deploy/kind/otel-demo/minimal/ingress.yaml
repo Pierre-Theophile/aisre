@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The storefront Ingress. There is no ingress controller in this cluster and nothing serves
+# shop.example.com: the object exists so the Kubernetes feeder emits an `exposed-via` edge to
+# an INFRA_RESOURCE with server.address=shop.example.com, which is what
+# fixtures/baseline-topology-01 records.
+#
+# To make it actually serve, install ingress-nginx's kind manifest and use the 8080/8443 host
+# ports that deploy/kind/cluster.yaml already maps.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: storefront
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: storefront
+    app.kubernetes.io/part-of: shop
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: shop.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: storefront
+                port:
+                  name: http

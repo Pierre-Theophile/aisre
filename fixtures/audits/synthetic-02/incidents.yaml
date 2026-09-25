@@ -1,0 +1,174 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# A SYNTHETIC coverage-audit input: synthetic-01 re-run after a connector shipped
+# (spec 002 FR-071a — "the audit MUST be re-run after each connector feature ships, over the
+# same incident list").
+#
+# Every incident below is invented and is the same invented incident as in synthetic-01: same
+# references, same dates, same categories (the post-0007 ones synthetic-01 now carries), same
+# classes. What changed between the two runs is the graph, not the corpus:
+#
+#   * a fourth, cumulative feeder set, `+edge-cdn`, is now measured;
+#   * SYN-09 — whose cause was a traffic shift the graph could previously only see the EFFECT
+#     of — moves `symptom_only` -> `observed` under it.
+#
+# So `audit coverage compare synthetic-01.json synthetic-02.json` has exactly one movement to
+# attribute, and three rungs of the ladder that did not move and must be reported as such:
+#
+#   feature-001     0 of 13 ->  0 of 13   did not move
+#   +deploy         3 of 13 ->  3 of 13   did not move
+#   +vendor-notice  8 of 13 ->  8 of 13   did not move
+#   +edge-cdn             - ->  9 of 13   new feeder set
+#
+#   ceiling 0.615385 -> 0.692308 (+0.076923)     pi_0 0.384615 -> 0.307692
+
+version: 1
+audit_id: synthetic-02
+run_at: 2026-11-05
+author: fixture|synthetic-auditor
+
+corpus:
+  label: synthetic-org
+  from: 2025-12-01
+  to: 2026-08-31
+  excluded:
+    - ref: SYN-X1
+      reason: security_incident
+    - ref: SYN-X2
+      reason: security_incident
+    - ref: SYN-X3
+      reason: unclassifiable
+
+feeder_sets:
+  - name: feature-001
+    order: 1
+    feeders: [otel.spans, kubernetes.workloads]
+  - name: +deploy
+    order: 2
+    feeders: [serverless.revisions, cicd.deploys, frontend.hosting]
+  - name: +vendor-notice
+    order: 3
+    feeders: [vendor.status_pages, vendor.maintenance_notices, vendor.api_changelogs]
+  - name: +edge-cdn
+    order: 4
+    feeders: [cdn.config_changes, edge.routing]
+
+incidents:
+  - ref: SYN-01
+    alert_at: 2025-12-04
+    cause: {category: deployment, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: observed
+      +vendor-notice: observed
+      +edge-cdn: observed
+
+  - ref: SYN-02
+    alert_at: 2025-12-19
+    cause: {category: db_migration, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: observed
+      +vendor-notice: observed
+      +edge-cdn: observed
+
+  - ref: SYN-03
+    alert_at: 2026-01-09
+    cause: {category: configuration_change, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: observed
+      +vendor-notice: observed
+      +edge-cdn: observed
+
+  - ref: SYN-04
+    alert_at: 2026-01-27
+    cause: {category: third_party_outage, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: observed
+      +edge-cdn: observed
+
+  - ref: SYN-05
+    alert_at: 2026-02-13
+    cause: {category: third_party_outage, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: observed
+      +edge-cdn: observed
+
+  - ref: SYN-06
+    alert_at: 2026-03-02
+    cause: {category: third_party_outage, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: observed
+      +edge-cdn: observed
+
+  - ref: SYN-07
+    alert_at: 2026-03-24
+    cause: {category: cloud_maintenance, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: observed
+      +edge-cdn: observed
+
+  - ref: SYN-08
+    alert_at: 2026-04-11
+    cause: {category: vendor_api_change, class: change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: observed
+      +edge-cdn: observed
+
+  # The one incident that moved: the edge/CDN feeder carries the routing change itself, so the
+  # cause stops being a shape in the traffic and becomes a node in the graph.
+  - ref: SYN-09
+    alert_at: 2026-05-06
+    cause: {category: traffic_shift, class: change_induced}
+    observability:
+      feature-001: symptom_only
+      +deploy: symptom_only
+      +vendor-notice: symptom_only
+      +edge-cdn: observed
+
+  - ref: SYN-10
+    alert_at: 2026-06-01
+    cause: {category: capacity_limit, class: change_induced}
+    observability:
+      feature-001: symptom_only
+      +deploy: symptom_only
+      +vendor-notice: symptom_only
+      +edge-cdn: symptom_only
+
+  - ref: SYN-11
+    alert_at: 2026-06-28
+    cause: {category: latent_bug, class: unobserved}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: not_observable
+      +edge-cdn: not_observable
+
+  - ref: SYN-12
+    alert_at: 2026-07-20
+    cause: {category: client_side_configuration, class: not_change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: not_observable
+      +edge-cdn: not_observable
+
+  - ref: SYN-13
+    alert_at: 2026-08-14
+    cause: {category: business_data_change, class: not_change_induced}
+    observability:
+      feature-001: not_observable
+      +deploy: not_observable
+      +vendor-notice: not_observable
+      +edge-cdn: not_observable

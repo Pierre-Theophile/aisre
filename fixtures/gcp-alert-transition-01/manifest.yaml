@@ -1,0 +1,49 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: gcp-alert-transition-01
+family: gcp-alerts
+description: 'An alerting incident that opens at 14:07 and closes at 14:51, delivered three times: the poll that first saw it, a second poll while it was still open — which is both what a doorbell-triggered poll looks like and what the next scheduled poll looks like — and a third after it closed. The graph ends with exactly two transitions at Google''s own instants, because the idempotency key is the published 4-tuple (source, policy, group, transition instant) rather than anything per-delivery. The recovery is KEPT: it bounds the outage and is what tells an investigation whether the change it is looking at was the fix. The re-read while still open is suppressed as `no_transition` and the suppression is stated in the checkpoint rather than applied silently. Synthetic structural twin: no identifier is derived from the organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — US7''s recording replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T16:00:00Z
+
+queries:
+  # The alert and its state history. Pinned, so the golden does not encode the day it was recorded.
+  - name: alert-2hop
+    kind: subgraph
+    focus: gcp.monitoring.alert_policy=projects/twin-production/alertPolicies/1122334455
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The state while the incident was open. This is the query that fails if the recovery is dated at
+  # the poll rather than at Google's closeTime: at 14:30 the alert must still be alerting.
+  - name: alert-asof-1430
+    kind: subgraph
+    focus: gcp.monitoring.alert_policy=projects/twin-production/alertPolicies/1122334455
+    valid_at: 2026-09-21T14:30:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 1
+    direction: both
+  # And after the recovery. The pair of as-of reads IS the state history: alerting at 14:30,
+  # recovered at 14:55, both from one recorded stream. A node_history read would have said it in one
+  # answer, and this build's fixture recorder does not support that kind — so the assertion is made
+  # with the kinds it does: two instants either side of Google's closeTime.
+  - name: alert-asof-1455
+    kind: subgraph
+    focus: gcp.monitoring.alert_policy=projects/twin-production/alertPolicies/1122334455
+    valid_at: 2026-09-21T14:55:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 1
+    direction: both

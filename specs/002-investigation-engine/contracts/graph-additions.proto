@@ -1,0 +1,174 @@
+// The additive changes feature 002 needs from feature 001's published schema, written as the
+// exact proto diff so that 001 can review, specify and implement them (spec "Dependencies on
+// feature 001", D1-D5; ADR-0004's alert intake). NOTHING HERE IS IMPLEMENTED BY 002.
+//
+// All of it is additive: `buf breaking` passes, `sreagent.graph.v1` takes a MINOR bump, and no
+// event-log transformation is required. Goldens change only where a candidate change is later
+// than the ranking's reference instant (D1) or where a feeder starts emitting an actor kind (D3).
+//
+// Package: sreagent.graph.v1 — these messages live in graph.proto, not here. This file is the
+// proposal, kept beside the 002 plan so the two features can be reviewed together.
+
+syntax = "proto3";
+package sreagent.graph.v1;
+
+// ---------------------------------------------------------------------------
+// D3 — a typed actor kind on changes.
+// A change node carries an actor string but not a typed kind. 002 must type and render
+// "a controller did this" differently from "a person did this" (FR-029d), and ADR-0004's
+// vendor-notice feeder needs VENDOR.
+// ---------------------------------------------------------------------------
+enum ActorKind {
+  ACTOR_KIND_UNSPECIFIED = 0;
+  PERSON = 1;      // a human originated it
+  AUTOMATION = 2;  // a CI job, bot or deploy principal acting on a person's behalf (ADR-0005 D1)
+  CONTROLLER = 3;  // an autoscaler, operator or other system controller reacting to state
+  VENDOR = 4;      // a cloud or SaaS provider: maintenance, deprecation, incident
+  ACTOR_KIND_UNKNOWN = 5;  // an actor was observed and could not be classified; never guessed
+}
+
+// ADDED to message Change:
+//   ActorKind actor_kind = 6;
+// Feeder mapping (001's responsibility): k8s ReplicaSet/HPA-driven scaling -> CONTROLLER;
+// a rollout carrying a human annotation -> PERSON; the vendor-notice feeder -> VENDOR;
+// anything else -> ACTOR_KIND_UNKNOWN. Whether the score weights actor kind is 001's decision;
+// carrying it is not optional.
+
+// ---------------------------------------------------------------------------
+// D1 + D2 — post-reference candidates and the signed distance.
+//
+// D1 (behaviour, docs/schema/ranking.md): today `dt = T_ref - c.valid.start` is floored at 0,
+// so a change one minute AFTER the reference instant scores temporal = 1.0, the maximum. Once
+// 002 moves the reference instant to the estimated symptom onset, every effect of the incident
+// becomes the top suspect. 001 MUST publish a rule with these properties, which 002 depends on:
+//   (i)   a post-reference candidate never receives the maximum temporal weight;
+//   (ii)  it scores strictly below an equally distant pre-reference candidate;
+//   (iii) the score is monotone decreasing in |dt| on both sides;
+//   (iv)  the caller can identify it as post-reference from the response.
+// Proposed rule (001 decides): temporal = exp(-dt/tau) for dt >= 0;
+//                              temporal = kappa * exp(-|dt|/tau_post) for dt < 0,
+//                              with published kappa = 0.5 and tau_post = tau/2.
+//
+// D2 (shape): field 7 keeps its floored semantics so no consumer breaks; two fields are added.
+// ---------------------------------------------------------------------------
+// ADDED to message RankedChange:
+//   int64 signed_time_distance_seconds = 11;  // T_ref - c.valid.start, NOT floored
+//   bool  post_reference = 12;                // true iff signed distance < 0
+//   ActorKind actor_kind = 13;                // passthrough of Change.actor_kind (D3)
+
+// ---------------------------------------------------------------------------
+// D4 — join keys in the pointer vocabulary.
+// `errors_by_version(pointer, window)` is expressible only if a pointer names the attribute
+// carrying the deployed version, and FR-014b requires workers to preserve workload, pod, host
+// and trace identifiers. Keys come from a published role set; values are the attribute or tag
+// name in that pointer's own vocabulary.
+// ---------------------------------------------------------------------------
+// ADDED to message Pointer:
+//   map<string, string> join_keys = 6;
+//     // roles: "version" | "workload" | "pod" | "host" | "trace"
+//     // e.g. {"version": "service.version", "workload": "k8s.deployment.name"}
+
+// ---------------------------------------------------------------------------
+// D5 — the event types 002 emits, and the taxonomy they imply.
+// ---------------------------------------------------------------------------
+// ADDED to enum NodeType:
+//   INVESTIGATION = 11;   // a decision record; carries no telemetry
+//   KNOWLEDGE_DOC = 12;   // a postmortem, runbook, ADR or past investigation
+//
+// ADDED to enum EdgeType:
+//   WATCHES = 8;      // alert -> entity (ADR-0003 D10, ADR-0004 D4)
+//   INVESTIGATED = 9; // investigation -> entity
+//   CONCERNS = 10;    // knowledge document -> entity (the graph is the RAG index)
+//
+// ADDED to EventEnvelope.body oneof:
+//   RecordInvestigation record_investigation = 21;
+//   SubmitHumanFact     submit_human_fact    = 22;
+//   ReopenInvestigation reopen_investigation = 23;
+//   LabelInvestigation  label_investigation  = 24;
+//   AlertTransition     alert_transition     = 25;
+
+message RecordInvestigation {
+  string investigation_id = 1;              // also the idempotency key
+  repeated Ref subjects = 2;
+  repeated Ref target_entities = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp ended_at = 5;
+  string outcome = 6;                       // ranked | unknown | budget_exhausted | failed
+  string stop_reason = 7;
+  string verdict_line = 8;
+  google.protobuf.Struct hypotheses = 9;    // ids, statements, statuses, confidences, buckets, ranks
+  google.protobuf.Struct spend = 10;        // tokens by model and class, calls, quota share
+  google.protobuf.Struct model_config = 11;
+  string recording_key = 12;
+  string recording_digest = 13;             // sha256; the link to the bulk beside the graph
+  string requester = 14;
+  // INVARIANT: no metric sample, log line, span, or aggregate of them. Props are written under
+  // the allow-listed `sre.investigation.*` prefix; everything else stays subject to the
+  // existing telemetry denylist, and a fixture asserts that a decision record carrying a series
+  // is rejected with reason_code = telemetry_payload (SC-010).
+}
+
+message SubmitHumanFact {
+  string investigation_id = 1;
+  string kind = 2; string statement = 3;
+  repeated Ref entities = 4;
+  google.protobuf.Timestamp concerns_from = 5;
+  google.protobuf.Timestamp concerns_to = 6;
+  string author = 7;                        // authenticated principal; anonymous is rejected
+  google.protobuf.Timestamp submitted_at = 8;
+  // idempotency key: sha256(investigation_id, author, submitted_at, statement)
+}
+
+message ReopenInvestigation {
+  string parent_investigation_id = 1;
+  string child_investigation_id = 2;        // idempotency key
+  string cause = 3;                         // human_fact | answer
+  string cause_ref = 4;
+}
+
+message LabelInvestigation {
+  string investigation_id = 1;
+  bool was_this_right = 2;
+  string author = 3;
+  google.protobuf.Timestamp labelled_at = 4;
+  // idempotency key: sha256(investigation_id, author, labelled_at)
+}
+
+// ---------------------------------------------------------------------------
+// ADR-0003 D10 / ADR-0004 D4 — alert intake as a feeder, two transports, one event.
+// Polling is the source of truth; a webhook is a doorbell that only triggers a poll.
+// Creating a dated severity channel in Slack emits the same event (ADR-0004 D4).
+// ---------------------------------------------------------------------------
+message AlertTransition {
+  Ref monitor = 1;                          // the alert entity; for a declaration, the place the
+                                            // incident lives, keyed on its STABLE identifier
+  string group_key = 2;                     // "" when the monitor has no groups
+  google.protobuf.Timestamp transition_at = 3;  // for a declaration: the instant of DECLARATION
+  string from_state = 4; string to_state = 5;   // ok | alert | warn | no_data | declared
+  repeated Ref watches = 6;                 // entities the monitor watches -> WATCHES edges
+  string transport = 7;                     // poll | webhook | human_declared
+  string origin_ref = 8;
+  // A human-declared incident is the same event, distinguished by actor kind (FR-002a).
+  // `PERSON` in the ActorKind enum above is what FR-002a calls "an actor of kind human".
+  ActorKind actor_kind = 9;
+  string severity = 10;                     // as declared; never inferred
+  string title = 11;                        // as declared
+  string declaring_identity = 12;           // authenticated principal
+  // idempotency key: sha256(monitor, group_key, transition_at) — so the webhook and the poll
+  // that follows it are the same event, and (source, channel-or-incident id, declared instant)
+  // is the same key for a declaration however many times it is observed (FR-008b).
+  // Flapping and no-data transitions are filtered at the feeder; recoveries are kept, because a
+  // recovery is evidence.
+}
+
+// ---------------------------------------------------------------------------
+// D-future — future-dated valid time (003's vendor notices: valid_at after observed_at).
+// No schema change: `internal/log/validate.go` has no rule against it today and MUST NOT gain
+// one. What 001 owes 002 is (a) a fixture proving the projector's segment planning tolerates a
+// fact whose valid interval starts in the future, and (b) a published query semantic:
+//   a fact valid from a future instant is KNOWN now and ANSWERED only when the query's
+//   valid_at reaches it; `Extent` reports it as known; a subgraph as-of an earlier valid
+//   instant MUST NOT contain it.
+// That is the correct bitemporal reading and it is what makes "scheduled maintenance at 02:00
+// tomorrow, announced at 14:00 today" a first-class fact rather than a special case.
+// ---------------------------------------------------------------------------

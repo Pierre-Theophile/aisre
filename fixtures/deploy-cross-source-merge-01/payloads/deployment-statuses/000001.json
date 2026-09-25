@@ -1,0 +1,1 @@
+{"repository":"acme/storefront","deployment_id":4320,"statuses":[{"id":43200,"state":"success","environment":"production","created_at":"2026-09-20T14:02:00Z","creator":{"login":"release-runner","id":7,"type":"Bot"}}]}

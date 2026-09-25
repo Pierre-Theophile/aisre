@@ -1,0 +1,1 @@
+{"items":[{"kind":"sql#flag","name":"max_connections","type":"INTEGER","appliesTo":["POSTGRES_16"],"requiresRestart":true,"minValue":"1","maxValue":"100000"},{"kind":"sql#flag","name":"log_min_duration_statement","type":"INTEGER","appliesTo":["POSTGRES_16"],"requiresRestart":false,"minValue":"1","maxValue":"100000"}]}

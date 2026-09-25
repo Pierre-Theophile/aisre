@@ -1,0 +1,143 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: unobserved-client-config-01
+family: unobserved
+description: >-
+  FR-071b and SC-023: an incident no change caused, because the change was not in the
+  system. A mobile release shipped that afternoon narrowed its client-side request timeout from
+  10 s to 1 s and retries three times, so every slow checkout request becomes four requests and
+  three client-visible failures. Nothing on the server changed; the server-side latency
+  distribution is where it always was.
+
+  The one change in the window is a CDN cache-control edit on storefront at 14:12, one hop away
+  and twenty minutes before the alert. Naming it is the failure. The correct answer is
+  `not_change_induced` with the category `client_side_configuration`, which is the honest
+  answer for a cause that lives outside every feeder this system has -- and one of the three
+  categories the 2026-09 coverage audit leaves in the unobservable remainder.
+
+  The world was recorded with no culprit, so every comparison in it is flat: the server really
+  is fine, and the fixture holds the evidence for saying so rather than the absence of evidence
+  for saying anything else.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20102:group=env:prod"
+    statement: "checkout client-observed error rate above 8 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: "not_change_induced: client_side_configuration"
+    causal_path:
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=checkout"
+            windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+            statistic: P95
+        field_path: comparisons[statistic=P95].direction
+        op: eq
+        value: flat
+        note: >-
+          server-side p95 does not move across the onset. The symptom is client-observed and
+          the server-side distribution is the evidence that the server is not the cause.
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=checkout"
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+            version_attribute: service.version
+        field_path: versions.length
+        op: eq
+        value: 1
+        note: one server-side version across the window; there is no deploy to attribute this to.
+
+    decoys:
+      - entity: k8s.change=shop/storefront-config@rv2041
+        causal_role: coincident
+        why: >-
+          a cache-control edit on storefront twenty minutes before the alert, one hop from
+          checkout. It is recent, it is adjacent, and it changed nothing that the symptom
+          depends on.
+
+    exonerating_evidence:
+      k8s.change=shop/storefront-config@rv2041:
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=storefront"
+              windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: storefront's own error rate is unchanged across the onset.
+
+    # Nobody sees the future: this investigation observes the world at `fired_at` (14:32), so the
+    # decisive windows above end there and no predicate rests on telemetry after it
+    # (constitution II). Both halves of the `unobserved` answer are settled earlier: the symptom
+    # is established by the five one-minute samples after the 14:20 onset —
+    # `onset.MinSustainedPoints` — which are complete at 14:25, and the graph already holds every
+    # change there is to hold, none of which explains it. Asked before 14:25 the symptom itself
+    # is not yet established, and `unknown` rather than `unobserved` is the correct answer.
+    knowability_time: 2026-09-01T14:25:00Z
+    onset: {at: 2026-09-01T14:20:00Z, tolerance_seconds: 300}
+    prior_rank_of_culprit: 0
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry centred on the estimated onset, which is the cap every fixture in this
+      directory takes: the world is the cross product of (pointers in the neighbourhood) x
+      (grid) x (the recorder's statistic set: ERROR_RATE, P95, RATE) plus monitor_state, log
+      patterns, onset, errors_by_version where a version join key exists, error_spans per edge
+      and the depth-1 drill-downs those answers mint, so each further grid entry doubles the
+      directory. No culprit was supplied to the recorder, which is the point of this fixture:
+      every comparison in the world reads flat, so nothing in it supports any candidate.
+
+  runs: 3

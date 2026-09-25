@@ -1,0 +1,33 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: github-release-01
+family: github
+description: 'Three releases of a repository the operator has NOT declared as shipping by release, plus one draft. The published ones become changes of the taxonomy''s `other` kind carrying GitHub''s own object kind as a property — never dropped (Edge case 10), because an operator asking what happened around 03:14 is asking about their estate rather than about this connector''s opinion of which events are interesting, and a release published minutes before an incident is exactly what they want to see even when it shipped nothing. The draft is not a change at all: nothing has been published, so nothing has happened. One release''s target_commitish is a BRANCH NAME, which the commit normaliser refuses — omitted rather than recorded as a commit it is not. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-03-01T14:00:00Z
+    end: 2026-03-01T15:30:00Z
+queries:
+  # Three changes of the `other` kind and no fourth: the draft is not a change.
+  - name: first-release
+    kind: subgraph
+    focus: github.change=repositories/555/releases/7001
+    valid_at: 2026-03-01T14:05:00Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 2
+    direction: both
+  # The extent: `not present` and `not read at that time` are different answers.
+  - name: extent
+    kind: extent
+    valid_at: 2026-03-01T15:30:00Z
+    observed_at: 2026-03-01T15:30:00Z

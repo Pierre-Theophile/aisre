@@ -1,0 +1,19 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: baseline-shop
+family: k8s-topology
+description: 'the shop topology of deploy/kind/otel-demo/minimal as one informer list: 6 nodes in one pool, 4 Deployments, 2 Services, 1 Ingress, 1 ConfigMap, 1 Secret. Synthetic: authored from deploy/kind/, not recorded from a cluster (T058 replaces it).'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: k8s:demo
+      kind: k8s
+      ordering: per_source_sequence
+      reordering_window: 1m0s
+clock:
+    start: 2026-09-01T13:00:00Z
+    end: 2026-09-01T13:01:20Z

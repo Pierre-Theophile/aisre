@@ -1,0 +1,34 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: vendor-unextractable-01
+family: vendor-notice
+description: 'Two messages from a configured sender, one of which no rule could read. The unreadable one is recorded as unextracted with its reason and its pointer and is not emitted as a change: a human can see what the feeder could not read, which is the difference between a gap in extraction and a gap in the vendor''s announcements. The cycle also carries a gap, because a second mailbox could not be reached. Synthetic structural twin: no identifier is derived from the organisation and no vendor it depends on appears (contracts/sanitisation.md §7). The payloads are already the sanitised form — the six typed fields and a pointer — because that is the shape the source emits, so no body and no sender exists to remove (FR-071, FR-072).'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: vendor-notice:twin
+      kind: vendor-notice
+      ordering: none
+      reordering_window: 6h0m0s
+clock:
+    start: 2026-09-17T10:00:00Z
+    end: 2026-10-02T05:00:00Z
+
+queries:
+  # The one readable notice is in the graph. The unreadable one is in the cycle report with its
+  # pointer, not in the graph as a guess (FR-074).
+  - name: vendor-2hop
+    kind: subgraph
+    focus: vendor=twin-gpu
+    valid_at: 2026-10-02T03:00:00Z
+    observed_at: 2026-09-18T12:00:00Z
+    hops: 2
+    direction: both
+  # The extent, whose gap says a mailbox was not read — the quiet in this window was ignorance
+  # rather than absence (FR-075).
+  - name: extent
+    kind: extent

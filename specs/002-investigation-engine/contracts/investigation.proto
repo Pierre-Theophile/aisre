@@ -1,0 +1,749 @@
+// Public schema for the investigation engine: the investigation service, the hypothesis
+// ledger, the typed query algebra, the digest contract (shared with features 003 and 005),
+// the recording format and the fixture ground truth. Served via ConnectRPC alongside
+// sreagent.graph.v1. Versioned with buf; breaking changes require a MAJOR bump
+// (constitution IX). This package is the published home of the algebra, the digest, the
+// coverage block, the join keys, the drill-down handles and the typed outcomes: a telemetry
+// backend (005 "Dependencies on 001") implements these messages, it does not define its own.
+syntax = "proto3";
+
+package sreagent.investigation.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "sreagent/graph/v1/graph.proto";
+
+option go_package = "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1;investigationv1";
+
+// ============================================================================
+// 1. The query algebra — the only vocabulary in which a worker may be asked a
+//    question (FR-042b). It is simultaneously the replay boundary, the vendor
+//    abstraction, the sanitisation point and the prompt-injection barrier.
+// ============================================================================
+
+// A window is either an explicit interval or a before/after pair around a reference instant.
+message Window {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;                 // half-open [start, end)
+}
+message WindowPair {
+  google.protobuf.Timestamp reference_at = 1;
+  int64 width_seconds = 2;                           // symmetric width either side, unless set below
+  Window baseline = 3;                               // optional explicit override
+  Window symptom = 4;                                // optional explicit override
+}
+
+enum Statistic {
+  STATISTIC_UNSPECIFIED = 0;
+  COUNT = 1; RATE = 2; ERROR_RATE = 3; P50 = 4; P95 = 5; P99 = 6; MEAN = 7; MAX = 8;
+}
+
+enum OnsetMethod {
+  ONSET_METHOD_UNSPECIFIED = 0;
+  SEASONAL_CUSUM = 1;          // seasonal-naive baseline + two-sided CUSUM + binary segmentation
+}
+
+// A handle minted by a previous answer. Never constructed by a caller; this is what keeps the
+// argument space of exemplars() and drill_down() finite, and therefore a recorded world finite.
+message Handle {
+  string value = 1;            // opaque to the caller; canonical and stable for a given answer
+  string minted_by_term_key = 2;
+  uint32 depth = 3;            // 1 for a handle from a first-level answer; worlds record depth 1
+}
+
+// ---- The graph family: typed wrappers over the published 001 RPCs. Not recorded into a
+//      world; answered deterministically by replaying the event log (US3).
+message GraphTerm {
+  oneof term {
+    sreagent.graph.v1.SubgraphRequest subgraph = 1;
+    sreagent.graph.v1.DiffRequest diff = 2;
+    sreagent.graph.v1.ImpactRequest impact = 3;
+    sreagent.graph.v1.PointersRequest pointers = 4;
+    sreagent.graph.v1.NodeHistoryRequest node_history = 5;
+    sreagent.graph.v1.ResolutionAuditRequest resolution_audit = 6;
+    sreagent.graph.v1.ExtentRequest extent = 7;
+  }
+}
+
+// ---- The telemetry family: the cross product of these over the alert neighbourhood and the
+//      window grid is the recorded world (FR-042b).
+message CompareTerm        { sreagent.graph.v1.Pointer pointer = 1; WindowPair windows = 2; Statistic statistic = 3; }
+message OnsetTerm          { sreagent.graph.v1.Pointer pointer = 1; Window search_window = 2; OnsetMethod method = 3; }
+message NewLogPatternsTerm { sreagent.graph.v1.Pointer pointer = 1; Window window = 2; Window baseline_window = 3; }
+message ErrorSpansTerm     { string src_entity_id = 1; string dst_entity_id = 2; sreagent.graph.v1.EdgeType edge_type = 3; Window window = 4; }
+message ErrorsByVersionTerm{ sreagent.graph.v1.Pointer pointer = 1; Window window = 2; string version_attribute = 3; } // from Pointer.join_keys["version"] (D4)
+message MonitorStateTerm   { sreagent.graph.v1.Pointer pointer = 1; Window window = 2; }
+message ExemplarsTerm      { Handle handle = 1; uint32 limit = 2; }
+message DrillDownTerm      { Handle handle = 1; }
+
+// ---- The knowledge family: graph-scoped retrieval over durable knowledge only (FR-049).
+message KnowledgeSearchTerm {
+  repeated string entity_ids = 1;    // MUST be inside the investigation's subgraph
+  repeated string query_terms = 2;
+  uint32 limit = 3;
+}
+
+message AlgebraTerm {
+  string algebra_version = 1;        // e.g. "1.0.0"; a term of an unknown version is refused
+  oneof term {
+    GraphTerm graph = 10;
+    CompareTerm compare = 11;
+    OnsetTerm onset = 12;
+    NewLogPatternsTerm new_log_patterns = 13;
+    ErrorSpansTerm error_spans = 14;
+    ErrorsByVersionTerm errors_by_version = 15;
+    MonitorStateTerm monitor_state = 16;
+    ExemplarsTerm exemplars = 17;
+    DrillDownTerm drill_down = 18;
+    KnowledgeSearchTerm knowledge_search = 19;
+  }
+}
+
+// ============================================================================
+// 2. The digest contract — what may cross the worker boundary (FR-014, FR-014a,
+//    FR-014b). Shared verbatim with 003 and 005.
+// ============================================================================
+
+enum TermOutcome {
+  TERM_OUTCOME_UNSPECIFIED = 0;
+  DIGEST = 1;            // a bounded, structured answer
+  NO_DATA = 2;           // the query was valid and the covered window holds nothing
+  NOT_YET_INGESTED = 3;  // the window falls inside the backend's indexing lag
+  QUERY_FAILED = 4;      // with a reason from the published set
+  NOT_RECORDED = 5;      // recorded mode only: in-algebra, not held by this world
+  PARTIAL = 6;           // some of the answer was retrieved; what is missing is named
+}
+
+enum FailureReason {
+  FAILURE_REASON_UNSPECIFIED = 0;
+  REJECTED_BY_BACKEND = 1; NOT_PERMITTED = 2; RATE_LIMITED = 3; TIMED_OUT = 4;
+  UNSUPPORTED_POINTER = 5; OUTSIDE_ALGEBRA = 6;
+
+  // The window is too OLD for the vendor to hold, which is the mirror of NOT_YET_INGESTED for a
+  // window that is too new (003 FR-104, item 7).
+  //
+  // This is not NO_DATA and the difference is the whole point. NO_DATA means the backend looked
+  // and the window was covered and nothing was there — a finding. OUTSIDE_RETENTION means the
+  // window was never covered, because the data aged out before anyone asked. Reporting the second
+  // as the first tells an investigation that nothing happened during exactly the window it cannot
+  // see, which is the most confident wrong answer this system is capable of.
+  //
+  // It bites immediately rather than theoretically: Cloud Run's run.googleapis.com/* metrics
+  // retain for six weeks, so any question about an incident older than that is outside retention
+  // rather than empty. The retention horizon the vendor states is carried in
+  // AlgebraResponse.retention_horizon, so the caller learns how far back it COULD have asked.
+  OUTSIDE_RETENTION = 7;
+}
+
+// Mandatory on every digest. A response without one is invalid (FR-014a). A field that cannot
+// be determined is stated as undetermined, never omitted.
+message Coverage {
+  repeated string searched_entities = 1;
+  string data_source = 2;                    // index, table, metric namespace
+  Window window_actually_covered = 3;
+  int64 volume_considered = 4;               // points, lines or spans scanned
+  bool volume_undetermined = 5;
+  string sampling = 6;                       // what the backend applied or was asked for
+  string truncation = 7;                     // what was dropped and by which criterion
+  int64 ingestion_lag_seconds = 8;
+  bool ingestion_lag_undetermined = 9;
+  google.protobuf.Timestamp executed_at = 10;
+  int64 remaining_quota = 11;                // as the vendor reports it, for the budget manager
+  int64 quota_window_seconds = 12;
+  bool quota_undetermined = 13;
+
+  // Nobody sees the future (constitution II). A window that runs past the investigation's
+  // observed_at is truncated to it rather than answered from data that would not have existed
+  // at the instant the investigation observed the world; when that happens the backend says so
+  // here and names the horizon it truncated to.
+  bool truncated_to_horizon = 14;
+  google.protobuf.Timestamp horizon = 15;    // the investigation's observed_at, when one was declared
+}
+
+// The keys that let separate answers be related to each other and to the graph (FR-014b).
+message JoinKeys {
+  string version = 1;                        // deployment / revision / image tag
+  string workload = 2;
+  string pod_or_host = 3;
+  repeated string trace_ids = 4;
+  repeated string span_ids = 5;
+  google.protobuf.Timestamp first_seen = 6;
+}
+
+message DrillDown {
+  Handle handle = 1;                         // present it back to the backend for the narrower answer
+  string human_link = 2;                     // opens the same query over the same window for a person
+}
+
+message Truncated { bool truncated = 1; string what_was_dropped = 2; string criterion = 3; }
+
+message SeriesSummary {
+  map<string, string> tags = 1;
+  int64 point_count = 2;
+  Window interval_covered = 3;
+  int64 resolution_seconds = 4;
+  map<string, double> statistics = 5;        // keys from the published Statistic set
+  JoinKeys join_keys = 6;
+  DrillDown drill_down = 7;
+}
+
+message Comparison {
+  Statistic statistic = 1;
+  double baseline = 2; double symptom = 3;
+  double absolute_delta = 4; double relative_delta = 5;
+  string direction = 6;                      // "up" | "down" | "flat"
+  bool separable = 7;                        // false when the windows do not separate the hypothesis
+}
+
+message MetricDigest { repeated SeriesSummary series = 1; repeated Comparison comparisons = 2; }
+
+message LogPattern {
+  string template = 1;                       // masked template from the miner; never a raw line
+  int64 count = 2; int64 baseline_count = 3;
+  bool new_in_window = 4;
+  string status = 5;
+  JoinKeys join_keys = 6;
+  DrillDown drill_down = 7;
+}
+message LogDigest {
+  repeated LogPattern patterns = 1;
+  map<string, int64> counts_by_status = 2;
+  string miner_version = 3;
+  bool model_used = 4;                       // FR-009a
+  string model_added = 5;                    // what the model contributed over the algorithm
+}
+
+message SpanGroup {
+  string operation = 1; string error_kind = 2;
+  int64 count = 3; map<string, double> latency = 4;
+  JoinKeys join_keys = 5; DrillDown drill_down = 6;
+}
+message TraceDigest { repeated SpanGroup groups = 1; repeated Comparison comparisons = 2; }
+
+message MonitorTransition { google.protobuf.Timestamp at = 1; string from_state = 2; string to_state = 3; string group_key = 4; }
+message MonitorStateDigest {
+  repeated MonitorTransition transitions = 1;
+  string state_at_start = 2; string state_at_end = 3;
+  map<string, string> per_group_state = 4;
+}
+
+// The onset estimate is a digest like any other, produced backend-side so that the series
+// never crosses this boundary (constitution IV; plan research §4).
+message OnsetDigest {
+  google.protobuf.Timestamp estimated_onset = 1;
+  int64 uncertainty_seconds = 2;
+  OnsetMethod method = 3;
+  map<string, double> method_parameters = 4;  // baseline periods, k, h, threshold
+  bool unavailable = 5;                       // flat, absent, too sparse, or no crossing
+  string unavailable_reason = 6;
+  Window examined = 7;
+}
+
+message VersionBreakdown { string version = 1; int64 errors = 2; int64 total = 3; double error_rate = 4; JoinKeys join_keys = 5; DrillDown drill_down = 6; }
+message ErrorsByVersionDigest { repeated VersionBreakdown versions = 1; string version_attribute = 2; }
+
+message Exemplar { string text = 1; string redaction_applied = 2; JoinKeys join_keys = 3; }
+message ExemplarDigest { repeated Exemplar exemplars = 1; uint32 cap = 2; }
+
+message KnowledgeItem {
+  string document_id = 1; string kind = 2;       // postmortem | runbook | decision_record | past_investigation
+  repeated string linked_entity_ids = 3; string link_provenance = 4;
+  google.protobuf.Timestamp authored_at = 5; int64 age_days = 6;
+  double score = 7; string citation = 8; string excerpt = 9;   // bounded, redacted
+}
+message KnowledgeDigest { repeated KnowledgeItem items = 1; string scorer_version = 2; }
+
+message Digest {
+  oneof body {
+    MetricDigest metric = 1;
+    LogDigest log = 2;
+    TraceDigest trace = 3;
+    MonitorStateDigest monitor_state = 4;
+    OnsetDigest onset = 5;
+    ErrorsByVersionDigest errors_by_version = 6;
+    ExemplarDigest exemplars = 7;
+    KnowledgeDigest knowledge = 8;
+  }
+  Coverage coverage = 20;                 // mandatory
+  Truncated truncation = 21;
+  string free_text = 22;                  // at most one bounded field; flagged unverified,
+                                          // never citable on its own (FR-014b)
+  string backend_version = 23;
+  string vocabulary = 24;
+  string executed_query = 25;             // the exact query as sent, for the deep link
+  string deep_link = 26;
+
+  // The identifier the vendor returns for the request that produced this digest, where it
+  // returns one (003 FR-100, item 6).
+  //
+  // FR-100 requires every digest to carry its query, its execution instant and the platform's
+  // request identifier. The first two have homes — executed_query and coverage.executed_at — and
+  // the third had none. It is NOT coverage.data_source, which names a metric namespace or an
+  // index rather than one request, and it must not go in free_text, which is flagged unverified
+  // and is never citable on its own (FR-014b): a request id is the most checkable fact in the
+  // whole digest, and putting it in the one field that cannot be cited would make it unusable
+  // for the thing it exists for.
+  //
+  // What it is for: taking a digest to the vendor's support and asking what happened on THAT
+  // call. Empty where the vendor returns none — which is a fact about the vendor, not a
+  // deficiency in the digest.
+  string vendor_request_id = 27;
+}
+
+message AlgebraRequest {
+  AlgebraTerm term = 1;
+  google.protobuf.Timestamp valid_at = 2;
+  google.protobuf.Timestamp observed_at = 3;
+  string serves_hypothesis_id = 4;        // FR-018a
+  string discriminating_question = 5;     // FR-018a; "exploratory:<reason>" when none
+  bool want_exemplars = 6;                // exemplars are never returned by default (FR-014)
+}
+message AlgebraResponse {
+  TermOutcome outcome = 1;
+  Digest digest = 2;
+  FailureReason failure_reason = 3;
+  string failure_detail = 4;
+  string term_key = 5;                    // sha256(canonical(term)) — the world's key
+  string response_digest = 6;             // sha256(canonical(response))
+  int64 duration_ms = 7;
+  string mode = 8;                        // "live" | "recorded"
+  CostClass cost_class = 9;
+
+  // How far back the vendor states it holds this data, set when failure_reason is
+  // OUTSIDE_RETENTION (003 FR-104, item 7).
+  //
+  // Without it, OUTSIDE_RETENTION says "not this window" and leaves the caller to discover the
+  // boundary by bisection, spending quota to learn a number the vendor already published. With
+  // it, the caller learns in one refusal how far back it could have asked.
+  google.protobuf.Timestamp retention_horizon = 10;
+}
+
+// ============================================================================
+// 3. Workers and backends
+// ============================================================================
+
+// The published, closed set of cost classes. Budgets are expressed per backend AND per cost
+// class, never as a flat call count (FR-047a); `telemetry-backend.md` §7 is its prose.
+enum CostClass {
+  COST_CLASS_UNSPECIFIED = 0;
+  CHEAP = 1;      // indexed lookup, monitor-state read
+  STANDARD = 2;   // one aggregation over one selector and one window pair
+  EXPENSIVE = 3;  // scan-shaped: wide new_log_patterns, long-window onset, exemplars
+}
+
+message Capability {
+  string name = 1;                        // an algebra term name
+  bool read_only = 2;                     // MUST be true; false is rejected at registration
+  CostClass cost_class = 3;               // rejected at registration if UNSPECIFIED
+  int64 max_window_seconds = 4;
+}
+message RedactionPolicy {
+  repeated string dropped_fields = 1;     // people identifiers: dropped, never hashed
+  repeated string pseudonymised_fields = 2; // keyed HMAC, consistent so joins survive
+  bool log_bodies_as_templates = 3;
+  string policy_version = 4;
+}
+message WorkerDescription {
+  string name = 1; string source_of_truth = 2;
+  repeated Capability capabilities = 3;
+  bool contains_model = 4;                // FR-009a
+  string model_id = 5;                    // recorded when contains_model
+  RedactionPolicy redaction = 6;
+  repeated string modes = 7;              // "live", "recorded"
+  string version = 8;
+}
+message BackendDescription {
+  string name = 1; string vendor = 2;
+  repeated string terms = 3;
+  map<string, CostClass> cost_classes = 4;  // term name -> published cost class
+  RedactionPolicy redaction = 5;
+  string version = 6; string algebra_version = 7;
+}
+
+service TelemetryBackendService {
+  rpc Describe(DescribeBackendRequest) returns (BackendDescription);
+  rpc Execute(AlgebraRequest) returns (AlgebraResponse);
+}
+message DescribeBackendRequest {}
+
+// ============================================================================
+// 4. The hypothesis ledger (FR-020a, FR-020b) — held outside the model's context,
+//    updated only through recorded tool calls, exported with the investigation.
+// ============================================================================
+
+enum HypothesisKind { HYPOTHESIS_KIND_UNSPECIFIED = 0; CHANGE = 1; CONDITION = 2; NO_OBSERVED_CHANGE = 3; }
+enum HypothesisStatus { HYPOTHESIS_STATUS_UNSPECIFIED = 0; PROPOSED = 1; SUPPORTED = 2; REFUTED = 3; INCONCLUSIVE = 4; UNTESTED = 5; EXONERATED = 6; }
+enum CausalRole { CAUSAL_ROLE_UNSPECIFIED = 0; CAUSE = 1; CANDIDATE_EFFECT = 2; }
+enum JudgmentDirection { JUDGMENT_DIRECTION_UNSPECIFIED = 0; SUPPORTS = 1; REFUTES = 2; NEUTRAL = 3; }
+enum JudgmentStrength { JUDGMENT_STRENGTH_UNSPECIFIED = 0; WEAK = 1; MODERATE = 2; STRONG = 3; DECISIVE = 4; }
+
+message ConfidenceBucket { string name = 1; double range_low = 2; double range_high = 3; }
+
+message Hypothesis {
+  string hypothesis_id = 1;
+  HypothesisKind kind = 2;
+  string statement = 3;
+  string candidate_change_entity_id = 4;
+  repeated string target_entity_ids = 5;
+  CausalRole causal_role = 6;
+  string actor_kind = 7;                  // from RankedChange (D3)
+  double prior = 8;
+  HypothesisStatus status = 9;
+  string untested_reason = 10;
+  double confidence = 11;                 // computed; never model-stated (FR-023)
+  ConfidenceBucket bucket = 12;
+  bool widened = 13; string widened_reason = 14;
+  uint32 rank = 15;
+  string rationale = 16;
+  repeated string supporting_evidence_ids = 17;
+  repeated string refuting_evidence_ids = 18;
+  repeated string judgment_ids = 19;
+  bool knowledge_derived = 20; bool knowledge_confirmed = 21;
+  AlgebraTerm next_query = 22;            // for an untested hypothesis
+  string next_query_deep_link = 23;
+}
+
+message Judgment {
+  string judgment_id = 1; string hypothesis_id = 2; string evidence_id = 3;
+  JudgmentDirection direction = 4; JudgmentStrength strength = 5;
+  double ln_lr = 6;                       // the published constant, stored for reproducibility
+  string source = 7;                      // first_wave | model | human_fact | exoneration | rollback
+  string worker_call_id = 8;
+  google.protobuf.Timestamp recorded_at = 9;
+}
+
+message EvidenceItem {
+  string evidence_id = 1; string kind = 2;
+  string worker = 3; string capability = 4;
+  AlgebraTerm term = 5;
+  google.protobuf.Timestamp valid_at = 6; google.protobuf.Timestamp observed_at = 7;
+  google.protobuf.Timestamp called_at = 8;
+  string mode = 9;
+  TermOutcome outcome = 10;
+  string response_digest = 11; string response_key = 12;
+  Coverage coverage = 13; JoinKeys join_keys = 14;
+  repeated string graph_event_ids = 15;
+  string deep_link = 16; string deep_link_absent_reason = 17;
+  bool truncated = 18;
+}
+
+message Ledger {
+  string investigation_id = 1;
+  repeated Hypothesis hypotheses = 2;     // includes NO_OBSERVED_CHANGE, always
+  repeated Judgment judgments = 3;
+  repeated EvidenceItem evidence = 4;
+  string ledger_rule_version = 5;         // the posterior rule and the LR table in force
+  repeated ConfidenceBucket buckets = 6;
+}
+
+// ============================================================================
+// 5. The investigation
+// ============================================================================
+
+enum Lifecycle { LIFECYCLE_UNSPECIFIED = 0; RUNNING = 1; CONCLUDED = 2; REOPENED = 3; FAILED = 4; }
+enum ConclusionKind { CONCLUSION_KIND_UNSPECIFIED = 0; CONCLUSION_PARTIAL = 1; CONCLUSION_FINAL = 2; }
+enum InvestigationOutcome { INVESTIGATION_OUTCOME_UNSPECIFIED = 0; RANKED = 1; UNKNOWN = 2; BUDGET_EXHAUSTED = 3; INVESTIGATION_FAILED = 4; }
+enum StopReason {
+  STOP_REASON_UNSPECIFIED = 0;
+  COMPLETED = 1; BUDGET_EXHAUSTED_STOP = 2; DIMINISHING_RETURNS = 3;
+  WORKER_UNAVAILABLE = 4; REFUSED = 5; ENGINE_FAILED = 6;
+}
+
+// Origin of an intake, separate from the change actor kind: a monitor transition carries no
+// actor kind (002 FR-029d); a declared incident is a human act.
+enum IntakeOrigin { INTAKE_ORIGIN_UNSPECIFIED = 0; INTAKE_ORIGIN_MONITOR = 1; INTAKE_ORIGIN_DECLARED = 2; }
+enum TargetRefProvenance {
+  TARGET_REF_PROVENANCE_UNSPECIFIED = 0;
+  PARSED_FROM_DECLARATION = 1;   // by the published, stated, configurable naming rule
+  SUPPLIED_BY_HUMAN = 2;         // at declaration time or later, as a typed fact
+  FROM_MONITOR = 3;              // the monitor's own WATCHES edges
+}
+message TargetRef { sreagent.graph.v1.Ref ref = 1; TargetRefProvenance provenance = 2; string rule_id = 3; }
+
+message Symptom {
+  string symptom_id = 1; string origin_system = 2; string origin_ref = 3;
+  string transport = 4;                    // monitor | human_declared | explicit_reference
+  string statement = 5;
+  google.protobuf.Timestamp fired_at = 6;  // for a declaration: the instant of DECLARATION,
+                                           // never the instant the engine observed it (FR-004a)
+  repeated sreagent.graph.v1.Ref named_identifiers = 7;
+  repeated string resolved_entity_ids = 8;
+  string resolution_evidence_id = 9;
+  bool attached_as_additional = 10;
+  // Declared-incident fields (FR-001a, FR-002a, FR-002b). None of these may be invented.
+  IntakeOrigin origin = 11;               // monitor | declared; no change actor kind on a transition
+  string severity = 12;                    // as declared
+  string title = 13;                       // human-readable, as declared
+  string declaring_identity = 14;          // authenticated
+  repeated TargetRef target_refs = 15;     // zero or more; provenance recorded per reference
+  string idempotency_key = 16;             // (source, channel-or-incident id, declared instant)
+  string grouping_evidence_id = 17;        // the FR-008a/FR-008c decision, with the time and
+                                           // neighbourhood distances it rested on
+}
+
+// FR-057f — the answer goes back to the place the incident lives, report-only, edited in place.
+// The transport belongs to a future chat connector; this message is the contract it implements.
+message ReportDelivery {
+  string investigation_id = 1;
+  string target_system = 2;                // e.g. the place the incident was declared
+  string target_ref = 3;                   // stable identifier of that place
+  string rendering_digest = 4;             // sha256 of the rendered report that was delivered
+  string external_message_ref = 5;         // what is edited in place on the next update
+  google.protobuf.Timestamp first_delivered_at = 6;
+  google.protobuf.Timestamp last_updated_at = 7;
+  uint32 update_count = 8;
+  string outcome = 9;                      // delivered | failed | not_configured
+  string failure_detail = 10;              // a failed delivery is recorded; the investigation
+                                           // still reaches a terminal state (FR-057f)
+}
+
+message BudgetProfile {
+  string name = 1;
+  int64 wall_time_seconds = 2;
+  int64 first_tested_target_seconds = 3; int64 substantive_target_seconds = 4;
+  double cost_units = 5;
+  map<string, int64> calls_per_backend = 6;
+  map<string, int64> calls_per_cost_class = 7;
+  int64 max_window_seconds = 8;
+  double quota_share = 9;                  // of the backend's *remaining* quota
+  double synthesis_reserve_fraction = 10;  // 0.15
+  uint32 max_concurrent_investigations = 11;
+  double daily_global_spend = 12;
+}
+message BudgetSpend {
+  BudgetProfile limits = 1;
+  int64 wall_time_seconds = 2;
+  map<string, int64> tokens_by_model_and_class = 3;   // the provider-independent unit (FR-048)
+  double cost_units = 4; string price_table_version = 5;
+  map<string, int64> calls_by_worker = 6;
+  map<string, int64> calls_by_backend = 7;
+  map<string, int64> calls_by_cost_class = 8;
+  map<string, double> quota_share_used = 9;
+  map<string, int64> remaining_quota_observed = 10;
+  int64 widest_window_seconds = 11;
+  google.protobuf.Timestamp reserve_entered_at = 12;
+}
+
+message HumanFact {
+  string fact_id = 1; string kind = 2; string statement = 3;
+  repeated string entity_ids = 4; sreagent.graph.v1.Interval concerns = 5;
+  string author = 6; google.protobuf.Timestamp submitted_at = 7;
+  string weight_class = 8;                 // "strong" — never "decisive"
+  string evidence_id = 9; string event_id = 10;
+  repeated string contradicted_by_evidence_ids = 11;
+}
+message HumanReview {
+  string review_id = 1; string validated_root_cause = 2;   // change id | "unobserved" | "not_change_induced:<category>"
+  repeated Hypothesis amendments = 3; string rationale = 4;
+  string author = 5; google.protobuf.Timestamp decided_at = 6; string event_id = 7;
+}
+message Label { string label_id = 1; bool was_this_right = 2; string author = 3; google.protobuf.Timestamp labelled_at = 4; string event_id = 5; }
+message VerifierFinding { string claim_ref = 1; string verdict = 2; string offending_value = 3; string cited_evidence_id = 4; string action_taken = 5; }
+
+message Resolution {                       // "what would resolve this" (FR-026, FR-045)
+  string statement = 1;
+  string kind = 2;                         // connect_source | add_pointer | confirm_identity | widen_window | ask_human
+  AlgebraTerm next_query = 3;
+  string deep_link = 4;
+  string hypothesis_id = 5;
+}
+
+message Investigation {
+  string investigation_id = 1; string incident_id = 2; string reopens_investigation_id = 3;
+  repeated Symptom symptoms = 4;
+  google.protobuf.Timestamp valid_at = 5; google.protobuf.Timestamp observed_at = 6;
+  bool review_mode = 7;
+  Window window = 8;
+  string onset_estimate_evidence_id = 9;
+  Lifecycle lifecycle = 10; ConclusionKind conclusion_kind = 11;
+  InvestigationOutcome outcome = 12; StopReason stop_reason = 13; string stop_detail = 14;
+  string verdict_line = 15;                // the one line Sam acts on
+  string rollback_candidate = 16;          // or empty, with the verdict saying there is none
+  Ledger ledger = 17;
+  repeated Resolution resolutions = 18;
+  BudgetSpend spend = 19;
+  repeated HumanFact facts = 20;
+  repeated HumanReview reviews = 21;
+  repeated Label labels = 22;
+  repeated VerifierFinding verifier_findings = 23;
+  repeated ReportDelivery deliveries = 35;   // FR-057f; never a precondition of concluding
+  string requester = 24;
+  google.protobuf.Struct model_config = 25;  // model ids per role, effort, display, betas, price table
+  string algebra_version = 26; string ledger_rule_version = 27; string schema_version = 28;
+  string recording_key = 29; string recording_digest = 30; string decision_event_id = 31;
+  google.protobuf.Timestamp started_at = 32; google.protobuf.Timestamp ended_at = 33;
+  bool provisional = 34;                   // true while only the prior-only ranking exists (FR-046a)
+}
+
+// ============================================================================
+// 6. The service
+// ============================================================================
+
+message DeclareRequest {
+  Symptom declaration = 1;                 // origin = INTAKE_ORIGIN_DECLARED; severity, title, declaring
+                                           // identity, origin ref, zero or more target refs
+  int64 lookback_seconds = 2;
+  string profile = 3;
+  // observed_at is pinned to declaration.fired_at by the engine (FR-004a) and is not a parameter.
+}
+
+message InvestigateRequest {
+  Symptom symptom = 1;                     // alert, human declaration, or explicit reference
+  google.protobuf.Timestamp valid_at = 2;
+  google.protobuf.Timestamp observed_at = 3;   // unset = valid_at (FR-004)
+  int64 lookback_seconds = 4;
+  string profile = 5;
+  bool review_mode = 6;
+  bool stream = 7;                          // anytime updates
+}
+message GetRequest { string investigation_id = 1; }
+message ReplayRequest {
+  string investigation_id = 1; string export_path = 2;
+  string layer = 3;                         // "trajectory" | "world"
+}
+message ReplayResponse {
+  bool identical = 1;
+  string first_diverging_record = 2;        // layer 1: names worker, capability, parameters
+  uint32 not_recorded_count = 3;            // layer 2
+  double miss_rate = 4;
+  Investigation investigation = 5;
+}
+message ReopenRequest { string investigation_id = 1; HumanFact fact = 2; }
+message SubmitHumanFactRequest { string investigation_id = 1; HumanFact fact = 2; }
+message LabelRequest { string investigation_id = 1; bool was_this_right = 2; }
+message ReviewRequest { string investigation_id = 1; HumanReview review = 2; }
+
+service InvestigationService {
+  rpc Investigate(InvestigateRequest) returns (stream Investigation);  // anytime: provisional first
+  // A declared incident is a first-class intake, not a special case (FR-001a). Re-delivery under
+  // a seen idempotency key is a no-op returning the existing investigation (FR-008b).
+  rpc Declare(DeclareRequest) returns (stream Investigation);
+  rpc Get(GetRequest) returns (Investigation);
+  rpc Replay(ReplayRequest) returns (ReplayResponse);
+  rpc Reopen(ReopenRequest) returns (Investigation);
+  rpc SubmitHumanFact(SubmitHumanFactRequest) returns (Investigation);  // never blocks (FR-057)
+  rpc Review(ReviewRequest) returns (Investigation);
+  rpc Label(LabelRequest) returns (Investigation);
+  // FR-064's dual surface: every command in the dual-surface subset has an RPC.
+  rpc List(ListInvestigationsRequest) returns (ListInvestigationsResponse);
+  rpc Export(ExportRequest) returns (ExportResponse);
+}
+
+message ListInvestigationsRequest {
+  string incident_id = 1; string lifecycle = 2;
+  google.protobuf.Timestamp since = 3;
+  int32 page_size = 4; string page_token = 5;
+}
+message ListInvestigationsResponse {
+  repeated Investigation investigations = 1; string next_page_token = 2;
+}
+// Export writes the self-contained artifact of FR-042: decision record, ledger, both recording
+// layers, and the graph events the investigation's graph queries need.
+message ExportRequest { string investigation_id = 1; string out_dir = 2; }
+message ExportResponse {
+  string out_dir = 1; string export_digest = 2;
+  int64 trajectory_record_count = 3; int64 world_term_count = 4;
+}
+
+// ============================================================================
+// 7. The recording format (FR-042a, FR-042b)
+// ============================================================================
+
+message ModelRequestRecord  { string role = 1; string model_id = 2; string request_digest = 3; google.protobuf.Struct body = 4; }
+message ModelResponseRecord { string response_digest = 1; google.protobuf.Struct body = 2; map<string, int64> usage = 3; string stop_reason = 4; }
+message WorkerRequestRecord { string worker = 1; AlgebraRequest request = 2; string term_key = 3; }
+message WorkerResponseRecord{ AlgebraResponse response = 1; }
+message LedgerUpdateRecord  { repeated Judgment judgments = 1; string ledger_digest = 2; }
+// FinalHypothesis is one row of the belief state a run ended at. It carries only what scoring a
+// run needs — which hypothesis, how confident, which published bucket, what status — and not the
+// evidence behind it, which is already in the trajectory's own records.
+//
+// Phase 7 Track F added it so that calibration is computable from a layer-1 recording alone. A
+// trajectory records the judgments a run applied but not the posterior they produced, so a corpus
+// of recordings scored zero hypotheses and the reliability table said, correctly but uselessly,
+// that it could not measure anything. The posterior is a function of the judgments and the
+// published likelihood-ratio table, so recording it costs one small repeated field and makes the
+// per-pull-request calibration gate real.
+message FinalHypothesis {
+  string hypothesis_id = 1;
+  double confidence = 2;                      // the ledger-computed posterior
+  ConfidenceBucket bucket = 3;                // the published bucket it fell in
+  HypothesisStatus status = 4;
+  HypothesisKind kind = 5;
+  string candidate_change_entity_id = 6;      // empty for a condition or the unobserved remainder
+  string statement = 7;
+  // Every reference the graph publishes for that change, sorted. A ground truth, a runbook and a
+  // person all name a change the way its origin system does ("k8s.change=shop/payments@rev7"),
+  // while the graph names it by canonical entity id because resolution may have merged several
+  // refs onto one entity. Carrying both is what lets a scorer grade a recorded run against a
+  // hand-written ground truth without either side guessing at the other's spelling.
+  repeated string candidate_change_entity_refs = 8;
+}
+
+message StopRecord          {
+  StopReason reason = 1; string detail = 2;
+  // The belief state at the stop, in the ledger's own rank order. Additive: a recording made
+  // before this field existed replays unchanged and scores nothing, which is what it did before.
+  repeated FinalHypothesis final_ledger = 3;
+}
+
+message TrajectoryRecord {
+  uint64 seq = 1;
+  google.protobuf.Timestamp at = 2;
+  oneof record {
+    ModelRequestRecord model_request = 10;
+    ModelResponseRecord model_response = 11;
+    WorkerRequestRecord worker_request = 12;
+    WorkerResponseRecord worker_response = 13;
+    LedgerUpdateRecord ledger_update = 14;
+    HumanFact human_fact = 15;
+    StopRecord stop = 16;
+  }
+}
+
+message WorldIndex {
+  string algebra_version = 1;
+  uint32 hop_radius = 2;
+  uint32 drill_down_depth = 3;              // worlds record depth 1; deeper is not_recorded by design
+  repeated WindowPair window_grid = 4;
+  map<string, string> term_key_to_file = 5;
+  uint32 term_count = 6;
+  uint32 not_recorded_count = 7;
+  double miss_rate = 8;
+  string redaction_policy_version = 9;
+}
+
+// ============================================================================
+// 8. Fixture ground truth (FR-061b) — the published shape every corpus incident carries
+// ============================================================================
+
+enum CulpritKind { CULPRIT_KIND_UNSPECIFIED = 0; CHANGE_ID = 1; UNOBSERVED = 2; NOT_CHANGE_INDUCED = 3; }
+enum Provenance { PROVENANCE_UNSPECIFIED = 0; SYNTHETIC = 1; RECORDED = 2; DERIVED = 3; }
+
+message CausalStep { string entity_id = 1; sreagent.graph.v1.EdgeType via = 2; string next_entity_id = 3; }
+
+// Predicates over response digests, not strings (FR-061b): "the errors_by_version digest for
+// pointer P over window W has a version whose error_rate exceeds 0.2".
+message EvidencePredicate {
+  AlgebraTerm term = 1;
+  string field_path = 2;                    // dotted path into the digest
+  string op = 3;                            // eq | ne | gt | gte | lt | lte | contains | exists
+  google.protobuf.Value value = 4;
+}
+
+message GroundTruth {
+  CulpritKind culprit_kind = 1;
+  string culprit_change_id = 2;             // when culprit_kind = CHANGE_ID
+  string not_change_induced_category = 3;   // latent bug | client config | business data | credential | other
+  repeated CausalStep causal_path = 4;      // grades localisation, attribution, mechanism separately
+  repeated EvidencePredicate decisive_evidence = 5;
+  map<string, EvidencePredicateList> exonerating_evidence_by_decoy = 6;
+  google.protobuf.Timestamp knowability_time = 7;   // before it, `unknown` is the correct answer
+  Provenance provenance = 8;
+  string sanitiser_policy_version = 9;
+  string derived_from_fixture = 10;         // derived fixtures only
+  string transformation = 11;               // culprit_deleted | decoy_injected | time_shifted | name_permuted
+  int64 onset_at_unix = 12; int64 onset_tolerance_seconds = 13;
+  uint32 prior_rank_of_culprit = 14;        // so lift is measurable where the prior fails
+}
+message EvidencePredicateList { repeated EvidencePredicate predicates = 1; }

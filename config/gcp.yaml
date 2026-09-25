@@ -1,0 +1,161 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The published GCP feeder defaults (003 FR-008–FR-057, FR-131).
+# Contract: specs/003-gcp-integration/contracts/gcp-feeder.md. Quota: config/gcp-budget.yaml.
+#
+# This is the checked-in copy of what internal/feeders/gcp publishes in code. Copy it, change a
+# number, pass the result to `--gcp-config <file>`. The configuration in force is recorded in every
+# checkpoint (FR-009), so a run stays interpretable after this file changes — and so a later reader
+# can tell **"not present"** from **"not in scope at that time"**, which is the whole reason scope is
+# a recorded value rather than a deployment detail.
+
+version: "1.0.0"
+
+# --- Scope ----------------------------------------------------------------------------------------
+#
+# FR-131. The first recording campaign's scope is the production project, all regions (owner's
+# decision, session 2026-09-21). It is left EMPTY here on purpose: no code and no checked-in default
+# may assume a project name, because the same binary runs against other estates and a hard-coded
+# project is how a feeder silently reads the wrong one. The operator sets it, and `feed gcp` refuses
+# to start with an empty scope rather than defaulting to "every project the credential can see" —
+# which would be the one default capable of quietly costing money and reading data nobody agreed to.
+#
+# `regions: []` means all regions, which is the first campaign's setting and is safe: region is a
+# filter on what is read, not on what may be reached.
+scope:
+  projects: []                 # e.g. ["my-production-project"]; REQUIRED, no default
+  regions: []                  # empty = all regions
+  refuse_empty_projects: true  # not configurable to false; see above
+
+# --- Environment mapping ---------------------------------------------------------------------------
+#
+# This organisation does not carry a uniform environment label, so environment is DERIVED from the
+# project and its labels by this published mapping, and the mapping in force is recorded in the
+# checkpoint. An unmapped project gets `unknown` — never a guess, and never "prod" by default.
+environment:
+  from_label: environment      # consulted first, where the resource carries it
+  from_project: {}             # e.g. {"my-production-project": "production"}
+  default: unknown             # explicit: an unmapped project is unknown, not production
+
+# --- Poll cadences ---------------------------------------------------------------------------------
+#
+# Cadences live in config/gcp-budget.yaml, which owns them because they are a quota decision, not a
+# topology one — and because the deferral order that stretches them is published there. This section
+# exists only to say so: a second copy of the numbers here is how the two drift apart.
+cadences: see config/gcp-budget.yaml
+
+# --- Cloud Run -------------------------------------------------------------------------------------
+#
+# In this organisation the deployed unit IS a Cloud Run revision, which is why US1 is the MVP and why
+# this section is the one that moves the coverage number off 0 of 13.
+cloud_run:
+  # How far back revision history is read on a cold start. A horizon is mandatory rather than
+  # "read everything": a service with thousands of revisions would spend the topology budget on
+  # history nobody will query. Where the horizon clamps an answer, the digest says so
+  # (Coverage.truncated_to_horizon and Coverage.horizon, proto fields 14–15).
+  revision_history_horizon: 720h   # 30 days
+
+  # A traffic split is a property ASSERTED BY THE PLATFORM, not a measurement of observed traffic
+  # (FR-015, constitution IV). Cloud Run v2 stamps no field with when a split took effect, so the
+  # instant GCP states is the audit completion entry — the LogEntry whose operation.last is true,
+  # correlated by operation.id (research §3). This is the published definition SC-002 is measured
+  # against; there is no second source for it.
+  traffic_shift_instant: audit_operation_last
+
+  # Consecutive polls in which a service is absent before its node is closed. One missing poll is a
+  # partial read, not a deletion, and closing on the first miss is how a graph acquires a retraction
+  # that never happened (FR-026).
+  silence_rule_consecutive_polls: 3
+
+# --- Cloud SQL -------------------------------------------------------------------------------------
+cloud_sql:
+  # Settings and flags are polled on the budget's stretchable cadence and are third in the deferral
+  # order. Note roles/cloudsql.viewer is NOT usable: it grants cloudsql.instances.export, which is a
+  # data-egress capability and disqualifies it under FR-004. A custom role is required; the read-only
+  # operation list in docs/connectors/gcp.md names it (research §12).
+  poll_flags: true
+  poll_settings: true
+
+# --- Labels ----------------------------------------------------------------------------------------
+#
+# An ALLOWLIST, not a denylist. Labels are operator-authored free text and routinely carry customer
+# names, ticket numbers and people's names; a denylist records the next label nobody thought about.
+# A label not on this list is dropped before anything touches disk (FR-137), and the sanitisation
+# contract governs the disposition of each one that stays.
+labels:
+  allowlist:
+    - environment
+    - service
+    - component
+    - team
+    - managed-by
+    - version
+    - commit-sha         # see commit_from_labels below
+  on_unlisted: drop
+
+  # The label keys a commit identifier is read from, in order of preference.
+  #
+  # This is configuration and not a constant because the Cloud Run v2 API states no commit anywhere:
+  # `Revision` has no commit field and no resolved-digest field, and `Service.buildConfig` is the
+  # functions source-deploy path whose `sourceLocation` is a Cloud Storage bucket URI. The only place
+  # a commit can appear is a label whatever deployed the revision chose to set — a convention of your
+  # deploy tooling, not something the platform publishes. So replace this with your own key if your
+  # pipeline spells it differently, and add that key to the allowlist above: a key not on the
+  # allowlist is not read.
+  #
+  # A value that is not a full hex commit object id is ignored rather than claimed, and an
+  # abbreviation is never padded (FR-041). So a wrong key here costs a missing claim, never a wrong
+  # one.
+  #
+  # It matters because the commit is the only identifier a GitHub rollout and a Cloud Run rollout can
+  # share: GitHub deployments state a commit and no image digest, and Cloud Run states an image and
+  # no commit. Certain rule C8 is what joins them (feature 004).
+  commit_from_labels:
+    - commit-sha
+
+# --- Deployment automation -------------------------------------------------------------------------
+#
+# Principals in this list are attributed actor kind AUTOMATION rather than PERSON. The list is
+# configuration because CI identities are per-organisation, and the actor kind falls back to UNKNOWN
+# — a first-class answer (FR-020) — rather than guessing PERSON from the shape of an address.
+deployment_automation:
+  principals: []               # e.g. ["…@…gserviceaccount.com"]
+  unknown_is_valid: true       # never guess PERSON; UNKNOWN is a real answer
+
+# --- Alerts ----------------------------------------------------------------------------------------
+alerts:
+  # 15–30s, and NOT stretchable: SC-004 binds transition-to-observed delay to the poll interval plus
+  # one minute at p95. See config/gcp-budget.yaml, which owns the number.
+  poll_interval: see config/gcp-budget.yaml
+
+  # `projects.alerts.list`/`.get` expose openTime and closeTime, which is what makes a transition
+  # readable at all — but the surface is **Public Preview** and is bound only in the **deprecated**
+  # google.golang.org/api/monitoring/v3 client (research §12). So it sits behind a capability flag:
+  # with the flag off, monitor_state answers NO_DATA with a coverage block naming the absent source
+  # rather than failing, and the feature still works.
+  incidents_api:
+    enabled: false             # Public Preview; opt in deliberately
+    on_disabled: no_data_with_coverage
+
+  # The doorbell. This is the feature's ONE declared non-read-only grant (FR-006):
+  # pubsub.subscriptions.consume authorises pull, ack, modifyAckDeadline and seek together, and no
+  # read-only pull exists at any granularity (research §12). Declared as an exception rather than
+  # hidden, and the feature runs correctly with it off — a doorbell only makes a scheduled poll
+  # earlier, and both converge on one alert through the same idempotency key.
+  doorbell:
+    enabled: false
+    subscription: ""
+    # A push anyone can send is not evidence. A doorbell message is a hint to poll NOW, never a
+    # source of fact: the transition is read from the API, so a forged doorbell costs one early poll
+    # and can inject nothing.
+    treat_as_fact: false       # not configurable to true
+
+# --- Load balancers and Cloud DNS ------------------------------------------------------------------
+#
+# P3, and the FIRST thing cut when the budget cannot cover a cycle (FR-057, US9). Off by default: it
+# is the cheapest honest default, and a deferral is never silent — the checkpoint records reduced
+# coverage either way.
+load_balancers:
+  enabled: false
+dns:
+  enabled: false

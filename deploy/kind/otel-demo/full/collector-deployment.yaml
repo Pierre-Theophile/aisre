@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Patch: give the collector the host endpoint it exports to.
+#
+# collector-config.yaml refers to ${env:OTLP_GRPC_ENDPOINT}; this is where that variable comes
+# from. envFrom pulls all three keys of the sre-agent-otlp ConfigMap (OTLP_HOST,
+# OTLP_GRPC_ENDPOINT, OTLP_HTTP_ENDPOINT); only the gRPC one is read.
+#
+# Containers merge on `name`, so this adds envFrom to the upstream container and leaves its
+# image, args, probes, ports and volume mounts alone.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: otel-demo
+spec:
+  template:
+    spec:
+      containers:
+        - name: opentelemetry-collector
+          envFrom:
+            - configMapRef:
+                name: sre-agent-otlp

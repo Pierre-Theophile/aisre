@@ -1,0 +1,1 @@
+{"type":"MODIFIED","object":{"metadata":{"name":"checkout-config","namespace":"shop","resourceVersion":"1210","labels":{"app.kubernetes.io/name":"checkout","app.kubernetes.io/part-of":"shop"}},"data":{"CART_TTL_SECONDS":"60","FEATURE_FLAGS":"express-checkout","PRICING_ROUNDING":"half-even"}}}

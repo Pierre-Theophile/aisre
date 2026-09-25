@@ -1,0 +1,169 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: two-simultaneous-01
+family: two-simultaneous
+description: >-
+  FR-025: two plausible changes that the evidence cannot separate, reported together at
+  comparable confidence with what WOULD separate them named.
+
+  At 14:20:00 -- the same instant, to the second -- payments took a rollout to revision 7 and a
+  ConfigMap edit that lowered its connection pool from 64 to 16. Both are one hop from
+  checkout, both target the same entity, both are carried by the same pods, and both are
+  therefore tagged with the same `service.version`. The version split that settles
+  `rollout-regression-01-incident` settles nothing here: `errors_by_version` puts every error
+  on rev7, and both changes arrived with rev7.
+
+  Ground truth names the rollout as the culprit, because one of them has to be, and records the
+  ConfigMap edit as a decoy whose causal role is `not_separable` with an EMPTY exonerating
+  evidence list -- the one case in which empty is legal, and the encoding this corpus uses for
+  "the evidence in this fixture cannot rule this out" (see fixtures/incidents/README.md). A run
+  that reports one of them alone at high confidence fails whichever one it picks. A run that
+  reports both, at comparable confidence, and names what would separate them -- a per-key
+  config audit, or rolling one back without the other -- passes.
+
+  The deterministic tie-break decides their order in the ranked list and must be stable across
+  runs; `diff.checkout-diff` is where that order is a file. It scores both at 0.61016 and breaks
+  the tie on `change_id`, which puts the ConfigMap edit first and the rollout — the ground
+  truth's culprit — SECOND. `prior_rank_of_culprit: 2` below is that file's own answer. The
+  lift FR-061a measures therefore starts from 1/2 on this fixture, and an investigator that
+  reports both changes together, as the fixture asks, is not being punished for the tie-break.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20107:group=env:prod"
+    statement: "checkout error rate above 5 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: k8s.change=shop/payments@rev7
+    causal_path:
+      - entity: k8s.change=shop/payments@rev7
+        via: changed-by
+        role: cause
+      - entity: otel.service.name=payments
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=payments"
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+            version_attribute: service.version
+        field_path: versions[version=rev7].error_rate
+        op: gt
+        value: 0.05
+        note: the new revision carries the errors; askable only because the metric pointer publishes a version join key.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=payments"
+            windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: up
+        note: payments' error rate rises across the onset by more than an order of magnitude.
+      - term:
+          error_spans:
+            src: otel.service.name=checkout
+            dst: otel.service.name=payments
+            edge_type: CALLS
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+        field_path: groups[error_kind=deadline_exceeded].join_keys.version
+        op: eq
+        value: rev7
+        note: the failing spans on the call path from the alerting service carry the new version.
+
+    decoys:
+      - entity: k8s.change=shop/payments-config@rv7781
+        causal_role: not_separable
+        why: >-
+          the same instant, the same target, the same pods and therefore the same version tag.
+          Every predicate that convicts the rollout convicts the ConfigMap edit equally, which
+          is why its exonerating evidence is empty rather than weak. What would separate them:
+          a per-key configuration audit of the ConfigMap, or a rollback of one without the
+          other -- neither of which is in this graph or this world.
+
+    exonerating_evidence:
+      # Empty on purpose. A decoy with no exonerating evidence is normally a fixture bug and
+      # the manifest loader refuses it; `causal_role: not_separable` is the one role for which
+      # it is the honest answer (FR-025).
+      k8s.change=shop/payments-config@rv7781: []
+
+    # Nobody sees the future: this investigation observes the world at `fired_at` (14:32), so the
+    # decisive windows above end there and no predicate rests on telemetry after it
+    # (constitution II). The evidence itself exists earlier: the onset is 14:20, and the five
+    # one-minute samples after it — `onset.MinSustainedPoints`, the shortest run this project
+    # calls a symptom — are complete at 14:25, by which instant rev7's error rate over them is
+    # an order of magnitude above the 5 % floor the predicate asks for. Asked before 14:25,
+    # `unknown` is the correct answer and naming payments is a lucky guess.
+    knowability_time: 2026-09-01T14:25:00Z
+    onset: {at: 2026-09-01T14:20:00Z, tolerance_seconds: 120}
+    # The prior ranks them adjacently — identically, in fact: `golden/diff.checkout-diff.json`
+    # gives both the same score, 0.61016, because every term of the prior sees the same instant,
+    # the same hop distance and the same target. What decides the order is the deterministic
+    # tie-break on `change_id`, and it puts the ConfigMap edit (`pc64r6...`) first and the
+    # rollout (`wmemmc...`) second. So the culprit's prior rank is 2, read off that file rather
+    # than estimated; a fixture whose whole subject is an unbreakable tie must not claim the
+    # prior broke it in the culprit's favour.
+    prior_rank_of_culprit: 2
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry centred on the estimated onset. The world is the cross product of
+      (pointers in the neighbourhood) x (grid) x (the recorder's statistic set: ERROR_RATE,
+      P95, RATE) plus monitor_state, log patterns, onset, errors_by_version where a version
+      join key exists, error_spans per edge, and the depth-1 drill-downs those answers mint,
+      so each further grid entry doubles the directory. The cap is the grid, the hop radius
+      and the drill-down depth; all three are read back from this block by
+      `fixture record-world`, so widening one is an edit a reviewer sees.
+
+  runs: 3

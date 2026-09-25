@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The minimal overlay: a self-contained shop, no upstream fetch, no internet access at apply
+# time beyond pulling four images.
+#
+#   kubectl apply -k deploy/kind/otel-demo/minimal --context kind-sre-agent-demo
+#
+# What it deploys, and why each piece exists, is in deploy/kind/README.md. The shape is the
+# shape of fixtures/baseline-topology-01: namespace `shop`, four app Deployments, a redis
+# StatefulSet, a payments-db Deployment, Services for all six, one Ingress, one ConfigMap and
+# one Secret. The `calls` edges come from telemetrygen emitters in `shop-traffic`.
+#
+# Images, all pinned to an exact patch release:
+#   nginx:1.31.5-alpine-slim                          the four app workloads
+#   redis:8.10.1-alpine                               redis
+#   postgres:17.11-alpine                             payments-db
+#   .../telemetrygen:v0.161.0                         the span emitters
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespaces.yaml
+  - config.yaml
+  - storefront.yaml
+  - checkout.yaml
+  - payments.yaml
+  - inventory.yaml
+  - redis.yaml
+  - payments-db.yaml
+  - ingress.yaml
+  - host-endpoint.yaml
+  - versions.yaml
+  - traffic.yaml
+
+labels:
+  # Applied to every object, but not to selectors: changing a Deployment's selector after the
+  # fact is rejected by the API server.
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/managed-by: sre-agent-kind
+      sre.overlay: minimal

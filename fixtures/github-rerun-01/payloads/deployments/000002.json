@@ -1,0 +1,4 @@
+[{"id":4601,"sha":"8f5bd3c0b0e4a1d2c3f4a5b6c7d8e9f0a1b2c3d4","ref":"main","task":"deploy","environment":"production",
+		"created_at":"2026-03-01T14:00:00Z","updated_at":"2026-03-01T14:03:12Z","creator":{"login":"ada","id":1,"type":"User"},
+		"url":"https://api.github.com/repos/acme/storefront/deployments/4601",
+		"statuses_url":"https://api.github.com/repos/acme/storefront/deployments/4601/statuses"}]

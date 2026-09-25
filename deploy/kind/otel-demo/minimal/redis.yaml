@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# redis: a StatefulSet, so the Kubernetes feeder has a workload kind other than Deployment to
+# map (FR-043 names deployments, stateful sets, daemon sets and jobs).
+#
+# The OTLP feeder sees redis as a third-party dependency, not a service: the emitters tag their
+# spans with db.system=redis and server.address=redis.shop.svc.cluster.local. The governing
+# Service below is headless, which is what makes that exact FQDN resolve — it is the string the
+# fixture records on the THIRD_PARTY node.
+#
+# No annotation `resource.opentelemetry.io/service.name` here: redis is identified by its
+# address, and claiming a service name for it would create an identity claim the OTLP feeder
+# never makes.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: shop
+    team: team-checkout
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/part-of: shop
+        team: team-checkout
+    spec:
+      containers:
+        - name: redis
+          image: redis:8.10.1-alpine
+          args: ["--save", "", "--appendonly", "no"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        # emptyDir rather than a volumeClaimTemplate: this cluster is disposable and nothing
+        # should depend on kind's local-path provisioner having finished booting.
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: shop
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

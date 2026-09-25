@@ -1,0 +1,12 @@
+{
+  "_comment": "The investigation gate's published thresholds (002 FR-060, FR-071, tasks.md T112). `pass_at_1` is null until the FIRST FULL CORPUS RUN publishes it: it cannot be guessed ahead of the corpus that measures it, and while it is null `scripts/check-report.sh --investigation` prints it as `unset` and does NOT pass as though it had been met. Set it once, by hand, with `scripts/check-report.sh --investigation --set-threshold <report.jsonl>` after that run. It may never exceed `coverage_ceiling`, which is the ceiling of the audit the gate cites (docs/evaluation/coverage-audit-2026-09.json).",
+  "note": "FR-071: whatever the corpus measures, the published `pass_at_1` may never exceed `coverage_ceiling` (0.615385) \u2014 the ceiling of audit 2026-09 (docs/evaluation/coverage-audit-2026-09.json), which is the share of that audit's classifiable production incidents whose cause was *observable* in the feeder set in force. An investigator cannot name a cause no feeder carries, so no accuracy target may be published above it. The cap binds the synthetic leg by design: the incident corpus is generated telemetry, where every culprit is observable by construction and pass@1 can therefore run to 1.0, and publishing such a number as an accuracy claim would report the generator's completeness as the system's. The ceiling is the production measurement that bounds it, so a synthetic corpus can raise confidence in the engine and can never raise the published target above what the audit supports. Raising the cap needs a new audit, not a better corpus run.",
+  "pass_at_1": null,
+  "set_by_run": null,
+  "coverage_ceiling": 0.615385,
+  "harm_rate_max": 0.05,
+  "confidently_wrong_max": 0.05,
+  "citation_validity_min": 1.0,
+  "miss_rate_max": 0.05,
+  "audit_id": "2026-09"
+}

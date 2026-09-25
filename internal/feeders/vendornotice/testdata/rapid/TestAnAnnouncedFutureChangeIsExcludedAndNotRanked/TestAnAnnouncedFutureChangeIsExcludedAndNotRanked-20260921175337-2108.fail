@@ -1,0 +1,10 @@
+# 2026/09/21 17:53:37.994444 [TestAnAnnouncedFutureChangeIsExcludedAndNotRanked] [rapid] draw valid_start_delta: 1
+# 2026/09/21 17:53:37.994449 [TestAnAnnouncedFutureChangeIsExcludedAndNotRanked] [rapid] draw state: 1
+# 2026/09/21 17:53:37.994451 [TestAnAnnouncedFutureChangeIsExcludedAndNotRanked] the excluded change was also ranked, at score 0.449722 — a consumer reading only `changes` would reach a forward-looking answer from a backward-looking question
+# 
+v0.4.8#3968735013839125447
+0x0
+0x0
+0x1
+0x0
+0x1

@@ -1,0 +1,15 @@
+{"entries":[
+  {"insertId":"op-shift-1-req","logName":"projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity",
+   "timestamp":"2026-09-21T14:19:30Z","receiveTimestamp":"2026-09-21T14:19:34Z",
+   "operation":{"id":"op-shift-1","producer":"run.googleapis.com","first":true},
+   "protoPayload":{"serviceName":"run.googleapis.com",
+     "methodName":"google.cloud.run.v2.Services.UpdateService",
+     "resourceName":"projects/twin-production/locations/europe-west1/services/storefront"}},
+  {"insertId":"op-shift-1-done","logName":"projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity",
+   "timestamp":"2026-09-21T14:20:00Z","receiveTimestamp":"2026-09-21T14:20:05Z",
+   "operation":{"id":"op-shift-1","producer":"run.googleapis.com","last":true},
+   "protoPayload":{"serviceName":"run.googleapis.com",
+     "methodName":"google.cloud.run.v2.Services.UpdateService",
+     "resourceName":"projects/twin-production/locations/europe-west1/services/storefront",
+     "status":{"code":0}}}
+]}

@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The **Anthropic** model configuration: the alternative to the one in force.
+#
+# `config/model.yaml` is what production runs (Mistral, serving GLM as the investigator). This
+# file is the same three roles on the Anthropic models, kept checked in and kept valid so that
+# switching providers back is a flag rather than an archaeology exercise:
+#
+#     aisre serve --enable-investigation --model-config config/model.anthropic.yaml
+#     aisre fixture record-trajectory <dir> --model-config config/model.anthropic.yaml
+#     aisre eval run --fixtures fixtures/incidents --model-config config/model.anthropic.yaml
+#
+# It needs $ANTHROPIC_API_KEY where the default configuration needs $MISTRAL_API_KEY; a command
+# that cannot resolve the credential its configuration names falls back to model-free and says
+# which variable was missing. Both files name the same price table, and `config/prices.yaml`
+# prices every model either of them configures.
+#
+# The two checked-in fake-model trajectories were recorded against this configuration, and the
+# Anthropic request build has not changed a byte since, so they still replay (FR-041).
+#
+# FR-061 asks for what can actually be recorded on this model family: the model identifier, the
+# reasoning effort, the output settings and the beta set — together with the price-table version
+# — not a temperature. Sampling parameters do not exist on these models and return a 400.
+#
+# Every investigation stores a copy of this document in `investigation.investigations.model_config`
+# and in the `record_investigation` decision record, so a run stays interpretable after the
+# configuration changes. Changing anything here is a change that must be evaluated: the file is
+# versioned, and `version` is recorded with every run.
+
+version: "1.1.0"
+
+# Three roles, three models. The split is deliberate: the verifier runs a different model from
+# the investigator so that the error it exists to catch is decorrelated from the error that
+# produced it, and the logs labeller is the cheapest model in the family because its input is
+# masked templates and counts and nothing else.
+roles:
+  investigator:
+    provider: anthropic
+    model: claude-fable-5-1
+    purpose: >-
+      The investigation loop. Chosen for reasoning depth over long horizons and for the 1M
+      context the ledger render and the evidence table are read against.
+    # Thinking is always on for this model family and is not configurable: `thinking.type` is
+    # omitted entirely, because "disabled" and an explicit budget both return a 400. Depth is
+    # controlled by effort alone.
+    effort: high
+    # The raw chain of thought is never returned. "summarized" gives the reviewer something to
+    # read in the trajectory; the default, "omitted", would record an empty string and make a
+    # replayed run harder to audit than it needs to be.
+    thinking_display: summarized
+
+  verifier:
+    provider: anthropic
+    model: claude-opus-5
+    purpose: >-
+      The fresh-context pass that checks every rendered claim back against the evidence it cites
+      (FR-022a). A mechanical claim-to-citation check, not open-ended reasoning.
+    effort: high
+    thinking_display: omitted
+
+  logs_labeller:
+    provider: anthropic
+    model: claude-haiku-4-5
+    purpose: >-
+      The optional labelling pass over mined log templates (FR-009a). Bounded, template-only
+      input; the model never sees a raw line, and the digest states what it added over the
+      algorithm.
+    # No effort: this model rejects `output_config.effort`. No thinking either — labelling a
+    # masked template is not a reasoning task, and a thinking budget here would buy latency.
+    effort: ""
+    thinking_display: ""
+
+# The beta features the engine depends on. The set is recorded with every run because a beta
+# that changes behaviour changes the run.
+betas:
+  # The per-turn ledger re-render. The ledger is re-rendered as a turn-scoped mid-conversation
+  # system message with `clear_at: "next_user_message"` rather than by rewriting an earlier
+  # message, because on this model family editing earlier turns invalidates thinking blocks —
+  # and because a channel no worker can write to is exactly what the injection barrier needs
+  # (plan §Design Decisions 4).
+  - mid-conversation-system-clear-at-2026-08-21
+
+# Deliberately NOT enabled, and recorded here so the decision is visible rather than merely
+# absent:
+#
+#   server-side-fallback-*  A policy refusal is handled and recorded, never silently retried
+#                           (data-model §investigation.model_calls). A server-side fallback
+#                           would answer from a different model inside the same call, which
+#                           would make the recorded model configuration untrue for that turn
+#                           and break FR-061's "the configuration used in production" for
+#                           every evaluation run that replayed it.
+#   fast-mode-*             Not available on the investigator's model, and the budget this
+#                           feature manages is tokens and vendor quota, not latency-at-a-premium.
+
+# The price table in force. Cost is recorded twice — as raw token counts per model and class,
+# which is the provider-independent unit that aggregates over time (FR-048), and as a derived
+# monetary figure from this table — so a historical cost stays interpretable after prices move.
+price_table_version: "2026-09-18"

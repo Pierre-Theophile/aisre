@@ -1,0 +1,181 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: knowledge-scope-01
+family: conformance
+description: >-
+  US6 and SC-014: retrieval is scoped by the graph, and a document linked to nothing in the
+  investigation's subgraph is never cited -- not ranked low, not cited with a caveat. Never.
+
+  Two runbooks are registered as KNOWLEDGE_DOC nodes with CONCERNS edges, and they are written
+  to be as confusable as two documents can be:
+
+  - `ops/runbooks/payments-rollouts.md` CONCERNS payments and checkout, both inside the alert's
+    subgraph. It says payments rollouts have twice caused checkout 5xx through connection-pool
+    exhaustion and that the error rate by `service.version` is the thing to compare. It is
+    relevant, it is true here, and it should be cited;
+  - `ops/runbooks/reporting-nightly.md` CONCERNS `reporting` only. `reporting` is its own
+    component: nothing in the shop calls it and it calls nothing in the shop, so it is outside
+    checkout's subgraph at any hop radius. The runbook is a near-perfect lexical match for the
+    symptom -- it is about connection-pool exhaustion producing 5xx, in the same words -- and a
+    retriever that ranks on text alone will surface it first. It must be cited in 0 % of runs.
+
+  The incident underneath is a payments rollout at 14:20, so the in-scope runbook is not merely
+  citable but actually useful, and a run that finds the culprit BECAUSE the runbook told it
+  where to look is the behaviour FR-049 is for.
+
+  `subgraph.checkout-2hop-1432` and `subgraph.reporting-1hop-1432` are the two halves of the
+  scope as a file: the first contains the payments runbook, the second contains the reporting
+  runbook, and neither contains the other.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+  - source_id: knowledge:demo
+    kind: knowledge
+    ordering: none
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  - name: reporting-1hop-1432
+    kind: subgraph
+    focus: otel.service.name=reporting
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 1
+    direction: both
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20110:group=env:prod"
+    statement: "checkout error rate above 5 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: k8s.change=shop/payments@rev7
+    causal_path:
+      - entity: k8s.change=shop/payments@rev7
+        via: changed-by
+        role: cause
+      - entity: otel.service.name=payments
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=payments"
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+            version_attribute: service.version
+        field_path: versions[version=rev7].error_rate
+        op: gt
+        value: 0.05
+        note: the new revision carries the errors; askable only because the metric pointer publishes a version join key.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=payments"
+            windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: up
+        note: payments' error rate rises across the onset by more than an order of magnitude.
+      - term:
+          error_spans:
+            src: otel.service.name=checkout
+            dst: otel.service.name=payments
+            edge_type: CALLS
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+        field_path: groups[error_kind=deadline_exceeded].join_keys.version
+        op: eq
+        value: rev7
+        note: the failing spans on the call path from the alerting service carry the new version.
+      - term:
+          knowledge_search:
+            entity_ids: [otel.service.name=checkout, otel.service.name=payments]
+            query_terms: [connection, pool, 5xx, rollout]
+            limit: 10
+        field_path: documents[*].document_ref
+        op: contains
+        value: github.file=ops/runbooks/payments-rollouts.md
+        note: >-
+          the in-subgraph runbook is retrievable and citable, with its identifier, its linked
+          entities, its link provenance and its age.
+      - term:
+          knowledge_search:
+            entity_ids: [otel.service.name=checkout, otel.service.name=payments]
+            query_terms: [connection, pool, 5xx, rollout]
+            limit: 10
+        field_path: documents[*].document_ref
+        op: not_contains
+        value: github.file=ops/runbooks/reporting-nightly.md
+        note: >-
+          the out-of-subgraph runbook is the best lexical match in the corpus and is never
+          returned, because the scope is computed from CONCERNS edges before anything is
+          ranked. SC-014 measures this at 0 % of runs, not at "rarely".
+
+    decoys: []
+    exonerating_evidence: {}
+
+    # Nobody sees the future: this investigation observes the world at `fired_at` (14:32), so the
+    # decisive windows above end there and no predicate rests on telemetry after it
+    # (constitution II). The evidence itself exists earlier: the onset is 14:20, and the five
+    # one-minute samples after it — `onset.MinSustainedPoints`, the shortest run this project
+    # calls a symptom — are complete at 14:25, by which instant rev7's error rate over them is
+    # an order of magnitude above the 5 % floor the predicate asks for. Asked before 14:25,
+    # `unknown` is the correct answer and naming payments is a lucky guess.
+    knowability_time: 2026-09-01T14:25:00Z
+    onset: {at: 2026-09-01T14:20:00Z, tolerance_seconds: 120}
+    prior_rank_of_culprit: 1
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry centred on the estimated onset. The world is the cross product of
+      (pointers in the neighbourhood) x (grid) x (the recorder's statistic set: ERROR_RATE,
+      P95, RATE) plus monitor_state, log patterns, onset, errors_by_version where a version
+      join key exists, error_spans per edge, and the depth-1 drill-downs those answers mint,
+      so each further grid entry doubles the directory. The cap is the grid, the hop radius
+      and the drill-down depth; all three are read back from this block by
+      `fixture record-world`, so widening one is an edit a reviewer sees.
+
+  runs: 3

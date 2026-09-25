@@ -1,0 +1,31 @@
+{"entries":[{
+  "insertId": "iam-1",
+  "logName": "projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity",
+  "timestamp": "2026-09-21T14:05:00Z",
+  "receiveTimestamp": "2026-09-21T14:05:20Z",
+  "protoPayload": {"serviceName": "run.googleapis.com", "methodName": "google.cloud.run.v2.Services.SetIamPolicy", "resourceName": "projects/twin-production/locations/europe-west1/services/storefront", "status": {}}
+},{
+  "insertId": "quota-1",
+  "logName": "projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity",
+  "timestamp": "2026-09-21T14:07:00Z",
+  "receiveTimestamp": "2026-09-21T14:07:20Z",
+  "protoPayload": {"serviceName": "serviceusage.googleapis.com", "methodName": "google.api.serviceusage.v1beta1.ServiceUsage.UpdateQuotaOverride", "resourceName": "projects/twin-production", "status": {}}
+},{
+  "insertId": "enable-1",
+  "logName": "projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity",
+  "timestamp": "2026-09-21T14:09:00Z",
+  "receiveTimestamp": "2026-09-21T14:09:20Z",
+  "protoPayload": {"serviceName": "serviceusage.googleapis.com", "methodName": "serviceusage.services.enable", "resourceName": "projects/twin-production", "status": {}}
+},{
+  "insertId": "secret-1",
+  "logName": "projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity",
+  "timestamp": "2026-09-21T14:11:00Z",
+  "receiveTimestamp": "2026-09-21T14:11:20Z",
+  "protoPayload": {"serviceName": "secretmanager.googleapis.com", "methodName": "google.cloud.secretmanager.v1.SecretManagerService.AddSecretVersion", "resourceName": "projects/twin-production/secrets/storefront-api-token", "status": {}}
+},{
+  "insertId": "delete-1",
+  "logName": "projects/twin-production/logs/cloudaudit.googleapis.com%2Factivity",
+  "timestamp": "2026-09-21T14:13:00Z",
+  "receiveTimestamp": "2026-09-21T14:13:20Z",
+  "protoPayload": {"serviceName": "storage.googleapis.com", "methodName": "storage.buckets.delete", "resourceName": "projects/_/buckets/twin-production-assets", "status": {}}
+}]}

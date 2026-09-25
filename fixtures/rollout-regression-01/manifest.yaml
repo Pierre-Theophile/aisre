@@ -1,0 +1,98 @@
+# Hand-authored fixture. See fixtures/README.md.
+id: rollout-regression-01
+family: rollout-regression
+description: >-
+  The baseline shop topology, plus a window of change. payments is rolled out to revision 7
+  (1.4.1) at 14:20 and its database call path gets heavier; that is the culprit. Around it sit
+  four decoys: inventory rolled out at 13:10 (one hop away, but 82 minutes stale), the unrelated
+  reporting service rolled out at 13:40 (four hops away, outside the neighbourhood and outside
+  the one-hop change margin, so it must be excluded rather than ranked), storefront scaled from
+  3 to 6 replicas at 14:15 (one hop away and recent), and a rollout of `shop/checkout-worker` at
+  14:22 whose target no source has ever described, which must appear flagged unattached rather
+  than be dropped.
+
+  The diff of checkout's 2-hop neighbourhood between 13:00 and 14:32 must therefore rank:
+  1. payments@rev7    hop 1, 720 s before 14:32, path weight class 3
+  2. storefront scale hop 1, 1020 s before,      path weight class 4
+  3. checkout-worker  unattached, 600 s before,  no path
+  4. inventory@rev8   hop 1, 4920 s before,      path weight class 3
+  and exclude reporting@rev3 entirely. The storefront decoy is deliberately older than the
+  culprit: with the published weights (research §9) a change five minutes fresher on a heavier
+  edge would outrank it, which is the ranking working as documented, not a bug -- see
+  docs/schema/ranking.md.
+
+  Two things in this fixture exist for US4 and US5 rather than for the ranking. storefront calls
+  payments directly at weight class 1 as well as through checkout at classes 4 and 3, so the
+  blast radius of payments reaches storefront two ways: that is US4 scenario 2, and the heaviest
+  route is the longer one, because "heaviest" means the path whose weakest link carries the most
+  traffic. And at 14:00 payments is renamed to payments-v2 -- display name, `service.name` and
+  the telemetry selectors move together, under the same subject ref, because the thing did not
+  change, only what it is called -- so a pointer lookup at 13:00 returns the old selectors and
+  one at 14:32 the new ones. That is US5 scenario 2. Neither addition touches the change nodes,
+  so the ranking above is unchanged; the rename does add `display_name` and `service.name` to
+  the properties the diff reports as moved on payments.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-diff-1h
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:32:00Z      # the inventory rollout falls out of the window
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  # US4 scenario 2: storefront is reachable from payments directly and through checkout, so it
+  # appears once, at hop 1, with the heavier two-hop route shown and one alternative counted.
+  - name: payments-impact
+    kind: impact
+    focus: otel.service.name=payments
+    valid_at: 2026-09-01T14:32:00Z
+
+  # US5 scenario 2: the same node either side of the 14:00 rename. The two goldens must differ,
+  # and they must differ in the selectors, not only in the display name.
+  - name: payments-pointers-1300
+    kind: pointers
+    focus: otel.service.name=payments
+    valid_at: 2026-09-01T13:00:00Z
+  - name: payments-pointers-1432
+    kind: pointers
+    focus: otel.service.name=payments
+    valid_at: 2026-09-01T14:32:00Z
+
+  - name: payments-history
+    kind: history
+    focus: otel.service.name=payments
+
+ground_truth:
+  culprit_change: k8s.change=shop/payments@rev7
+  expected_top_k: 3

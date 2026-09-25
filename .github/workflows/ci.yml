@@ -1,0 +1,460 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Pull-request gate. Every job must be green to merge (plan §CI, licensing, contribution
+# model). Replay, double-delivery and shuffle checks run inside `go test ./...` and, once
+# fixtures exist, in the `fixture verify` step of the test job.
+
+#
+# Runner minutes (this repository is private, so every one is billed, rounded up per job):
+#
+#   * A change that touches nothing but `specs/` does not run this workflow. No Go code, test or
+#     fixture reads `specs/` (tests do read `docs/`, which is why `docs/` is not ignored), and the
+#     guard that does read it runs in specs.yml.
+#   * Small checks share a job instead of each paying a runner start and a rounded-up minute:
+#     the migrations guard and govulncheck run in `lint`, the trajectory replay in `test`, which
+#     has already built the binary it needs.
+#   * The Go cache is per job (.github/actions/setup-go); the shared one was never warm.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["specs/**"]
+  pull_request:
+    branches: [main]
+    paths-ignore: ["specs/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.27"
+  BUF_VERSION: "1.73.0"
+  # Constitution X: one static binary, no cgo, anywhere.
+  CGO_ENABLED: "0"
+
+jobs:
+  # ---------------------------------------------------------------------------------------
+  # The published schema (constitution IX). Lint keeps it conventional; breaking keeps it a
+  # contract. A breaking change needs a MAJOR bump and an event-log transformation, so it
+  # cannot slip in unnoticed.
+  #
+  # Two packages are published and both are gated: `sreagent.graph.v1` (feature 001) and
+  # `sreagent.investigation.v1` (feature 002 — the algebra, the digest contract, the ledger,
+  # the recording format, implemented by third-party telemetry backends). One `path: api`
+  # module in buf.yaml covers both, so the step below asserts the module's file list rather
+  # than trusting it: a package added outside `api/` would lint and break-check silently.
+  # ---------------------------------------------------------------------------------------
+  schema:
+    name: schema (buf lint + breaking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # buf breaking compares against the main branch, which must be in the local clone.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: ${{ env.BUF_VERSION }}
+          github_token: ${{ github.token }}
+
+      - name: every published package is in the module
+        # The gate is only as wide as the module. This fails when a .proto appears that buf
+        # does not see, and when one of the published packages disappears.
+        shell: bash
+        run: |
+          expected=$(printf '%s\n' \
+            'api/sreagent/graph/v1/graph.proto' \
+            'api/sreagent/investigation/v1/investigation.proto' | sort)
+          actual=$(buf ls-files | sort)
+          if [ "$expected" != "$actual" ]; then
+            echo '::error::buf module contents changed; update buf.yaml and this list'
+            diff <(echo "$expected") <(echo "$actual") || true
+            exit 1
+          fi
+          echo "$actual"
+
+      - name: buf lint
+        run: buf lint
+
+      - name: make main resolvable for buf breaking
+        # `fetch-depth: 0` above brings every commit, but on a `pull_request` event
+        # actions/checkout narrows the remote's refspec to the PR ref, so no local `main` ref
+        # exists. `buf breaking --against '.git#branch=main'` clones that ref rather than
+        # reading the objects, so it fails `exit status 128` / "couldn't find remote ref main"
+        # — which is what happened the first time this step ever ran, because the guard below
+        # skips it on a push to main and this repository had had no pull request until then.
+        #
+        # Naming the ref explicitly is all that is needed; the objects are already local, so
+        # the fetch is near-free. `+` makes it idempotent on a re-run.
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+        run: git fetch --no-tags origin +refs/heads/main:refs/heads/main
+
+      - name: buf breaking against main
+        # Skipped on the push that creates main, which has nothing to compare against.
+        #
+        # `sreagent.investigation.v1` is checked from its first merge, like `sreagent.graph.v1`:
+        # it is the contract features 003 and 005 and any third-party telemetry backend
+        # implement, so it is published the day it lands. The 002 additions to
+        # `sreagent.graph.v1` (actor kind, signed time distance, pointer join keys, the new
+        # taxonomy members and the five investigation event bodies) are additive and must
+        # report as such here — a MINOR bump, no event-log transformation.
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+        run: buf breaking --against '.git#branch=main'
+
+      - name: generated code is up to date
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
+          buf generate
+          ./scripts/add-spdx-headers.sh
+          git diff --exit-code -- api \
+            || { echo '::error::generated code is stale: run `make gen` and commit the result'; exit 1; }
+
+  # ---------------------------------------------------------------------------------------
+  # Static analysis, including the SPDX header rule (goheader in .golangci.yml), and the
+  # repository guards that need no database: secrets in recordings, destructive migrations,
+  # known vulnerabilities.
+  # ---------------------------------------------------------------------------------------
+  lint:
+    name: lint (golangci-lint + guards)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: go vet
+        run: go vet ./...
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          # .golangci.yml is v2 format; pin the same version `make tools` installs
+          version: v2.13.2
+          args: --timeout=5m
+
+      # Fixtures are recordings of real clusters, and a recording is committed before anyone
+      # replays it. The graph refuses a secret's material at ingestion, but a payload that never
+      # reaches the graph is not covered by that (T090, constitution VII).
+      - name: no secrets in recordings
+        run: ./scripts/check-no-secrets.sh
+
+      # A grep guard nobody has seen fail is a guard nobody knows works. This plants one sample
+      # of every shape the guard refuses — a vendor key, a person, a raw span, an unredacted log
+      # line — and fails if any rule stays silent (T116).
+      - name: the guard itself catches a planted secret
+        run: ./scripts/check-no-secrets_test.sh
+
+      # The spec-artifact guard and its planted-violation test run in specs.yml, which also runs
+      # when only specs/ changed — the case this workflow skips.
+
+      # History is append-only (constitution III, research §14). A migration may add; it may not
+      # drop, delete from or truncate the event log or a version table.
+      - name: refuse destructive migrations
+        if: ${{ !cancelled() }}
+        run: ./scripts/check-migrations.sh
+
+      # Known vulnerabilities in the dependency graph, reachability-filtered.
+      - name: govulncheck
+        if: ${{ !cancelled() }}
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  # ---------------------------------------------------------------------------------------
+  # The onset estimate must be byte-identical on amd64 and arm64 (002 SC-019, tasks.md T046).
+  #
+  # Goldens are compared byte for byte, and Go may fuse `a*b + c` into a single fused
+  # multiply-add on arm64 and not on amd64 — the two differ in the last bits. pkg/backend/onset
+  # rounds at every accumulation step so both architectures compare the same six-decimal
+  # quantities, and TestDeterminismFixedSeries pins the exact digits. Running it on one
+  # architecture would prove nothing, so it runs on both: amd64 is the `test` job, whose
+  # `go test ./...` includes this package (the race detector does not change float results),
+  # and this job is the arm64 half.
+  # ---------------------------------------------------------------------------------------
+  onset-determinism:
+    name: onset determinism (arm64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # One small package: setup-go's own cache is enough, and on arm64 this job is its only user.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
+      - name: go test ./pkg/backend/onset
+        run: go test -count=1 ./pkg/backend/onset/...
+
+  # ---------------------------------------------------------------------------------------
+  # Unit, property and replay tests against a real PostgreSQL 16, then the trajectory replay
+  # and calibration, which need the binary this job builds and nothing else.
+  # ---------------------------------------------------------------------------------------
+  test:
+    name: test (go test + fixtures + trajectories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sreagent
+          POSTGRES_PASSWORD: sreagent
+          POSTGRES_DB: sreagent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sreagent -d sreagent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      PG_DSN: postgres://sreagent:sreagent@localhost:5432/sreagent?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: build
+        id: build
+        run: make build
+
+      - name: go test
+        # -race needs cgo, so it is the one place CGO_ENABLED is on; the shipped binary is
+        # still built with it off in the step above.
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -count=1 ./...
+
+      - name: published performance budgets, uninstrumented
+        # The budget in docs/benchmarks/investigation-page-profile-2026-09-18.md — 50 hypotheses ×
+        # 500 judgments in under 10 ms, published at 436 µs, "met, 23× under" — is a claim about an
+        # ORDINARY build, and the page publishes the command it was taken with: no `-race`.
+        #
+        # Every other `go test` in this workflow runs with the detector on, which instruments each
+        # memory access and costs 2–20× (about 4.6× for this computation). So the assertion scales
+        # its bound under `-race`, and without this step the published figure would be asserted by
+        # nothing in CI — a slow runner would stop failing the gate, and so would a real 12 ms
+        # regression.
+        #
+        # One test, milliseconds, no database. It is what keeps the number on that page true.
+        run: go test -count=1 -run TestPosteriorsAreComputedWellInsideTheBudget ./internal/investigation/ledger/
+
+      - name: examples/mcp-feeder (nested module)
+        # `go test ./...` does not descend into nested modules; the MCP connector example
+        # builds against the working tree through its `replace ../..` directive.
+        working-directory: examples/mcp-feeder
+        run: |
+          go build ./...
+          go vet ./...
+          go test -count=1 ./...
+
+      # ---------------------------------------------------------------------------------
+      # The replay gate (T081, constitution VIII, FR-047, FR-048, SC-003, SC-004).
+      #
+      # `fixture verify` replays every fixture from an empty database, compares every manifest
+      # query with its golden and its observed-time-pinned twin, double-delivers each event to
+      # prove idempotency, and shuffles within each source's declared reordering window to
+      # prove order-independence. It exits 4 if any of that fails, and this step has no guard
+      # around it: a repository with no fixtures is a repository that has stopped testing.
+      #
+      # The `postgres` service above runs as its own superuser, which has CREATEDB — the
+      # privilege verify needs, because every fixture and every shuffle permutation gets a
+      # database of its own.
+      #
+      # `--report-json` records the same run for the metric gate, so the numbers CI is green
+      # with are the numbers it printed, not a second run's.
+      # ---------------------------------------------------------------------------------
+      - name: replay fixtures
+        id: fixtures
+        shell: bash
+        run: |
+          set -o pipefail
+          bin/aisre fixture verify fixtures/*/ \
+            --report --report-json fixture-report.jsonl --db "$PG_DSN" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: fixture report metrics
+        # The report's own assertions: the culprit inside top-k on every rollout-regression
+        # fixture, no probable auto-merge, certain-rule precision 1.0, and human decisions that
+        # survived the replay. `if: always()` so a failing verify still publishes why.
+        if: always() && steps.fixtures.outcome != 'skipped'
+        shell: bash
+        # `set -o pipefail` is load-bearing, not boilerplate. Without it the pipe's status is
+        # `tee`'s, which is always 0 — so check-report.sh could report a failed assertion and the
+        # step would still pass. The gate that holds SC-005 and SC-021 would have been advisory.
+        run: |
+          set -o pipefail
+          ./scripts/check-report.sh fixture-report.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: upload fixture report
+        if: always() && steps.fixtures.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixture-report
+          path: fixture-report.jsonl
+          if-no-files-found: warn
+
+      # ---------------------------------------------------------------------------------
+      # The trajectory-replay gate, and calibration, on every pull request
+      # (002 T009/T093/T098, FR-042a, FR-058, SC-003, SC-004, constitution §Replay CI (c)).
+      #
+      # Two things run here, and they sit together because they read the same artifact:
+      #
+      #   1. Trajectory replay. Every recorded investigation trajectory must replay
+      #      byte-identically with zero network. This is the plumbing gate: an unmatched request
+      #      fails loudly rather than being improvised, an edited recording is refused by its own
+      #      content-derived name, and a divergence exits 4 naming the first diverging record.
+      #
+      #   2. Calibration, from those same recorded trajectories, with ZERO model calls. Every
+      #      confidence in this system is computed by the ledger from published constants, so a
+      #      replay reproduces it exactly and the reliability table over the five published
+      #      buckets — very_low, low, moderate, high, very_high — plus the Brier and log-loss
+      #      scores fall out of replay alone. That is what makes constitution §Replay CI (c)
+      #      satisfiable per pull request rather than only in the nightly eval. The live-run
+      #      counterpart is eval.yml's, and only that one needs a model.
+      #
+      # Neither step needs Postgres and neither may reach the network: both run inside a network
+      # namespace with no interface (see the sandbox step below), so the service container this
+      # job also runs is unreachable from them. A fixture with no recorded run contributes
+      # "0 trajectories", which is an honest statement about a corpus nobody has run yet and is
+      # never reported as a pass.
+      #
+      # These were a job of their own, which paid a runner start and a second full build for
+      # ten seconds of work. They run here whatever the tests above concluded, as long as the
+      # binary built, so a failing test never hides a trajectory result.
+      # ---------------------------------------------------------------------------------
+
+      # How "zero network" is enforced rather than asserted.
+      #
+      # Every command below runs through `scripts/netns.sh`, which puts it in a new network
+      # namespace holding nothing but a down loopback interface. There is no route, no resolver
+      # and no socket to anywhere: a call to the vendor, to a telemetry backend or to a database
+      # does not time out, it fails immediately with "network is unreachable". That is the
+      # difference between a gate that checks for network use and a gate under which network use
+      # is not possible.
+      #
+      # Why a script and not `unshare -rn` inline: the ubuntu-24.04 runner image restricts
+      # unprivileged user namespaces (writing /proc/self/uid_map is "Operation not permitted"),
+      # which is exactly how the first run of this job failed. The script tries the unprivileged
+      # namespace first and otherwise has root create the namespace and `setpriv` drop straight
+      # back to the runner user, so the property is the same on either image and files the
+      # command writes stay owned by the runner. Why this and not a firewall action or an egress
+      # proxy: a proxy would have to be trusted; a namespace with no interface has nothing to
+      # trust.
+      #
+      # The build and the checkout happen outside the namespace, because fetching the toolchain
+      # is not what the gate is about. Everything that reads a recording happens inside it.
+      - name: check the sandbox really has no network
+        id: sandbox
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Two separate assertions, so a sandbox that cannot be created is not mistaken for a
+          # sandbox that has no network. The first run of this job made exactly that mistake:
+          # `unshare` failed, the connection attempt therefore "failed" too, and the check passed.
+          if ! scripts/netns.sh true; then
+            echo "::error::the replay sandbox cannot be created on this runner; see scripts/netns.sh"
+            exit 1
+          fi
+          if scripts/netns.sh bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null; then
+            echo "::error::the replay sandbox reached the network; the gate would prove nothing"
+            exit 1
+          fi
+          echo "the replay sandbox exists and has no route to anywhere, as it should"
+
+      - name: replay every recorded trajectory (no network, no database)
+        id: trajectories
+        if: ${{ !cancelled() && steps.sandbox.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          fixtures=()
+          for dir in fixtures/incidents/*/; do
+            if compgen -G "${dir}trajectories/*.jsonl" > /dev/null; then
+              fixtures+=("$dir")
+            fi
+          done
+          echo "count=${#fixtures[@]}" >> "$GITHUB_OUTPUT"
+          if [ ${#fixtures[@]} -eq 0 ]; then
+            {
+              echo '### Trajectory replay'
+              echo
+              echo '**0 trajectories** recorded. The gate is in place and has nothing to replay yet.'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo '### Trajectory replay'
+            echo
+            echo "Replaying ${#fixtures[@]} incident fixture(s) with network egress blocked"
+            echo '(`scripts/netns.sh`, a network namespace with no interface), no database and no model.'
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          scripts/netns.sh \
+            bin/aisre fixture verify --trajectory-only "${fixtures[@]}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # Calibration, from those same recorded trajectories, with ZERO model calls. Every
+      # confidence in this system is computed by the ledger from published constants, so a replay
+      # reproduces it exactly and the reliability table over the five published buckets — very_low,
+      # low, moderate, high, very_high — plus Brier and log-loss fall out of replay alone. That is
+      # what makes constitution §Replay CI (c) satisfiable per pull request rather than only in the
+      # nightly eval. The live-run counterpart is eval.yml's (T110, T113), and only that one needs
+      # a model. A bucket holding fewer than 20 hypotheses is reported as under-powered rather than
+      # scored, and a corpus that scores nothing says so rather than printing an empty table as a
+      # calibrated one.
+      #
+      # `--fail-on-empty` is on because the corpus now scores. A recorded run states the belief
+      # state it ended at on its stop record (`StopRecord.final_ledger`), so "0 hypotheses scored"
+      # is no longer the honest state of the corpus — it would mean the recordings stopped
+      # carrying it, which is a regression that would otherwise show up as a table full of zeroes
+      # nobody reads.
+      - name: calibration from the recorded trajectories (no model calls)
+        if: ${{ !cancelled() && steps.trajectories.outcome != 'skipped' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/netns.sh \
+            bin/aisre fixture calibration \
+              --fixtures fixtures/incidents \
+              --fail-on-empty \
+              --out calibration.json \
+              --summary calibration.md
+          cat calibration.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: upload the calibration table
+        if: always() && hashFiles('calibration.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: calibration
+          path: |
+            calibration.json
+            calibration.md
+          if-no-files-found: ignore

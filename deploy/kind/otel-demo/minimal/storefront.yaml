@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# storefront: the edge of the shop. Deployment + Service + (in ingress.yaml) an Ingress.
+#
+# The container is a stock nginx that serves its default page. Nothing in this overlay makes
+# real requests: the spans come from the telemetrygen emitters in traffic.yaml. The workload
+# exists so the Kubernetes feeder has something real to watch — replicas, revisions, labels,
+# annotations, owners, config references — which is the half of the graph it owns.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storefront
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: storefront
+    app.kubernetes.io/part-of: shop
+    # Owner label. `feed k8s --owner-labels=team` turns this into an OWNER node and an
+    # `owned-by` edge. team-checkout, not team-storefront, to match
+    # fixtures/baseline-topology-01 (see deploy/kind/README.md, "Why these exact labels").
+    team: team-checkout
+  annotations:
+    # The identity bridge: this is what lets the Kubernetes feeder claim
+    # otel.service.name=storefront for k8s.deployment=shop/storefront, so the workload and the
+    # traced service resolve to one entity (FR-043, US6).
+    resource.opentelemetry.io/service.name: storefront
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: storefront
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: storefront
+        app.kubernetes.io/part-of: shop
+        team: team-checkout
+      annotations:
+        resource.opentelemetry.io/service.name: storefront
+    spec:
+      containers:
+        - name: app
+          image: nginx:1.31.5-alpine-slim
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: storefront
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: storefront
+    app.kubernetes.io/part-of: shop
+spec:
+  selector:
+    app.kubernetes.io/name: storefront
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

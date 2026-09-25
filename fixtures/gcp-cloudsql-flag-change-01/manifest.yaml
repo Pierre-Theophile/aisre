@@ -1,0 +1,60 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: gcp-cloudsql-flag-change-01
+family: gcp-cloudsql
+description: 'A Cloud SQL instance whose `max_connections` flag changes between two polls, dated at the audit entry''s instant, alongside a secret moving version and a Cloud Run service that attaches the instance. Exercises the instance connection name as a claim, the flag catalogue annotating a change that requires a restart, a past maintenance read from the operation history with the provider as its actor and a backup operation read past, the maintenance window staying a property and never becoming a change node, the derived depends-on edge carrying the evidence that derived it, and a configuration version holding fingerprints and secret version references rather than values. The twin''s audit entries carry no principal, because a sanitised entry has no such field at all (FR-135), so the flag change''s actor is unclassified here and the actor ladder is asserted from memory in this package''s tests rather than faked in a recording. Synthetic structural twin: no identifier is derived from the organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — US7''s recording replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The instance and what changed about it. Pinned, so the golden does not encode the day it was
+  # recorded (fixture-format.md).
+  - name: instance-2hop
+    kind: subgraph
+    focus: gcp.cloudsql.instance=twin-production/europe-west1/orders-primary
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The service side of the derived dependency: the edge must be there, and it must carry the
+  # evidence that derived it (FR-028).
+  - name: storefront-2hop
+    kind: subgraph
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # What changed in the window the edit falls in, which is what "the second question after what
+  # changed" is asked with.
+  - name: instance-diff
+    kind: diff
+    focus: gcp.cloudsql.instance=twin-production/europe-west1/orders-primary
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The pointers the instance carries, which FR-079 is asserted against.
+  - name: instance-pointers
+    kind: pointers
+    focus: gcp.cloudsql.instance=twin-production/europe-west1/orders-primary
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+  # The extent, which states the scope in force: "not present" and "not in scope" are different
+  # answers (FR-009).
+  - name: extent
+    kind: extent
+    observed_at: 2026-09-21T20:00:00Z

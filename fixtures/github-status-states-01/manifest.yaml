@@ -1,0 +1,34 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `sre-agent fixture record` to write them and `sre-agent fixture verify` to check them.
+id: github-status-states-01
+family: github
+description: 'All seven documented deployment statuses across six deployments, plus one state the published table has not ruled on. Only `success` becomes a ROLLOUT: `queued`, `in_progress` and `pending` produce nothing because nothing in production moved, `failure` and `error` produce a failed attempt and never a rollout, a later `inactive` is a property of the rollout it followed, and the unrecognised state is counted under its own spelling and acted on not at all. A mostly-empty graph is the CORRECT outcome here: four of the five deployments are deliberately not changes. The success with no INSTANT lives in github-unknown-start-01, which is generated on demand rather than committed — see the note in fixture_gen_test.go. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-03-01T14:00:00Z
+    end: 2026-03-01T15:30:00Z
+queries:
+  # Exactly one change: of the five deployments, four are deliberately not rollouts.
+  # A nearly empty graph IS the assertion here.
+  - name: the-one-rollout
+    kind: subgraph
+    focus: github.change=repositories/555/deployments/1/targets/k8s.deployment/shop/storefront
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 2
+    direction: both
+  # The extent: `not present` and `not read at that time` are different answers.
+  - name: extent
+    kind: extent
+    valid_at: 2026-03-01T15:30:00Z
+    observed_at: 2026-03-01T15:30:00Z

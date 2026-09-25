@@ -1,0 +1,151 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: unobserved-business-data-01
+family: unobserved
+description: >-
+  FR-071b and SC-023: an incident caused by data rather than by code. A partner uploaded a
+  catalogue forty times its usual size at 14:18; the inventory lookup checkout makes on every
+  cart is a scan, and at that cardinality it stops fitting inside checkout's timeout. No
+  deployment, no configuration edit and no scaling event caused it, and no feeder this system
+  has can see a row count.
+
+  The decoy is a real rollout: inventory went to revision 9 at 14:05, one hop from checkout and
+  fifteen minutes before the onset. It is the most convincing decoy in this group, because a
+  rollout on the service whose latency moved is precisely the story that is usually true. It is
+  not true here, and the version split is what says so: the errors are spread evenly across
+  both versions of inventory rather than concentrated on the new one.
+
+  The correct answer is `not_change_induced` with the category `business_data_change`.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  - name: checkout-diff
+    kind: diff
+    focus: otel.service.name=checkout
+    t1: 2026-09-01T13:00:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20103:group=env:prod"
+    statement: "checkout p95 latency above 2 s for 10 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: "not_change_induced: business_data_change"
+    causal_path:
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=inventory"
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+            version_attribute: service.version
+        field_path: versions.length
+        op: eq
+        value: 1
+        note: >-
+          the world holds one version for inventory across the symptom window, so the rollout
+          fifteen minutes earlier has nothing left to be distinguished from -- and, crucially,
+          no version carries a different error rate from any other.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=inventory"
+            windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: flat
+        note: >-
+          inventory's own error rate does not move; what moved is how much work one particular
+          caller asks it for, which nothing in the graph or the world records.
+
+    decoys:
+      - entity: k8s.change=shop/inventory@rev9
+        causal_role: coincident
+        why: >-
+          a rollout of the very service whose latency moved, fifteen minutes before the onset.
+          Every heuristic points at it; the evidence does not.
+
+    exonerating_evidence:
+      k8s.change=shop/inventory@rev9:
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=inventory"
+              windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: the rolled-out service is healthy on both sides of the onset.
+        - term:
+            onset:
+              pointer: "METRIC otel.service.name=inventory"
+              search_window: "2026-09-01T14:05:00Z..2026-09-01T14:32:00Z"
+              method: SEASONAL_CUSUM
+          field_path: estimated_onset
+          op: absent
+          note: no onset is detected on inventory at all, so the rollout begins nothing.
+
+    # Nobody sees the future: this investigation observes the world at `fired_at` (14:32), so the
+    # decisive windows above end there and no predicate rests on telemetry after it
+    # (constitution II). Both halves of the `unobserved` answer are settled earlier: the symptom
+    # is established by the five one-minute samples after the 14:20 onset —
+    # `onset.MinSustainedPoints` — which are complete at 14:25, and the graph already holds every
+    # change there is to hold, none of which explains it. Asked before 14:25 the symptom itself
+    # is not yet established, and `unknown` rather than `unobserved` is the correct answer.
+    knowability_time: 2026-09-01T14:25:00Z
+    onset: {at: 2026-09-01T14:20:00Z, tolerance_seconds: 300}
+    prior_rank_of_culprit: 0
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry centred on the estimated onset, which is the cap every fixture in this
+      directory takes: the world is the cross product of (pointers in the neighbourhood) x
+      (grid) x (the recorder's statistic set: ERROR_RATE, P95, RATE) plus monitor_state, log
+      patterns, onset, errors_by_version where a version join key exists, error_spans per edge
+      and the depth-1 drill-downs those answers mint, so each further grid entry doubles the
+      directory. No culprit was supplied to the recorder, which is the point of this fixture:
+      every comparison in the world reads flat, so nothing in it supports any candidate.
+
+  runs: 3

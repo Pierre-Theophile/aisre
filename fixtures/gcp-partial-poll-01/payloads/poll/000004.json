@@ -1,0 +1,1 @@
+{"outcome":"partial","projects":["twin-production"],"regions":["europe-west1"],"reason":"the europe-west1 services.list call returned 503"}

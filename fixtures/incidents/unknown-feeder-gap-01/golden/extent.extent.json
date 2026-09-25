@@ -1,0 +1,1 @@
+{"earliestObserved":"2026-09-01T13:00:30Z","latestObserved":"2026-09-01T14:40:35Z","sources":[{"gaps":[{"end":"2026-09-01T14:40:00Z","start":"2026-09-01T14:05:00Z"}],"lastCheckpoint":"2026-09-01T14:40:25Z","sourceId":"k8s:demo"}]}

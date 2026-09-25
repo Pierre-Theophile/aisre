@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Code generation for the published schema. Run through `make gen`, which also re-applies the
+# SPDX header to the generated files (scripts/add-spdx-headers.sh).
+#
+# Both plugins are local binaries, pinned by the developer's toolchain rather than fetched at
+# generation time; `make tools` installs them.
+
+version: v2
+
+managed:
+  enabled: false
+
+plugins:
+  # Message types: api/sreagent/graph/v1/graph.pb.go, package graphv1.
+  - local: protoc-gen-go
+    out: api
+    opt:
+      - paths=source_relative
+
+  # Service handlers and clients: api/sreagent/graph/v1/graphv1connect/graph.connect.go.
+  - local: protoc-gen-connect-go
+    out: api
+    opt:
+      - paths=source_relative

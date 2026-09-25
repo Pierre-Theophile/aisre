@@ -1,0 +1,48 @@
+# 2026/09/21 17:53:39.733672 [TestACancellationNeverClosesAValidInterval] [rapid] draw observed_offset: 0
+# 2026/09/21 17:53:39.733680 [TestACancellationNeverClosesAValidInterval] [rapid] draw start_delta: 26
+# 2026/09/21 17:53:39.733681 [TestACancellationNeverClosesAValidInterval] [rapid] draw duration: 3
+# 2026/09/21 17:53:39.733681 [TestACancellationNeverClosesAValidInterval] [rapid] draw vague_start: true
+# 2026/09/21 17:53:39.733682 [TestACancellationNeverClosesAValidInterval] [rapid] draw open_end: false
+# 2026/09/21 17:53:39.733683 [TestACancellationNeverClosesAValidInterval] [rapid] draw kind: "maintenance"
+# 2026/09/21 17:53:39.733685 [TestACancellationNeverClosesAValidInterval] [rapid] draw notice_id: ""
+# 2026/09/21 17:53:39.733688 [TestACancellationNeverClosesAValidInterval] [rapid] draw pointer: "msg-1345"
+# 2026/09/21 17:53:39.733689 [TestACancellationNeverClosesAValidInterval] [rapid] draw correction_delay: 5
+# 2026/09/21 17:53:39.733744 [TestACancellationNeverClosesAValidInterval] cancelled rewrote the valid interval: [2026-01-01 00:00:05 +0000 UTC, 0001-01-01 00:00:00 +0000 UTC) unknown=false, was [2026-01-01 00:00:00 +0000 UTC, 0001-01-01 00:00:00 +0000 UTC) unknown=false
+# 
+v0.4.8#6403702097595465404
+0x0
+0x0
+0x0
+0x0
+0xaebe2319f0ce3
+0x1a
+0x1e8ca559e4e8af
+0x5d5b898d34818
+0x3
+0x1
+0x0
+0x1077ef7ba6844b
+0x0
+0xab1811cd818dc
+0x0
+0x0
+0x1f60bf75aae87f
+0x0
+0x221b42c657236
+0x1
+0xb1c041969cf83
+0x0
+0xe5d81930b35f6
+0x3
+0x9fe92f898b0d4
+0x0
+0x8e02beda4f63a
+0x4
+0x2b89289cae7fb
+0x0
+0x19538724c8cb8b
+0x5
+0x59d7e5fe4e14c
+0x199680fcc2eaca
+0x5e528b0ef8e8a
+0x5
