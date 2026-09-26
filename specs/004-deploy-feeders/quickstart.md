@@ -66,9 +66,13 @@ where our published mapping is pinned ([research §2](./research.md)).
 bin/aisre fixture verify fixtures/vercel-promotion-01 --db "$PG_DSN"
 ```
 
-**Expected**: a `READY` + `STAGED` deployment produces **no** rollout; the same deployment reaching
-`PROMOTED` produces one, valid at the promotion instant, with the build instant kept as a property.
-Preview deployments produce none and the exclusion is **counted in the checkpoint**.
+**Expected**: a `READY` + `STAGED` deployment produces **no** rollout, and the checkpoint counts it
+(`excluded_not-promoted=1`); the same deployment reaching `PROMOTED` produces one, with the build
+instant kept as a property (`sre.vercel.built_at`). Its valid start is **unknown** (`validFromUnknown`)
+and begins at the observation, because Vercel states no promotion instant (research §5.2) — an earlier
+draft of this page said "valid at the promotion instant", which is the guess T084 forbids. Preview
+deployments produce none and the exclusion is counted: that is
+`bin/aisre fixture verify fixtures/vercel-preview-excluded-01 --db "$PG_DSN"`.
 
 This is the step that would have caught the plausible wrong implementation: keying on `state=READY`
 would have made every staged build a change node claiming production had moved.
@@ -77,7 +81,14 @@ would have made every staged build a change node claiming production had moved.
 
 ```bash
 bin/aisre fixture verify fixtures/deploy-cross-source-merge-01 --db "$PG_DSN"
-bin/aisre resolve why --db "$PG_DSN" <entity-a> <entity-b>
+
+# `resolve why` asks a server, not the database: load the fixture and serve it.
+bin/aisre fixture load fixtures/deploy-cross-source-merge-01 --db "$PG_DSN"
+bin/aisre serve --db "$PG_DSN" --listen 127.0.0.1:8080 --auth dev --dev &
+export SRE_AGENT_TOKEN=$(bin/aisre dev-token --dev --user alice --roles reader,decider)
+bin/aisre resolve why \
+  'github.change=repositories/555/deployments/4321/targets/gcp.cloudrun.service/twin-production/europe-west1/storefront' \
+  'gcp.change=rollout-created/twin-production/europe-west1/storefront/storefront-00042-bbb@2026-09-21T14:18:00Z'
 ```
 
 **Expected**: the GitHub observation and feature 003's Cloud Run revision of the same rollout appear
@@ -157,13 +168,19 @@ platform names swapped, so this is a data task, not a code task.
 
 ## 9. The SRE's question, in one command under thirty seconds (SC-016)
 
+With the server from §5 still running:
+
 ```bash
-time bin/aisre investigate --replay fixtures/… --at <alert-instant> --explain-ranking
+time bin/aisre query diff 'gcp.cloudrun.service=twin-production/europe-west1/storefront' \
+  --at 2026-09-21T14:40:00Z
 ```
 
-**Expected**: the in-scope changes in the preceding window, each with its actor, actor kind, the
-commit it shipped, whether it was a rollback, and a link that opens the run. Under thirty seconds on
-the recorded corpus.
+**Expected**: the in-scope changes in the window before the alert instant, ranked, and a table giving
+each one's actor, actor kind, the commit it shipped, whether it was a rollback, and a link that opens
+the run. Under thirty seconds on the recorded corpus. An earlier draft gave
+`investigate --replay … --explain-ranking`, a shape that does not exist — feature 003's run recorded
+the same drift (its row 10.2); `investigate replay` replays an exported investigation, and there is no
+`--explain-ranking`.
 
 ---
 
