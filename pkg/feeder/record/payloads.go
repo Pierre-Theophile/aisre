@@ -5,7 +5,9 @@ package record
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,10 +122,23 @@ func (r *PayloadRecorder) write(p feeder.Payload) error {
 		return r.fail(fmt.Errorf("record: create %s: %w", kindDir, err))
 	}
 
-	r.counts[kind]++
-	name := fmt.Sprintf("%0*d%s", payloadDigits, r.counts[kind], payloadExt(p.Bytes))
-	if err := os.WriteFile(filepath.Join(kindDir, name), p.Bytes, 0o644); err != nil { //nolint:gosec // fixture payloads are world-readable by design
-		return r.fail(fmt.Errorf("record: write payload %s/%s: %w", kind, name, err))
+	// A name is never reused. Several sources recording into one directory — a cross-source fixture
+	// is exactly that — each number their own payloads from one, and two feeders that both call a
+	// payload `deployments` would otherwise write the same file: the second recording silently
+	// replaced the first's bytes while the index kept both entries, so the index named one file twice
+	// and one platform's answer was gone. `O_EXCL` makes the collision visible to this loop, which
+	// moves on to the next free number instead (004 T113 found it in deploy-cross-source-merge-01).
+	var name string
+	for {
+		r.counts[kind]++
+		name = fmt.Sprintf("%0*d%s", payloadDigits, r.counts[kind], payloadExt(p.Bytes))
+		err := writeNew(filepath.Join(kindDir, name), p.Bytes)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return r.fail(fmt.Errorf("record: write payload %s/%s: %w", kind, name, err))
+		}
 	}
 
 	entry := source.IndexEntry{Kind: kind, At: p.At.UTC(), Seq: p.Seq, File: kind + "/" + name}
@@ -196,4 +211,17 @@ func appendLine(path string, line []byte) error {
 		return fmt.Errorf("record: write %s: %w", path, err)
 	}
 	return nil
+}
+
+// writeNew writes a payload file that must not already exist.
+func writeNew(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) //nolint:gosec // fixture payloads are world-readable by design
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }

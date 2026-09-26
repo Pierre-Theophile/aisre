@@ -33,6 +33,8 @@ func fixtureSet(t *testing.T) []fixtureSpec {
 		// T079, recorded once the doorbell existed (T039-T042).
 		doorbellForgedFixture(),
 		partialPollFixture(),
+		// T110: the refusal path, carried by hand beside the baseline's recorded stream.
+		telemetryRejectionFixture(t),
 	}
 }
 
@@ -415,7 +417,9 @@ func TestTheFixtureSetIsCoherent(t *testing.T) {
 			t.Errorf("a fixture spec has no directory: %+v", fx)
 		case seen[fx.dir]:
 			t.Errorf("%s appears twice; the second would overwrite the first", fx.dir)
-		case fx.family != "github":
+		// The refusal fixture is a GitHub recording under the deploy family's name, because what it
+		// asserts is the event log's rule rather than anything this feeder decides (T110).
+		case fx.family != "github" && fx.dir != "fixtures/deploy-telemetry-rejection-01":
 			t.Errorf("%s declares the family %q", fx.dir, fx.family)
 		case len(fx.payloads) == 0:
 			t.Errorf("%s has no payloads, so it would verify nothing", fx.dir)
@@ -442,12 +446,13 @@ func TestTheFixtureSetIsCoherent(t *testing.T) {
 			}
 		}
 	}
-	// Nine: the seven of T073-T078, the monorepo one T148 let in, and the two T079 asks for — the
-	// forged doorbell and the partial poll. The unknown-start case is NOT among them; it is generated
-	// on demand for the reason recorded in fixture_gen_test.go. The number is asserted so that adding
-	// a fixture is a deliberate act rather than something a generator run does quietly.
-	if len(seen) != 9 {
-		t.Errorf("the set has %d committed fixtures, want nine", len(seen))
+	// Ten: the seven of T073-T078, the monorepo one T148 let in, the two T079 asks for — the forged
+	// doorbell and the partial poll — and T110's telemetry refusal. The unknown-start case is NOT among
+	// them; it is generated on demand for the reason recorded in fixture_gen_test.go. The number is
+	// asserted so that adding a fixture is a deliberate act rather than something a generator run does
+	// quietly.
+	if len(seen) != 10 {
+		t.Errorf("the set has %d committed fixtures, want ten", len(seen))
 	}
 }
 

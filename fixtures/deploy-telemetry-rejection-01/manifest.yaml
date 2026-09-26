@@ -1,0 +1,45 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: deploy-telemetry-rejection-01
+family: deploy-refusal
+description: 'The refusal path for a deploy feeder: three events addressed at the rollout the recorded stream creates, each carrying a measurement the platform hands a deploy pipeline — the canary''s error-rate series, the failing step''s log body under a denied key, and a deployment payload above the property size limit — are each REJECTED with the published reason code `telemetry_payload`, and the rollout is left carrying its pointers and none of the three. A pointer says where to look and never what was found (constitution IV). The feeder under test would never emit one of these, which is why the fixture carries them by hand: a fixture built only from its output could not tell a working refusal from an absent one. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — a recording campaign replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: github:twin
+      kind: github
+      ordering: none
+      reordering_window: 5m0s
+clock:
+    start: 2026-03-01T14:00:00Z
+    end: 2026-03-01T15:30:00Z
+expect_rejected:
+    - event_id: github:twin:telemetry-canary-series-1
+      reason_code: telemetry_payload
+    - event_id: github:twin:telemetry-log-body-1
+      reason_code: telemetry_payload
+    - event_id: github:twin:telemetry-deployment-payload-1
+      reason_code: telemetry_payload
+rejected_events: rejected.jsonl
+queries:
+  # The rollout after the three refusals. The golden is the assertion: the change is here
+  # with its pointers, and no property of it or of anything within two hops holds any
+  # part of what the refused events carried.
+  - name: rollout-2hop-after-the-refusals
+    kind: subgraph
+    focus: github.change=repositories/555/deployments/4321/targets/k8s.deployment/shop/storefront
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z
+    hops: 2
+    direction: both
+  # Where the canary and the log live: pointers, which is the only form the graph
+  # accepts them in.
+  - name: rollout-pointers
+    kind: pointers
+    focus: github.change=repositories/555/deployments/4321/targets/k8s.deployment/shop/storefront
+    valid_at: 2026-03-01T14:03:12Z
+    observed_at: 2026-03-01T15:30:00Z

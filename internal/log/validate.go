@@ -358,7 +358,15 @@ func validateObserveChange(c *graphv1.ObserveChange) *Rejection {
 			return r
 		}
 	}
-	return nil
+	// A change carries properties and pointers exactly as a node does, so it is held to the same
+	// telemetry rule (constitution IV, FR-009). It was not: this body checked neither, and a change
+	// could carry a canary's error-rate series or a failing step's log body and be accepted. A deploy
+	// feeder is the connector most tempted to attach one — the platform hands it the measurement next
+	// to the change — and 004's `deploy-telemetry-rejection-01` found the gap by trying (T110).
+	if r := checkTelemetry("observe_change.props", c.GetProps()); r != nil {
+		return r
+	}
+	return checkPointers("observe_change.pointers", c.GetPointers())
 }
 
 // ---------- the investigation bodies (ADR-0005 D2/D3, 002 FR-034, 002 SC-010) ----------

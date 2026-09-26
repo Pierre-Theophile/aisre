@@ -2,11 +2,13 @@
 
 # The Vercel connector
 
-> **Status: partial.** Filled: the credential and where its scope comes from (§1), the published
-> read-only operation surface (§2), what is deliberately never read (§3), and the live cycle and its
-> gate (§5). Sections marked _(pending)_ name the task that fills them. A number
-> written here that was not measured is worse than an empty cell, because an operator approves this
-> page and then stops asking.
+> **Status: written in full against the code (004 T130), with three things still unestablished.**
+> Every section describes what the connector does today, and the operation table in §2 is compared to
+> the code by a test. Not established, and said so where each one matters: which regime a token puts
+> the connector in (T034 is open, §1); whether Vercel reports a remaining quota at all (§4); and any
+> figure a live team would have to supply, since no recording campaign has run (T114 is blocked). A
+> number written here that was not measured is worse than an empty cell, because an operator approves
+> this page and then stops asking.
 
 What this connector reads, what it costs, and the proof it can only read.
 
@@ -38,9 +40,14 @@ A token's scope is reported back, in `token.scopes[]` at creation and through
 and this connector does not guess it. Identifying the authenticating token in that list is by
 `prefix`/`suffix`.
 
-**Verifying the declared scope, read-only.** Where the operator declares a project scope, the
-connector can check it rather than trust it: read one project outside the declared scope and require a
-`403`. One call, a published read, and the operator's assertion becomes something checked.
+**Verifying a declared scope, read-only, is possible and not built.** Where an operator declares a
+project scope, it could be checked rather than trusted: read one project outside the declared scope and
+require a `403`. One call, a published read, and the operator's assertion would become something
+checked. That is T034's design, and T034 is open. Today `feed vercel --dry-run` prints
+`token regime: NOT ESTABLISHED` and names what is missing, and a live run reports its scope as the
+projects named by `--projects`, "the token may reach more", which is the configuration regime stated
+honestly. A command that printed a platform-enforced boundary from a guessed `scopes[].type` value would
+make the stronger claim on no evidence.
 
 ### What Vercel does not report, and what follows
 
@@ -79,11 +86,11 @@ to `/v8` is a change to this published surface, not an implementation detail.
 [`internal/feeders/vercel/requestlog.go`](../../internal/feeders/vercel/requestlog.go), and this page
 is parsed and compared against it by a test in both directions, area and reason included.
 
-The `/v9` on the environment endpoint is **provisional**: it is the version this connector is written
-against, and it is confirmed against the live API by the same work that closes research §5.3 (T034,
-T095). It is published now because FR-004's question is what the connector is *capable of issuing*, and
-an operation held back from the page until it is proven would be an operation an operator never
-approved.
+The `/v9` on the environment endpoint is **provisional**. It is the version this connector is written
+against, and T095 checked its response schema against the published reference. It has not been
+exercised against a live team, which waits on a credential (T114). It is published now because FR-004's
+question is what the connector is *capable of issuing*, and an operation held back from the page until
+it is proven would be an operation an operator never approved.
 
 ### Ready is not live
 
@@ -98,14 +105,45 @@ seen production traffic.
 `isRollbackCandidate` is not a rollback: it says a deployment *can* be rolled back to, not that one
 happened.
 
-### What this cannot prove
+### The three-layer gate, and why its first layer is the weak one
+
+The same three layers as the GitHub connector ([github.md §2](./github.md)), with one of them
+materially weaker. The asymmetry is deliberate and it is printed, not hidden:
+
+| layer | what it checks | where | strength here |
+|---|---|---|---|
+| 1. the credential | the operator asserted the token is read-only | `assertedVercelGate` in `internal/cli/feed_vercel.go`, over `feeder.CheckReadOnly` | **an assertion, not a proof.** Vercel reports nothing about what a token may write (§1), so a live run is refused without `--assert-read-only`, and the evidence is recorded as `operator_asserted` rather than `platform_reported` |
+| 2. the surface | the operation is on the table above, and its method is `GET` or `HEAD` | `pkg/feeder/readonly.go`, with this table in `internal/feeders/vercel/requestlog.go` | as strong as GitHub's. A table containing a write panics at program start |
+| 3. the door | every call names its operation to `Issuer.Issue`, which checks layer 2, then the budget, and records the attempt | `pkg/feeder/issue.go`; the transport's one request method, `get`, calls it first and takes the HTTP method from the operation's spelling | as strong as GitHub's |
+
+So on Vercel the read-only claim rests on layers 2 and 3. Those hold whatever the token can do: the
+process has no operation to issue that writes. What layer 1 adds on GitHub is a second, independent
+barrier: a process that somehow issued a write would still hold a credential the platform refuses it
+with. Here that barrier exists only if the operator made the token read-only, and nothing checks that
+they did. A write-capable token is refused on GitHub and accepted on Vercel, and the checkpoint's
+`operator_asserted` is where that difference is recorded.
+
+### What the gate cannot prove
 
 - **It proves what this connector may issue, not what the API does.** A `GET` that Vercel implements
-  with a side effect would pass every check here.
+  with a side effect would pass every layer.
+- **Layer 1 proves nothing about the token.** It records that somebody said so. A write-capable token
+  given with `--assert-read-only` runs, and nothing in the process can detect it.
+- **Layer 3 proves the method, not the exact path.** The HTTP method comes from the operation, so a
+  published `GET` cannot be sent as anything else. But the transport writes each concrete path beside
+  the operation constant (`c.url("/v7/deployments", …)` with `OpDeployments`), rather than deriving it
+  from the template as the GitHub transport does. Tests pin the paths the live cycle issues (the
+  project, its environment metadata and the deployments list, in `poller_test.go` and
+  `transport_test.go`), but nothing ties every constant to its path. A mismatch would still issue only
+  a read, but it would be metered and logged under the wrong row, and it could be a read this page does
+  not publish.
+- **The one-door property is structural, not scanned.** `transport.go` has exactly one method that
+  performs a request, and it calls `Issue` first. No go/ast test asserts this, unlike the GCP connector.
 - **It says nothing about the token's other holders.** If the same token is used by something else,
   this process's read-only proof is about this process.
-- **The live-run half of SC-007 is open**, as it is for GitHub: what is verified today is the
-  capability, over the unit surface, with the recorded request log filled by the fixture work (US2).
+- **The recorded-request-log half of SC-007 does not exist yet, and neither does the live-run half.**
+  As for GitHub, `Issuer.RequestLog()` is kept in memory and `feed vercel` neither prints nor persists
+  it, and a replay issues no request. What is verified today is the capability, over the unit surface.
 
 ## 3. What is deliberately never read
 
@@ -126,15 +164,69 @@ setting.
 
 ## 4. What it costs
 
-_(pending — T035–T037, and the usage report.)_ Whether Vercel reports a remaining quota is
-[research §5.3](../../specs/004-deploy-feeders/research.md). Where a platform reports none the budget
-falls back to a static one, and **the usage report says which of the two it used** (FR-071) rather than
-presenting a static budget as a share of something measured.
+**No calls-per-hour figure is published here, because none has been measured.** FR-076 asks for one
+against an estate of a stated size, matched against a recording, and no recording exists (T114). Nor
+does a live run report its own usage: the budget keeps per-family spending and a per-operation request
+log (`Issuer.Report()`, `Issuer.RequestLog()`), but `feed vercel` prints neither. FR-075's usage report
+is unwired, for this connector as for GitHub.
 
-`feed vercel` bootstraps on a static allowance of 30 calls. Once Vercel's rate-limit headers report a
-window, it spends at most `--quota-share` (default 0.5) of what is left, and never the last
-`--quota-reserve` (default 20) calls. The reserve binds measured windows only: a static allowance is
-not a statement from the platform.
+### The shape of a cycle
+
+What can be said without measuring is which reads a cycle makes and what each grows with. For each
+followed project (§5):
+
+| read | calls per cycle | grows with |
+|---|---|---|
+| `GET /v9/projects` | 1, and only when there is no `--projects` mapping | nothing |
+| `GET /v9/projects/{idOrName}` | 1 per followed project | projects followed |
+| `GET /v9/projects/{idOrName}/env` | 1 per followed project | projects followed |
+| `GET /v7/deployments` | 1 per followed project, filtered by the platform to `target=production` and created since the window opened | projects followed |
+| `GET /v13/deployments/{idOrUrl}` | 1 per production deployment carried unsettled, for up to `PendingHorizon` (24 h), and 1 per new `lastAliasRequest` naming a deployment | unsettled rollouts, promotions and rollbacks |
+
+At the default `--interval` of five minutes, the per-hour figure is at most twelve times the per-cycle
+one: the interval is a wait between cycles, so a slow cycle makes fewer of them. The preview filter is
+sent to the platform, so a preview deployment is one this connector never pays for.
+
+**Every list is one request, and that is a limit.** The deployments and projects lists are read as a
+single page. The transport does not follow Vercel's `pagination.next`, and the poller sends no `limit`,
+so each list returns whatever the platform's default page holds. A window with more production
+deployments for one project than one page returns is read short, and the cycle is **not** marked
+partial for it: nothing in the response is checked for a further page. The same holds for a team with
+more projects than one page returns, when there is no `--projects` mapping. This is how the code reads,
+not something a live team has shown, and Vercel's default page size is not established on this page.
+
+### How the budget paces it
+
+Whether Vercel reports a remaining quota at all is **not established**. The contract leaves it open
+([contracts/read-only-operations.md](../../specs/004-deploy-feeders/contracts/read-only-operations.md)
+§5); research §5.3 answered the scope question, not this one. So the budget is written for both
+answers, and the usage report says which one it used rather than presenting a static allowance as a
+share of something measured (FR-071).
+
+- **If Vercel sends `x-ratelimit-limit` and `x-ratelimit-remaining`**, the transport reads them from
+  every response, including a refusal. From then on an operation is metered against what Vercel said is
+  left: at most `--quota-share` (default 0.5) of it per window, and never the last `--quota-reserve`
+  (default 20) calls. Vercel is not known to name its bucket the way GitHub's `x-ratelimit-resource`
+  does, so such a reading is filed under the family `unnamed`.
+- **Before any response has said anything**, an operation is metered against the static allowance,
+  which `feed vercel` sets to 30 calls. The reserve does not apply to it, because a static allowance is
+  the operator's bootstrap and not a statement from the platform.
+
+**If Vercel turns out to send no rate-limit headers, a long run stops.** The static allowance is not
+per cycle. It is spent down across the run and refilled only by a platform reading, and without headers
+none arrives. A run following one project makes at least three calls per cycle, so it would spend the
+allowance in at most ten cycles and report every cycle after that as a quota stop. The stop is typed
+and the checkpoint says so, which is the right failure. It is still a failure, and whether it happens
+depends on the unestablished fact above. This is how the code reads today; no live run has tested it.
+
+### What a refusal costs
+
+A non-200 from Vercel is recorded with the platform's `Retry-After` and whether its headers reported
+nothing left, and it makes the cycle **partial**. The next cycle re-reads the same window. Unlike the
+GitHub connector, nothing waits out a `429` inside the cycle: the retry comes at the next interval,
+whatever `Retry-After` asked for. FR-074's "wait at least as long as the response asks" is therefore met
+only when `Retry-After` is shorter than the interval, and resuming is at the granularity of a whole
+window rather than a page.
 
 ## 5. The live cycle, and the gate it runs behind
 
@@ -180,3 +272,7 @@ touches disk (004 T104, FR-137). The corpus key comes from `$SRE_AGENT_CORPUS_KE
 run is refused before a directory exists. The live feeder gets the platform's payloads; the recording
 gets only the sanitiser's output, under the rows and shapes in the sanitisation contract §2.4. The
 recording's events are derived from those sanitised payloads, not recorded from the live run.
+
+**There is no inbound webhook.** Nothing in this connector listens for a Vercel notification, so there
+is no doorbell to forge and no body to refuse. Polling is the only transport, which is also the source
+of truth on GitHub, where a doorbell exists and is not yet wired (github.md §4).

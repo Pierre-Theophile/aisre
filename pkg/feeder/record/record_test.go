@@ -403,3 +403,37 @@ func TestTheDerivedWindowCoversEventsObservedAfterTheLastPayload(t *testing.T) {
 		t.Errorf("clock.start = %s, want the first payload's arrival %s", m.Clock.Start, at)
 	}
 }
+
+// Two sources recording into one directory, both with a payload kind called `deployments`, must each
+// keep their bytes. The second recorder used to write `deployments/000001.json` over the first's, and
+// the index then named one file twice (004 T113, deploy-cross-source-merge-01).
+func TestTwoRecordersIntoOneDirectoryNeverOverwriteEachOther(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 9, 21, 15, 0, 0, 0, time.UTC)
+	first, second := record.Writer(dir), record.Writer(dir)
+	if err := first.Record(feeder.Payload{Kind: "deployments", At: at, Bytes: []byte(`[{"id":4321}]`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Record(feeder.Payload{Kind: "deployments", At: at, Bytes: []byte(`{"deployments":[]}`)}); err != nil {
+		t.Fatal(err)
+	}
+
+	src, err := source.NewFileSource(dir)
+	if err != nil {
+		t.Fatalf("open recording: %v", err)
+	}
+	var bodies []string
+	for {
+		p, err := src.Next(t.Context())
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("next: %v", err)
+		}
+		bodies = append(bodies, string(p.Bytes))
+	}
+	if len(bodies) != 2 || bodies[0] != `[{"id":4321}]` || bodies[1] != `{"deployments":[]}` {
+		t.Fatalf("the recording replays %q; want both payloads, each once, in order", bodies)
+	}
+}

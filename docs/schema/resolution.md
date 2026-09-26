@@ -211,6 +211,106 @@ A probable rule compares a *Kubernetes* name with an *observed* name, never two 
 Two telemetry service names that resemble each other are two services with similar names, which
 is the normal state of a system.
 
+### C8's condition table, and the three cases that must not merge
+
+> Added by feature 004 (T131). Code: `internal/resolution/deploy.go`. Contract:
+> [`deploy-claims.md` §2](../../specs/004-deploy-feeders/contracts/deploy-claims.md). Acceptance
+> fixture: [`deploy-cross-source-merge-01`](../../fixtures/deploy-cross-source-merge-01/manifest.yaml).
+
+C8 is the rule SC-004 rests on: a rollout that a deploy pipeline and a platform both observed appears
+**once**. It fires on a correlation key (§1a), `deploy.commit_sha` or `deploy.image` in digest form,
+and it merges two change observations only when **all three** of these hold:
+
+1. **the deploy identifier agrees.** Both changes carry the same key, from different sources.
+   Candidates are found by looking the value up, so two changes with different values never meet at all;
+2. **the target agrees.** The two changes share a target entity **in the graph**, after merge
+   redirects (`ClaimStore.ChangeTargets`, compared by set intersection). It is not a comparison of the
+   strings the sources used: GitHub says `github.repo=acme/storefront` and Cloud Run says
+   `gcp.cloudrun.service=proj/region/storefront`, and what makes them one target is that C1, C4 or C5
+   already merged them;
+3. **the environment agrees, and both sides state it.** `deployment.environment.name`, a supporting
+   attribute on the key rather than part of its value.
+
+Each case that must not merge shares all but one of those. That is why the fixture holds them. A rule
+generous enough to merge on any two conditions would pass a corpus that only held the merge, and fail
+here.
+
+| target | deploy identifier | environment | verdict | exercised by |
+|---|---|---|---|---|
+| shared | agrees | stated, agrees | **merge, C8** | `why-the-two-rollouts-are-one` (GitHub and Cloud Run) and `why-the-vercel-promotion-is-the-pipelines-rollout` (GitHub and Vercel) in `deploy-cross-source-merge-01`; `TestC8MergesTwoSourcesObservingOneRollout` |
+| shared | **disagrees** | stated, agrees | **no merge, and no suggestion**: the redeploy | `why-the-redeploy-is-not-the-rollout-it-replaced`; `TestC8DoesNotMergeARedeploy` |
+| **none shared** | agrees | stated, agrees | **no merge; a P7 suggestion**: the monorepo run | `why-one-commit-to-two-services-is-two-rollouts` and the queue in `the-monorepo-run-is-suggested-not-merged`; `TestP7SuggestsTheMonorepoCaseAndC8RefusesIt` |
+| shared | agrees | **stated on both, different** | **no merge, and no suggestion**: a promotion or a canary | `why-the-canary-is-not-the-production-rollout` (deployment 4322, environment `canary`, against the production revision) |
+| any | agrees | **unstated on either side** | **no merge, and no suggestion** | no fixture; `TestC8RefusesEveryFormOfNotKnowing` |
+| any | **unknown**: absent on either side, or not a full lower-case hex commit, or an image without a digest | any | **nothing**: no key, so no candidate | `TestC8RefusesEveryFormOfNotKnowing`, `TestC8MergesOnAnImageDigestAndRefusesATag` |
+
+Two more exclusions sit outside the table because they concern *who* is speaking rather than what was
+said. Two keys from **one source** are one opinion, as for C1 and C7, and a key on anything but a
+**change** is ignored: merging on it would put a change together with a service. `deploy.release` is not
+a C8 identifier at all (`TestC8DoesNotKeyOnAReleaseIdentifier`), because `v2.3.0` is a tag many
+repositories use in the same week.
+
+#### The redeploy: one target, two commits
+
+Two commits shipped to one service are **two rollouts**, the second replacing the first. Merging them
+would collapse a rollout with the one it replaced: an investigation asking what changed at 14:18 would
+find one change whose facts belong to two instants, and the rollout that actually preceded the incident
+would be indistinguishable from the one before it. That is the defect feature 003's C4 shipped with.
+
+Here it is **unreachable by construction** rather than avoided by a check. C8 looks candidates up by the
+key's value, so two changes carrying different commits are never compared. There is no suggestion
+either, because there is nothing to suggest: a service receiving a new commit is the ordinary sequence
+of deploys, not an ambiguity for a person to settle. The fixture carries the redeploy twice: within the
+pipeline (deployments 4320 and 4321 to `storefront`) and across sources (the pipeline's older deploy of
+`web` against Vercel's promotion of the newer one). Both are `distinct_pairs` in its ground truth.
+
+#### The monorepo run: one commit, several targets
+
+A monorepo pipeline ships one commit to several services, and FR-017 makes that **N changes**, one per
+target. An investigation asking what changed on `checkout` must get an answer about `checkout`. One
+commit reaching several services is the normal case, not evidence that the services are one.
+[`github-monorepo-01`](../../fixtures/github-monorepo-01/manifest.yaml) asserts the N-changes half from
+a single source: one deployment mapped to three services is three changes.
+
+This case, unlike the redeploy, is a **suggestion (P7, 0.70)** and not silence. The commit is strong
+evidence that the two observations are related, and the only question left is whether the pipeline
+shipped to one target or several. A person answers that in a second by looking. P7 needs two sources,
+so the single-source monorepo fixture raises none. `deploy-cross-source-merge-01` does: its suggestions
+golden holds twelve pending P7 suggestions and no merge, for one repository's deployments observed by
+three sources. That count is what the choice costs in review work on a monorepo, and it is measured on
+this fixture only.
+
+A suggestion is P7, a separate probable rule, and not a non-certain C8 match. A rule listed as certain
+that sometimes only suggested would make `CertainRules()` a half-truth and a recorded decision's rule
+id ambiguous about whether it merged.
+
+**A change with no target yet also lands here.** Before its target entity exists, a change has nothing
+to share, so C8 cannot fire and P7 does. This is the order dependence the re-trigger exists for: when
+the change attaches, when its own observation arrives after its key, or when two target identities
+merge, the key is re-evaluated (`internal/projector/retrigger.go`,
+[`deploy-claims.md` §2.1](../../specs/004-deploy-feeders/contracts/deploy-claims.md)). C8 then merges,
+and the pending suggestion on the same pair is confirmed (§5). Building the fixture's Vercel half found
+this case the hard way: every Vercel pair came out as P7 until the Vercel feeder described the project
+it serves, because no target entity existed to share.
+
+#### A different or unstated environment: one commit, one target, two rollouts
+
+The same commit reaches the same service in staging and then in production. That is the ordinary shape
+of a **promotion**, and a canary is the same shape inside one service. Each is a real rollout at its own
+instant. Merged, they would be one change with one valid time, so at least one of them would be dated
+at a moment it did not happen, and an investigation ranking changes by onset would be ranking the wrong
+instant for the change that reached production. The
+fixture's canary, deployment 4322 in environment `canary`, carries the same commit to the same
+`storefront` service as the production revision it must not merge with. Its comment says it is the
+pair that makes the third condition load-bearing. Delete the environment check and nothing else in
+the corpus notices.
+
+An **unstated** environment is refused for the reason C2 refuses one: two unstated environments are not
+an agreed one, and a certain rule merges with no human in the loop. It may not gamble that an
+unlabelled rollout is the production one. No P7 suggestion is raised in either environment case,
+because the environment check comes first and a pair in two environments is two rollouts, not a
+question. No fixture carries the unstated case; the unit test does.
+
 ---
 
 ## 3. Name normalization
