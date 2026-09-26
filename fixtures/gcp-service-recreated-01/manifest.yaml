@@ -1,0 +1,49 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: gcp-service-recreated-01
+family: gcp-topology
+description: 'A service deleted and recreated under the same name, recognised by the change in `Service.uid`. The old entity is retracted and the new one created: they are **not** one continuous entity (FR-025), and the evidence linking them is emitted as claims for the resolution layer rather than merged by the feeder. The new service serves a different revision, so an implementation that carried the split comparison across the recreation would emit a traffic shift that never happened. Synthetic structural twin: no identifier is derived from the organisation (contracts/sanitisation.md §7), and constitution VIII says synthetic-only data is not enough for a connector to be marked stable — US7''s recording replaces it by swapping payloads/, not by changing code.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T16:00:00Z
+
+queries:
+  # Before the recreation: the first service, serving the old revision. Asked an hour before the
+  # first poll, inside the first uid's life — it is retracted at its last sighting, the first poll.
+  - name: storefront-asof-before-recreation
+    kind: subgraph
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    valid_at: 2026-09-21T13:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+  # The hole: after the first uid's last sighting and before the second uid's createTime. Nothing
+  # the platform stated covers it, so nothing is asserted there (contracts/gcp-feeder.md §3.4).
+  - name: storefront-in-the-gap
+    kind: subgraph
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    valid_at: 2026-09-21T14:30:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both
+    expect_empty: "between the first uid's last sighting and the second uid's creation nobody stated what existed under this name, so nothing is asserted; an implementation that carried the first service across the recreation would answer here"
+  # After: the second service. The retraction of the first is what makes these two answers
+  # different rather than one entity whose configuration moved.
+  - name: storefront-asof-after-recreation
+    kind: subgraph
+    focus: gcp.cloudrun.service=twin-production/europe-west1/storefront
+    valid_at: 2026-09-21T20:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 2
+    direction: both

@@ -5,6 +5,7 @@ package projector
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -92,6 +93,12 @@ func (p *Projector) cascadeEdges(ctx context.Context, tx pgx.Tx, entityID string
 		if err != nil {
 			return err
 		}
+		existing = slices.DeleteFunc(existing, func(row *edgeRow) bool {
+			return laterUnassertedVersion(row, assertions, validEnd)
+		})
+		if len(existing) == 0 {
+			continue
+		}
 		planned := planRetract(edgeSegmentsOf(existing, assertions), eventID, validEnd, consequenceOf,
 			edgeAssertedAtFunc(assertions), edgeContentEqual(assertions))
 		if err := p.writeEdgeSegments(ctx, tx, key, existing, planned, assertions, eventID, observedAt); err != nil {
@@ -137,4 +144,31 @@ func (p *Projector) liveEdgeKeys(ctx context.Context, tx pgx.Tx, entityID string
 		return nil, fmt.Errorf("projector: read live edges of %s: %w", entityID, err)
 	}
 	return keys, nil
+}
+
+// laterUnassertedVersion reports an edge version the cascade must leave alone: one that begins at or
+// after the retraction's end and that no edge assertion produced.
+//
+// A `changed_by` edge is that kind of version. linkChange writes it from an `observe_change` with the
+// change's own interval, so the planner recovers no assertion for it, and planRetract drops a
+// segment with no assertion at or after the end. The cascade therefore removed every change edge on
+// the node that happened to be in the graph when the retraction was applied — including a change
+// that began AFTER the retraction's end, such as a recreated service's first rollout. Whether that
+// edge survived depended on whether the retraction or the change was applied first, and
+// gcp-service-recreated-01's shuffle is what found it (003 T066).
+//
+// A version that begins at or after the end does not "outlive" the endpoint the cascade exists to
+// protect — it is about a later time — so leaving it alone is the cascade's own rule applied to a
+// fact that carries no assertion to apply it through. Versions that do carry an assertion are
+// still decided by planRetract, which keeps them when they were asserted at or after the end.
+func laterUnassertedVersion(row *edgeRow, assertions map[string]edgeAssertion, validEnd time.Time) bool {
+	if row.valid.Start.Before(validEnd) {
+		return false
+	}
+	for _, id := range row.producedBy {
+		if _, asserted := assertions[id]; asserted {
+			return false
+		}
+	}
+	return true
 }

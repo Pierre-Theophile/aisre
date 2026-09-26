@@ -140,7 +140,7 @@ The creation change is marked **as not having moved production traffic**, and:
 - `latestCreatedRevision` and `latestReadyRevision` differing is precisely the "created but not yet
   serving" window, and is how the feeder recognises the state cheaply between polls.
 
-### 3.4 A recreation is one identifier with a hole in it, and the pair does not commute
+### 3.4 A recreation is one identifier with a hole in it
 
 A service deleted and recreated under one name is **not one continuous entity** (FR-025), and
 bitemporally that is one identifier carrying two valid intervals with a gap between them: the
@@ -154,14 +154,20 @@ The retraction's instant is the **last instant the old uid was observed** — no
 emphatically not the predecessor's own `createTime`, which would close its interval at its own start
 and erase its history.
 
-And **the pair is arrival-order dependent**, unavoidably. Both facts come from the same poll, because
-the uid change is how a recreation is recognised at all; closing an interval and opening it on one
-identifier do not commute. A conformance shuffle over a window containing both will therefore find a
-permutation that produces a different valid-time state, and that is a true statement about the model
-rather than a defect in the feeder. The alternatives are worse: withholding the successor for a poll
-interval loses information an investigation needs, and putting the uid in the ref would change a
-service's identifier on every recreation and break resolution against every source that knows it by
-name (data-model.md §2).
+And **each state of a service is named by the platform's version stamp**, the uid plus `updateTime`.
+That is what lets the successor be asserted at all, since a name-only event id made its assertion a
+duplicate of the predecessor's, and it is what lets any later state reach the node. The first state a
+run sees of a uid is valid from `createTime`; a later one from `updateTime` (T066; a restart limit is
+recorded as T184).
+
+*Corrected 2026-09-26 (003 T066).* This section used to say the retraction and the re-assertion
+"do not commute", so a conformance shuffle could never pass on a recreation. That was wrong. The
+projector's segment planner lets an assertion made at or after a retraction resurrect the entity in
+any delivery order. The failures had two causes, both now fixed. First, the successor's assertion
+was dropped as a duplicate, because a service's event id was its ref alone. Second, the successor's
+`changed_by` edge was dropped whenever the retraction was applied after it, because the retraction's
+cascade treated an edge no edge assertion produced as asserted before the retraction. `fixtures/gcp-service-recreated-01` is committed
+and passes all four conformance steps.
 
 ---
 

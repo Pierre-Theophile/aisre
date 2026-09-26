@@ -317,14 +317,25 @@ func serviceRecreatedFixture(t *testing.T) fixtureSpec {
 			pollPayloadAt(cycleAt(3), "complete", ""),
 		},
 		queries: `queries:
-  # Before the recreation: the first service, serving the old revision.
+  # Before the recreation: the first service, serving the old revision. Asked an hour before the
+  # first poll, inside the first uid's life — it is retracted at its last sighting, the first poll.
   - name: storefront-asof-before-recreation
+    kind: subgraph
+    focus: gcp.cloudrun.service=` + twinProject + `/` + twinRegion + `/` + twinService + `
+    valid_at: ` + rfc3339(fixtureStart.Add(-time.Hour)) + `
+    observed_at: ` + rfc3339(pinnedAt) + `
+    hops: 2
+    direction: both
+  # The hole: after the first uid's last sighting and before the second uid's createTime. Nothing
+  # the platform stated covers it, so nothing is asserted there (contracts/gcp-feeder.md §3.4).
+  - name: storefront-in-the-gap
     kind: subgraph
     focus: gcp.cloudrun.service=` + twinProject + `/` + twinRegion + `/` + twinService + `
     valid_at: ` + rfc3339(cycleAt(1)) + `
     observed_at: ` + rfc3339(pinnedAt) + `
     hops: 2
     direction: both
+    expect_empty: "between the first uid's last sighting and the second uid's creation nobody stated what existed under this name, so nothing is asserted; an implementation that carried the first service across the recreation would answer here"
   # After: the second service. The retraction of the first is what makes these two answers
   # different rather than one entity whose configuration moved.
   - name: storefront-asof-after-recreation
