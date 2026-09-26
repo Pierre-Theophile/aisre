@@ -135,6 +135,14 @@ type fixtureSpec struct {
 	options     github.MapOptions
 	queries     string
 	end         time.Time
+	// rejected are hand-authored events that must ALWAYS be refused, written to `rejected.jsonl`
+	// beside the recorded stream. They cannot come from the feeder, which never emits a telemetry
+	// payload — which is precisely why the refusal needs a fixture that carries one anyway (FR-067).
+	// Each entry is one JSON object, exactly as the event log receives it.
+	rejected []string
+	// expectRejected states the reason code each of those events must be refused with. A fixture
+	// that asserted only "it was refused" would pass on a refusal for the wrong reason.
+	expectRejected []record.Rejection
 }
 
 func (f fixtureSpec) clockEnd() time.Time {
@@ -157,7 +165,7 @@ func writeFixture(t *testing.T, fx fixtureSpec) {
 	// the query, which is how a mapper change is supposed to be noticed (004 T145); a golden that
 	// silently disappeared makes it pass. Recording is a separate, deliberate step for the same
 	// reason, so the generator must never do it by implication.
-	for _, generated := range []string{"payloads", "events.jsonl", "manifest.yaml"} {
+	for _, generated := range []string{"payloads", "events.jsonl", "rejected.jsonl", "manifest.yaml"} {
 		if err := os.RemoveAll(filepath.Join(dir, generated)); err != nil {
 			t.Fatalf("clear %s: %v", filepath.Join(dir, generated), err)
 		}
@@ -207,14 +215,28 @@ func writeFixture(t *testing.T, fx fixtureSpec) {
 		Sources:        []record.ManifestSource{record.SourceOf(desc)},
 		Start:          fixtureStart,
 		End:            fx.clockEnd(),
-		ExpectRejected: events.Rejections(),
+		ExpectRejected: append(events.Rejections(), fx.expectRejected...),
 	}); err != nil {
 		t.Fatalf("%s: write manifest: %v", dir, err)
+	}
+	if len(fx.rejected) > 0 {
+		writeRejected(t, dir, fx.rejected)
 	}
 	if fx.queries != "" {
 		appendQueries(t, dir, fx.queries)
 	}
 	t.Logf("%s: %d payloads, %d events", fx.dir, src.Count(), events.Accepted())
+}
+
+// writeRejected writes the hand-authored refusals beside the recorded stream, after WriteManifest:
+// WriteManifest names `rejected.jsonl` only when the file exists, so the manifest is told here.
+func writeRejected(t *testing.T, dir string, events []string) {
+	t.Helper()
+	path := filepath.Join(dir, "rejected.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(events, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	appendQueries(t, dir, "rejected_events: rejected.jsonl\n")
 }
 
 func appendQueries(t *testing.T, dir, queries string) {

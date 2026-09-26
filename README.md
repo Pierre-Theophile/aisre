@@ -21,12 +21,20 @@ The thesis, in five lines:
 5. The schema is the contribution, and it is open, regardless of which agent ends up sitting on
    top of it.
 
-The agent is not built yet. This repository is the substrate, and the substrate is finished.
+Feature 001 is the substrate. Features 002 to 004 put an investigator on top of it and feed it the
+cloud platform and the deploys an organisation actually runs.
 
 ## Status
 
-**Feature 001, the temporal graph core, is complete.** A command-line tool stands in for the
-agent: every query the agent will ask, a person can ask today.
+| feature | state |
+|---|---|
+| [001 Temporal graph core](specs/001-temporal-graph-core/spec.md) | complete |
+| [002 Investigation engine](specs/002-investigation-engine/spec.md) | complete; [quickstart run](specs/002-investigation-engine/quickstart-run-2026-09-18.md) on a clean machine |
+| [003 GCP integration](specs/003-gcp-integration/spec.md) | built and verified on synthetic twins ([quickstart run](specs/003-gcp-integration/quickstart-run-2026-09-22.md)); the recording campaign against a real estate and what can only be shown on it wait on a credential and a named signatory |
+| [004 Deploy feeders](specs/004-deploy-feeders/spec.md) (GitHub, Vercel) | built and verified on synthetic twins; waits on the same campaign, and on a real project-scoped Vercel token to establish the token regime |
+| [005 Datadog connector](specs/005-datadog-connector/spec.md) | specified; not yet planned |
+
+Each feature's `tasks.md` says exactly what is open and why. What follows is feature 001's part.
 
 What works, today, against a PostgreSQL 16 and nothing else:
 
@@ -61,9 +69,9 @@ The record: [spec](specs/001-temporal-graph-core/spec.md) ·
 [constitution](.specify/memory/constitution.md) ·
 [decisions](docs/decisions/) · [the live run that closed it](docs/benchmarks/live-run-2026-09-16.md)
 
-Not built, deliberately: any language model, any chat or graphical interface, and any write to a
-production system. Autonomous remediation is out of scope until the constitution is amended to
-permit it.
+Not built, deliberately: any chat or graphical interface, and any write to a production system.
+The investigator proposes and never acts, and autonomous remediation is out of scope until the
+constitution is amended to permit it.
 
 ## Quickstart
 

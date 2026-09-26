@@ -2,11 +2,13 @@
 
 # The GitHub connector
 
-> **Status: skeleton.** Only the sections feature 004's Phase 1 delivers are filled: the credential
-> and its scopes (§1), the published read-only operation surface (§2), and what is deliberately never
-> read (§3). Sections marked _(pending)_ name the task that fills them. A number written here that was
-> not measured is worse than an empty cell, because an operator approves this page and then stops
-> asking.
+> **Status: written in full against the code (004 T130), with two halves still unmeasured.** Every
+> section describes what the connector does today, and the two tables a test compares to the code (§2
+> and §6) are the code. What is not here is anything a live installation would have to supply: no
+> recording campaign has run (T114 is blocked on a credential and a signatory), so §5 publishes the
+> *shape* of what a cycle spends and **no calls-per-hour figure**, and the live-run half of SC-007 is
+> open. A number written here that was not measured is worse than an empty cell, because an operator
+> approves this page and then stops asking.
 
 What this connector reads, what it costs, and the proof it can only read. It exists so that the
 person who owns the organisation's GitHub installation approves **a set of operations rather than an
@@ -38,6 +40,14 @@ Nothing else is requested. In particular the installation asks for **no** `Secre
 `Issues`, `Pull requests`, `Members` or `Administration` permission at any access level, so the
 guarantees in §3 are enforced by the grant and not only by this connector's restraint.
 
+That last sentence holds for an installation configured as this table says, and the connector does not
+check that it was. The startup gate (§7) refuses any permission GitHub reports at a level other than
+`read` or `none`; it does **not** refuse a *read* permission beyond these four. An App that was also
+granted, say, `issues: read` passes the gate. `feed github --dry-run` prints every permission GitHub
+reported, so a wider grant is visible to the operator who runs it, but it is not a refusal. Where it
+exists, §3's guarantee for that area rests on the connector's published surface (§2) alone, and not on
+the grant.
+
 ## 2. The published read-only operation surface
 
 Every operation this connector may issue, by name. An operation absent from this list is refused by
@@ -68,19 +78,54 @@ that the process would refuse fails the build, and so does an operation the proc
 page does not publish. That matters more than it sounds: this page is what an operator approves, and
 an approval that can drift from the system is an approval of a document.
 
-### What this cannot prove
+### The three-layer gate
+
+The table above is enforced, not aspirational, because three separate things have to agree before a
+request leaves the process (FR-003, FR-004, SC-007). Each is a different fact and each fails
+differently, which is why there are three:
+
+| layer | what it checks | where | how it refuses |
+|---|---|---|---|
+| 1. the credential | GitHub's own `permissions` object, returned when the installation token is minted, holds no value but `read` or `none` | `internal/feeders/github/gate.go` over `feeder.CheckReadOnly` | the run does not start, and the refusal names each offending `permission=level`. It is re-run on every token renewal (§7.3), and a renewal it refuses ends the run |
+| 2. the surface | the operation is on the table above, and its method is `GET` or `HEAD` | `pkg/feeder/readonly.go`, with this table in `internal/feeders/github/requestlog.go` | `Surface.Issuable` returns an `UnpublishedOperationError` before any quota is spent. A table containing a write **panics at program start** (`MustReadOnlySurface`), so a binary with a writable surface cannot exist |
+| 3. the door | every call names its operation to `Issuer.Issue`, which checks layer 2, then the budget, and records the attempt in a per-operation request log | `pkg/feeder/issue.go`; the transport's one request method, `get`, calls it first and takes the HTTP method from the operation's own spelling | the call is not made, and the log records it as **blocked** (not on the surface) or **refused** (over budget), separately from what was issued |
+
+The page and the table are compared by `TestThePublishedPageAndTheEnforcedSurfaceAreTheSameList`, and
+`StateChanges()` on the surface is asserted to be zero.
+
+### What the gate cannot prove
 
 Worth stating narrowly, because a guarantee overstated is worse than one stated plainly:
 
 - **It proves what this connector may issue, not what the API does.** A `GET` that GitHub implements
-  with a side effect would pass every check here. Nothing inside a client can see that; the mitigation
+  with a side effect would pass every layer. Nothing inside a client can see that; the mitigation
   is that every operation is a published read of a published resource.
+- **Layer 1 refuses writes, not breadth.** A read permission beyond the four in §1 passes (see §1). The
+  guarantee that the connector never *reads* an area it was not published for is layer 2's, not the
+  credential's.
+- **Layer 1 is checked when a token is minted, not per call.** A token is proved at startup and again at
+  each renewal, five minutes before it expires. Between those two instants the connector does not ask
+  again.
+- **Layer 3 proves the method, not the exact path.** The HTTP method is taken from the operation, so a
+  published `GET` cannot be sent as anything else. The concrete URL is built at the call site from the
+  operation's own path template (`fill`), and `TestThePathIsDerivedFromThePublishedOperation` asserts
+  it. That is a test over today's call sites, not something the door enforces. A future call site that
+  issued one published read under another's name would still issue only a read, but it would be
+  metered and logged under the wrong row.
+- **The one-door property is structural, not scanned.** The contract describes a go/ast test that
+  every reader method issues a constant-named operation before reaching the client, which is how the GCP
+  connector is held (`internal/feeders/gcp/readonly_test.go`). This connector has no such scan. What
+  holds instead is that `transport.go` contains exactly one method that performs a request, and that
+  method calls `Issue` first. The one other request in the package is the token mint in `gate.go`, which
+  §7.1 explains.
 - **It says nothing about the installation's other holders.** If the same App is used by something
   else, this process's read-only proof is about this process.
-- **The live-run half of SC-007 is open.** What is verified today is the capability — the stronger
-  half, and the half a live run could not have given on its own — over the unit surface. The recorded
-  request log over the corpus is filled by the fixture work (US1), and the live figure when a
-  credential exists.
+- **The recorded-request-log half of SC-007 does not exist yet, and neither does the live-run half.**
+  The request log is kept in memory by `Issuer.RequestLog()`, but `feed github` neither prints nor
+  persists it. A replay reads payloads from disk and issues no request at all, so the fixture corpus
+  has no request log to inspect. What is verified today is the capability, over the unit surface: the
+  stronger half, and the half a live run could not have given on its own. The live figure needs a
+  credential (T114).
 
 ## 3. What is deliberately never read
 
@@ -105,13 +150,98 @@ release; writing a comment, a check or a commit status.
 
 ## 4. The inbound webhook
 
-_(pending — T039–T042.)_ It is a doorbell in the other direction: something calls us. It enqueues
-"poll now" and its body is never parsed, trusted or stored (FR-053), so it issues no GitHub operation
-of its own and appears nowhere in §2.
+It is a doorbell in the other direction: something calls us. It means "poll now" and nothing else.
+Its body is never parsed, trusted or stored (FR-053), so it issues no GitHub operation of its own and
+appears nowhere in §2.
+
+**It is built and it is not wired.** `internal/feeders/github/doorbell.go` implements the endpoint as
+an `http.Handler` (T039–T042), and its tests carry every guarantee below. But `feed github` serves no
+HTTP endpoint and has no flag for a webhook secret, and nothing connects a ring to the poller. A webhook
+configured on the GitHub side today reaches nothing, and the connector runs on polling alone. That is
+the correct degraded state rather than a broken one, because polling is the source of truth whether or
+not a doorbell exists (FR-052). A doorbell only ever makes a scheduled poll happen sooner.
+
+### Why it cannot copy the GCP doorbell's guarantee
+
+The GCP doorbell *pulls*. It asks a subscription how many messages are waiting and gets back an int, so
+no notification body ever enters the process. GitHub *pushes*, and it signs **over the body**, so
+verifying the sender requires holding the bytes. The body arrives whether anybody wants it or not. The
+guarantee here is therefore narrower, and it lives in the function signatures, where a reviewer can
+see it:
+
+| rule | how it is enforced |
+|---|---|
+| the body is never parsed or stored | it exists as a local inside `ServeHTTP`, bounded at `MaxDoorbellBody` (64 KiB). `Doorbell` has no field it could be kept in, and the package has **no type a webhook payload could be decoded into** |
+| only one function sees the bytes | `verify` takes them and returns a **bool**. It cannot hand them anywhere |
+| a notification becomes at most a number | `Ring` takes an **int**, as the GCP doorbell's does. Whatever the body said, it becomes a count |
+| the sender is verified in constant time | HMAC-SHA256 over the body against `X-Hub-Signature-256`, compared with `hmac.Equal`. The older `X-Hub-Signature` (HMAC-SHA1) is refused on its prefix, because accepting it would let the sender choose how strong the check is |
+| a flood costs at most one poll per interval | a token bucket, one token per `DefaultDoorbellMinInterval` (the poll interval), burst `DefaultDoorbellBurst` (1). A thousand notifications inside one interval, forged or genuine, earn one poll |
+| failures are counted, by reason | `unsigned`, `bad_signature`, `body_too_large`, `wrong_method` and `rate_limited`, beside `poll_now`, in `DoorbellReport`. A doorbell being probed and a doorbell nobody rings are different facts, and only the counters tell them apart |
+| a doorbell without a secret does not exist | `NewDoorbell` refuses an empty secret (`ErrNoSecret`). An unauthenticated webhook is not a weaker doorbell but a public endpoint that makes this connector poll |
+
+The response says nothing about what was decided: `204` for any verified notification, including one
+the bucket dropped, and `401` for anything that did not verify. A distinguishable response would let a
+prober measure the bucket.
+
+### What the doorbell cannot prove
+
+- **A genuine notification can be replayed, and it verifies.** GitHub's signature covers the body and
+  nothing else: no timestamp, no nonce. The endpoint keeps no record of delivery ids, so a captured,
+  correctly signed notification sent again passes `verify`. What bounds it is the bucket, not the
+  signature. A replay earns at most the one poll per interval that anything else earns, and that poll
+  reads the API, so the worst it achieves is one extra read of the truth (SC-012).
+- **Constant time is asserted from the source, not from behaviour.** `hmac.Equal` and `==` return the
+  same answer for every input and differ only in how long they take, so no functional test can tell
+  them apart. A timing test on a shared CI runner would either flake or pass on the vulnerable code.
+  `TestTheSignatureComparisonIsConstantTime` therefore reads `doorbell.go` and requires the named
+  function. It proves the call is there. It does not prove the comparison's timing.
+- **A fixture cannot carry the central claim.** `fixtures/github-doorbell-forged-01` pins the rollout
+  and its single version. It cannot show that a second reading of the same window adds no fact, because
+  a replay applies a recorded event log that deduplicates on event id before anything compares
+  contents. `TestTwoReadingsOfOneWindowProduceOneChange` carries that claim instead: a change's event id
+  derives from the deployment and its target, and never from the poll instant, the attempt or a
+  notification's delivery id.
 
 ## 5. What it costs
 
-_(pending — T035, T037, and the usage report.)_ The budget is a share of the **remaining** quota:
+**The number an operator approves is not on this page yet, and that is stated rather than filled
+in.** FR-076 asks for calls per hour per area at the default cadence against an estate of a stated
+size, matched against a recording. No recording exists: the campaign (T114) is blocked on a read-only
+installation and a named signatory. `feed github` also does not print its own usage. The budget keeps
+per-family spending (`Issuer.Report()`) and a per-operation request log (`Issuer.RequestLog()`), but
+nothing in `internal/cli` calls either, so a live run leaves no usage report behind. FR-075's report is
+unwired and no task in `tasks.md` names it.
+
+What can be published without measuring is the **shape** of a cycle: which reads it makes, and what
+each one grows with. Every figure below is a constant in the code, not an observation.
+
+| read | calls per cycle | grows with |
+|---|---|---|
+| `GET /rate_limit` | 1 | nothing |
+| `GET /installation/repositories` | one per page of 100 repositories in the grant | the size of the grant |
+| `GET /repos/{owner}/{repo}/actions/runs` | per repository, one per page of runs created since the window opened (`created>=`) | activity |
+| `GET /repos/{owner}/{repo}/deployments` | per repository **and per production environment**, one per page of that environment's **whole** deployment history | **history, not activity**: GitHub takes no time filter on this list, so the window is applied after decoding |
+| `GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses` | one per page, for each deployment created or updated in the window, and for each one still carried unsettled | activity |
+| `GET /repos/{owner}/{repo}/deployments/{deployment_id}` | one per deployment carried unsettled that the list no longer returned, for up to `PendingHorizon` (24 h) | unfinished rollouts |
+| `GET /repos/{owner}/{repo}/releases` | per repository, one per page of the **whole** release history | **history**: no time filter here either |
+| `GET /repos/{owner}/{repo}/actions/runs/{run_id}`, `GET /repos/{owner}/{repo}/releases/{release_id}` | none. Both are published and neither is issued by the live cycle today | — |
+
+Pages are 100 items (`perPage`, GitHub's maximum), and a list stops at `pageCap`, 20 pages. At the
+default `--interval` of five minutes, the per-hour figure is at most twelve times the per-cycle one:
+the interval is a wait between the end of one cycle and the start of the next, so a slow cycle makes
+fewer of them.
+
+**One consequence of the page cap is a limit, not a cost.** The deployment and release lists read
+history, so a repository whose deployment history in one environment, or whose release history, runs
+past 20 pages makes that list stop at the cap on **every** cycle. A capped list is a truncated read, and
+a truncated read makes the cycle `partial` (§8), so the window never advances for that installation and
+every checkpoint declares a gap. Nothing is lost unless more than 20 pages of 100 changed inside one
+window: GitHub lists newest first, so the pages the window needs come first. But the checkpoint will report partial coverage indefinitely. The code reads this
+way. It has not been observed, because no installation that large has been read.
+
+### How the budget paces a cycle
+
+The budget is a share of the **remaining** quota:
 `GET /rate_limit` for the cycle's opening reading and the usage report, and the `x-ratelimit-*`
 response headers for the in-cycle decrement. The endpoint alone would let a cycle overspend between
 readings; the headers alone would lose the other resource families.
@@ -130,8 +260,8 @@ allowance on measuring itself.
 
 ### 5.1 The cycle's first call, and why a fallback allowance is required
 
-A family is learned from a response, so before the first response of a cycle there is no family. That
-one call is metered against **`unobserved`** — not against a guessed `core`, because a guess that turns
+A family is learned from a response and remembered per operation, so an operation's first call has no
+family. That call is metered against **`unobserved`** — not against a guessed `core`, because a guess that turns
 out wrong spends one bucket's allowance out of another's, and not against `unnamed`, which already means
 something else (the platform answered with numbers but did not name the bucket). A usage report showing
 anything beyond the cycle's opening call under `unobserved` is a signal in its own right: the
@@ -167,6 +297,33 @@ amount of waiting fixes it — so a `403` counts as rate limiting only where the
 by asking to be retried or by reporting nothing remaining. `429` is unambiguous and is always a wait.
 The rate-limit headers on a refusal are read before the status is judged, because a `403` for a spent
 allowance is the response whose numbers matter most.
+
+### 5.4 Stopping for quota, and what is deferred
+
+A call the budget refuses returns a typed `feeder.QuotaYieldError`, carrying the family, what was left,
+the reserve and the platform's reset instant. It is never an empty result (FR-073). A list that yields
+part-way returns what it read, with the yield as the cause of its `PartialListError`. The cycle becomes
+`partial`, and the poll marker's reason names the read that stopped, so "we stopped for quota" and "we
+looked and found nothing" do not read alike in the checkpoint.
+
+**The deferral order is the read order, and nothing more deliberate than that.** FR-073 asks for a
+*published* priority order. No separate one exists in the code: when the budget yields, what is
+deferred is every read after that point in §8's order — the remaining workflow runs, deployments,
+statuses and releases of the current repository, then the repositories after it by name. This page
+publishes that order because it is the one the code follows. It is not a ranking anybody chose by
+value, and a repository named late in the alphabet is the first to go unread.
+
+A primary-limit exhaustion never reaches the in-list wait of §5.3: the budget sees zero remaining in the
+response headers and yields at the door on the next call. The wait is for a refusal that arrives with
+allowance still on the clock, which is what a secondary limit is. It is bounded by `MaxRateLimitWait`
+(ten minutes) across one list, and the refused page is re-read from GitHub's own cursor rather than the
+list restarting (FR-074). A refusal that states no instant at all is not guessed at: the list is
+reported partial rather than retried on a backoff this connector invented.
+
+The wait lives in the shared paginated read, which the deployment, status and release lists use. The
+installation's repositories and the workflow runs are paged by loops of their own, because GitHub wraps
+both in an object, and those loops do not wait: a rate-limited page there makes the read partial, and
+the next cycle re-reads the same window.
 
 ## 6. What a deployment status means
 
@@ -224,7 +381,8 @@ object and `repository_selection` — so `feed github --dry-run` answers *"is th
 and what can it reach"* while **issuing no operation from §2 at all**.
 
 That makes this gate the **strong** form of FR-003: the permissions are the platform's own statement,
-checked on every cycle. The Vercel connector's rests on an operator's assertion, because Vercel reports
+checked every time a token is minted — at startup and at each renewal (§7.3), not on each cycle or each
+call. The Vercel connector's rests on an operator's assertion, because Vercel reports
 nothing about write capability — and a checkpoint that printed "read-only: yes" for both would flatten
 the stronger claim into the weaker one, which is why the evidence is printed as `platform_reported` or
 `operator_asserted` rather than as a verdict

@@ -55,6 +55,7 @@ func newFixtureCommand(global *globalOptions) *cobra.Command {
 		newFixtureAssembleCommand(global),
 		newFixtureBenchCommand(global),
 		newFixtureCampaignCommand(global),
+		newFixtureCoverageCommand(global),
 	)
 	return cmd
 }

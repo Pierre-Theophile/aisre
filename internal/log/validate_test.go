@@ -39,6 +39,8 @@ func envelope(body any) *graphv1.EventEnvelope {
 		env.Body = &graphv1.EventEnvelope_RetractNode{RetractNode: b}
 	case *graphv1.IdentityClaim:
 		env.Body = &graphv1.EventEnvelope_IdentityClaim{IdentityClaim: b}
+	case *graphv1.ObserveChange:
+		env.Body = &graphv1.EventEnvelope_ObserveChange{ObserveChange: b}
 	case nil:
 	}
 	return env
@@ -317,4 +319,77 @@ func mustStruct(m map[string]any) *structpb.Struct {
 		panic(err)
 	}
 	return s
+}
+
+// A change carries properties and pointers exactly as a node does, so the telemetry rule applies to
+// it unchanged. It did not: ObserveChange was validated for its ref, kind, valid time and targets and
+// nothing else, and 004 T110's deploy-telemetry-rejection-01 found that by having a canary's
+// error-rate series accepted onto a rollout.
+func TestValidateChangeTelemetry(t *testing.T) {
+	rollout := func(props map[string]any) *graphv1.EventEnvelope {
+		return envelope(&graphv1.ObserveChange{
+			Ref:     &graphv1.Ref{Namespace: "github.change", Value: "repositories/1/deployments/2"},
+			Change:  &graphv1.Change{Kind: graphv1.ChangeKind_ROLLOUT},
+			ValidAt: validAt(),
+			Props:   mustStruct(props),
+		})
+	}
+	cases := []struct {
+		name       string
+		env        *graphv1.EventEnvelope
+		wantCode   string
+		wantDetail string
+	}{
+		{name: "a plain rollout", env: rollout(map[string]any{"deployment.environment.name": "production"})},
+		{
+			name:       "numeric series",
+			env:        rollout(map[string]any{"sre.github.canary_error_rate": []any{0.2, 3.1}}),
+			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantDetail: "observe_change.props.sre.github.canary_error_rate",
+		},
+		{
+			name: "nested denied key",
+			env: rollout(map[string]any{
+				"sre.github.failed_step": map[string]any{"log_body": "502 upstream connect error"},
+			}),
+			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantDetail: "observe_change.props.sre.github.failed_step.log_body",
+		},
+		{
+			name:       "oversized property",
+			env:        rollout(map[string]any{"sre.github.deployment_payload": strings.Repeat("x", 5000)}),
+			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantDetail: "observe_change.props.sre.github.deployment_payload",
+		},
+		{
+			name: "oversized pointer selector",
+			env: func() *graphv1.EventEnvelope {
+				env := rollout(nil)
+				env.GetObserveChange().Pointers = []*graphv1.Pointer{{
+					Kind: graphv1.PointerKind_LOG, BackendKind: "github", Selector: strings.Repeat("x", 5000),
+				}}
+				return env
+			}(),
+			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantDetail: "observe_change.pointers[0].selector",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rejection := eventlog.Validate(tc.env, nil)
+			if tc.wantCode == "" {
+				if rejection != nil {
+					t.Fatalf("rejected %s: %s", rejection.ReasonCode, rejection.ReasonDetail)
+				}
+				return
+			}
+			if rejection == nil {
+				t.Fatalf("accepted; want %s", tc.wantCode)
+			}
+			if rejection.ReasonCode != tc.wantCode || !strings.Contains(rejection.ReasonDetail, tc.wantDetail) {
+				t.Fatalf("got %s %q; want %s naming %q",
+					rejection.ReasonCode, rejection.ReasonDetail, tc.wantCode, tc.wantDetail)
+			}
+		})
+	}
 }

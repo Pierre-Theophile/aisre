@@ -1,0 +1,11 @@
+{"deployments":[{"uid":"dpl_web_42","name":"web","projectId":"prj_web","target":"production",
+		"readyState":"READY","readySubstate":"PROMOTED","source":"git","isRollbackCandidate":false,
+		"inspectorUrl":"https://vercel.com/twin/web/dpl_web_42",
+		"creator":{"uid":"usr_release","type":"user"},
+		"attribution":{"commitMeta":{"githubCommitSha":"9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"}},
+		"createdAt":1790000100000,"buildingAt":1790000160000,"ready":1790000340000},{"uid":"dpl_web_preview","name":"web","projectId":"prj_web","target":"",
+		"readyState":"READY","readySubstate":"PROMOTED","source":"git","isRollbackCandidate":false,
+		"inspectorUrl":"https://vercel.com/twin/web/dpl_web_preview",
+		"creator":{"uid":"usr_release","type":"user"},
+		"attribution":{"commitMeta":{"githubCommitSha":"9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"}},
+		"createdAt":1790000100000,"buildingAt":1790000160000,"ready":1790000340000}]}
