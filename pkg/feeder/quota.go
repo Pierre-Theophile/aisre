@@ -78,6 +78,9 @@ type Reading struct {
 	// Source is the provenance, and it travels with the numbers so a report cannot present a
 	// fallback as a measurement.
 	Source QuotaSource
+	// Period is the length of the platform's rate-limit window where it states one (Datadog's
+	// `X-RateLimit-Period`). Zero means not stated.
+	Period time.Duration
 }
 
 // ReadingFromHeaders reads one response's rate-limit headers.
@@ -107,6 +110,46 @@ func ReadingFromHeaders(h http.Header) (Reading, bool) {
 		// guessed from the path: a family this code invented would be a family the usage report
 		// attributes wrongly, and the numbers are still true of whatever bucket they came from.
 		reading.Family = "unnamed"
+	}
+	return reading, true
+}
+
+// DatadogReadingFromHeaders reads Datadog's rate-limit headers (005 T021; research §2.3).
+//
+// It is a second reader rather than a flag on ReadingFromHeaders because the two platforms spell two
+// things differently, and the GitHub reader applied to Datadog is wrong silently rather than loudly:
+//
+//   - `X-RateLimit-Reset` is **seconds until** the window resets, not an epoch. Read as an epoch it
+//     is an instant in January 1970, so every bucket would look already refilled.
+//   - The bucket is named by `X-RateLimit-Name`, and different endpoints can share one name, which is
+//     exactly what makes it the right key for a budget: two endpoints drawing on one bucket must be
+//     budgeted as one. GitHub's reader looks for `X-RateLimit-Resource` and would call every Datadog
+//     bucket "unnamed", merging distinct buckets into one.
+//
+// receivedAt is the instant the response was received. The reset is relative to it, so the reading is
+// a function of the response and that instant — in recorded mode the recorded instant — and never of
+// the wall clock at replay (FR-005).
+func DatadogReadingFromHeaders(h http.Header, receivedAt time.Time) (Reading, bool) {
+	limit, hasLimit := headerInt(h, "X-RateLimit-Limit")
+	remaining, hasRemaining := headerInt(h, "X-RateLimit-Remaining")
+	if !hasLimit || !hasRemaining {
+		return Reading{}, false
+	}
+	reading := Reading{
+		Family:    strings.TrimSpace(h.Get("X-RateLimit-Name")),
+		Limit:     limit,
+		Remaining: remaining,
+		Used:      max(limit-remaining, 0),
+		Source:    QuotaReported,
+	}
+	if seconds, ok := headerInt(h, "X-RateLimit-Reset"); ok && seconds >= 0 && !receivedAt.IsZero() {
+		reading.Reset = receivedAt.UTC().Add(time.Duration(seconds) * time.Second)
+	}
+	if seconds, ok := headerInt(h, "X-RateLimit-Period"); ok && seconds > 0 {
+		reading.Period = time.Duration(seconds) * time.Second
+	}
+	if reading.Family == "" {
+		reading.Family = "unnamed" // as ReadingFromHeaders: never a bucket name this code invented
 	}
 	return reading, true
 }

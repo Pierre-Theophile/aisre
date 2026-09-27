@@ -11,6 +11,7 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	feedergcp "github.com/Pierre-Theophile/aisre/internal/feeders/gcp"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder/versionstamp"
 )
 
 // `errors_by_version`: the error rate split by Cloud Run revision (T097, T098; FR-089).
@@ -151,13 +152,20 @@ func (b *Backend) errorsByVersion(ctx context.Context, term *investigationv1.Err
 		if acc.total > 0 {
 			rate = round6(acc.errors / acc.total)
 		}
+		// The same rule every log backend applies (pkg/feeder/versionstamp, 005 FR-040d): a Cloud Run
+		// revision name is a platform-assigned release identifier, so it becomes deploy.release. The
+		// image digest would be the stronger join, but this backend sees only the revision label, and
+		// reading the digest from the graph would make a telemetry backend a graph reader.
+		deployRef, absent := versionstamp.Normalise(revision)
 		rows = append(rows, &investigationv1.VersionBreakdown{
-			Version:   revision,
-			Errors:    int64(acc.errors),
-			Total:     int64(acc.total),
-			ErrorRate: rate,
-			JoinKeys:  joinKeys(facts, revision, acc.firstSeen),
-			DrillDown: b.mint(key, handleMetric, selector, revision, window, facts),
+			Version:               revision,
+			Errors:                int64(acc.errors),
+			Total:                 int64(acc.total),
+			ErrorRate:             rate,
+			JoinKeys:              joinKeys(facts, revision, acc.firstSeen),
+			DrillDown:             b.mint(key, handleMetric, selector, revision, window, facts),
+			DeployRef:             deployRef,
+			DeployRefAbsentReason: absent,
 		})
 	}
 

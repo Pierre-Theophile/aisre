@@ -767,8 +767,7 @@ func newCampaignParityCommand(global *globalOptions) *cobra.Command {
 			"of the graph alone would pass exactly the case FR-008 exists to prevent.\n\n" +
 			"Both sides are recordings, because a live run's output IS one: `feed … --record` writes\n" +
 			"it. So this is runnable today against any two recordings — which is how it is tested —\n" +
-			"and the run FR-143 actually asks for needs a live GCP credential, which `feed gcp`\n" +
-			"does not yet have a poller for.",
+			"and the run FR-143 actually asks for needs a live credential for the platform recorded.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(recorded) == "" {
