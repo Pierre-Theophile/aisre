@@ -1,0 +1,30 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-errors-by-version-01
+family: datadog-backend
+description: 'errors_by_version''s groups and what each names. `checkout` stamps the deployed commit on its logs; a new commit ships at 14:10 and a payment error starts; a crash handler writes errors with no stamp; and a batch worker built with `git rev-parse --short` stamps an abbreviated sha. world/ is errors_by_version over the window around the deploy, and the drill-downs and exemplars behind its groups, followed once. Each full commit''s group names deploy.commit_sha; the abbreviated group names nothing and says ABBREVIATED_SHA, because its full form cannot be recovered; the unstamped lines are a group of their own, NOT_A_STABLE_IDENTIFIER. internal/backends/datadog asserts all of it against the world on every run, and that the world answers as the live twin does. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T12:59:00Z
+    end: 2026-09-21T15:30:00Z
+
+queries:
+  # The service node as the connector states it: its log-service correlation, and no property of it
+  # holding a measurement.
+  - name: checkout-log-service
+    kind: subgraph
+    focus: datadog.service=production/checkout
+    valid_at: 2026-09-21T15:30:00Z
+    observed_at: 2026-09-21T15:30:00Z
+    hops: 1
+    direction: both

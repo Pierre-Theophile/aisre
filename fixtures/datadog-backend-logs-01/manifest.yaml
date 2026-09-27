@@ -1,0 +1,34 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-backend-logs-01
+family: datadog-backend
+description: 'The Datadog telemetry backend over a synthetic structural twin. `checkout` in production stamps the deployed commit on its logs; at 14:10 a new commit ships and a payment error starts, and from 14:15 a crash handler writes errors with no stamp. world/ is the cross product of the telemetry algebra over the service''s log and monitor pointers and one window pair around the deploy, plus every drill-down and exemplar behind the handles those answers minted, followed once; internal/backends/datadog asserts on every run that it answers every question exactly as the live twin does and that no span or APM call was made. The graph half is the connector''s own log-source events and one event the graph must refuse: the service node carrying per-minute error counts in a property, which is telemetry (FR-078). Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T12:59:00Z
+    end: 2026-09-21T15:30:00Z
+expect_rejected:
+    - event_id: datadog:twin:telemetry-error-counts-1
+      reason_code: telemetry_payload
+rejected_events: rejected.jsonl
+
+queries:
+  # The service node as the connector states it: its log-service correlation, and no property of it
+  # holding a measurement.
+  - name: checkout-log-service
+    kind: subgraph
+    focus: datadog.service=production/checkout
+    valid_at: 2026-09-21T15:30:00Z
+    observed_at: 2026-09-21T15:30:00Z
+    hops: 1
+    direction: both
