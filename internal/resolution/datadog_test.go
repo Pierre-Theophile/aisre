@@ -11,44 +11,47 @@ import (
 )
 
 // C9: a Datadog log service is an OpenTelemetry service, in the same environment (005 T015–T016).
+// The Datadog side is a correlation key and the OpenTelemetry side an identity claim; the rule runs
+// from both.
 
-func datadogLogServiceClaim(entityID, source, name, environment string) resolution.Claim {
+func datadogLogServiceKey(entityID, source, name, environment string) resolution.Correlation {
 	attrs := map[string]string{}
 	if environment != "" {
 		attrs[resolution.AttrEnvironment] = environment
 	}
-	return resolution.Claim{
-		ClaimID: "claim-dd-" + source + "-" + name + "-" + environment, EntityID: entityID,
-		EntityType: graph.NodeTypeService, SourceID: source,
-		EventID: source + ":claim:" + name, AppendedSeq: 50,
+	return resolution.Correlation{
+		CorrelationID: "corr-dd-" + source + "-" + entityID, EntityID: entityID,
+		EntityType: graph.NodeTypeService, SourceID: source, EventID: source + ":corr:" + name,
 		Namespace: resolution.NamespaceDatadogLogService, Value: name, Attributes: attrs,
 	}
 }
 
-func evalBothWays(t *testing.T, a, b resolution.Claim) (fromA, fromB bool) {
+// evalBothWays evaluates the pair from each side: the correlation arriving second, and the claim.
+func evalBothWays(t *testing.T, key resolution.Correlation, claim resolution.Claim) (fromKey, fromClaim bool) {
 	t.Helper()
-	store := fakeStore{claims: []resolution.Claim{a, b}}
-	ma, err := resolution.Evaluate(context.Background(), store, a)
+	store := fakeStore{claims: []resolution.Claim{claim}, correlations: []resolution.Correlation{key}}
+	mk, err := resolution.EvaluateCorrelation(context.Background(), store, key)
+	if err != nil {
+		t.Fatalf("EvaluateCorrelation: %v", err)
+	}
+	mc, err := resolution.Evaluate(context.Background(), store, claim)
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
-	mb, err := resolution.Evaluate(context.Background(), store, b)
-	if err != nil {
-		t.Fatalf("Evaluate: %v", err)
-	}
-	return hasRule(ma, "C9"), hasRule(mb, "C9")
+	return hasRule(mk, "C9"), hasRule(mc, "C9")
 }
 
-// The merge fires from either side, so whichever claim arrives second finds the first.
+// The merge fires from either side, so whichever arrives second finds the first.
 func TestC9MergesALogServiceWithAnOTelServiceInTheSameEnvironment(t *testing.T) {
-	logs := datadogLogServiceClaim("entity-dd", "datadog:org", "checkout", "production")
-	for name, otel := range map[string]resolution.Claim{
+	key := datadogLogServiceKey("entity-dd", "datadog:org", "checkout", "production")
+	for name, claim := range map[string]resolution.Claim{
 		"an observed name":          observedServiceNameClaim("entity-otel", "checkout", "production"),
 		"a Cloud Run declared name": gcpDeclaredServiceNameClaim("entity-cloudrun", "checkout", "production"),
 	} {
-		fromLogs, fromOTel := evalBothWays(t, logs, otel)
-		if !fromLogs || !fromOTel {
-			t.Errorf("%s: C9 fired from the log side %v and from the OTel side %v; it must fire from both", name, fromLogs, fromOTel)
+		fromKey, fromClaim := evalBothWays(t, key, claim)
+		if !fromKey || !fromClaim {
+			t.Errorf("%s: C9 fired from the correlation side %v and from the claim side %v; it must fire "+
+				"from both, or the graph depends on arrival order", name, fromKey, fromClaim)
 		}
 	}
 }
@@ -61,9 +64,9 @@ func TestC9RefusesAMissingOrDisagreeingEnvironment(t *testing.T) {
 		{"only the OTel side states one", "", "production"},
 		{"the two disagree", "staging", "production"},
 	} {
-		logs := datadogLogServiceClaim("entity-dd", "datadog:org", "checkout", tc.logEnv)
-		otel := observedServiceNameClaim("entity-otel", "checkout", tc.otelEnv)
-		if a, b := evalBothWays(t, logs, otel); a || b {
+		key := datadogLogServiceKey("entity-dd", "datadog:org", "checkout", tc.logEnv)
+		claim := observedServiceNameClaim("entity-otel", "checkout", tc.otelEnv)
+		if a, b := evalBothWays(t, key, claim); a || b {
 			t.Errorf("C9 fired with %s; a certain rule may not gamble on staging being production", tc.name)
 		}
 	}
@@ -71,36 +74,36 @@ func TestC9RefusesAMissingOrDisagreeingEnvironment(t *testing.T) {
 
 // Names compare exactly: a one-sided case-insensitive match would depend on arrival order.
 func TestC9ComparesNamesExactly(t *testing.T) {
-	logs := datadogLogServiceClaim("entity-dd", "datadog:org", "checkout", "production")
-	otel := observedServiceNameClaim("entity-otel", "Checkout", "production")
-	if a, b := evalBothWays(t, logs, otel); a || b {
+	key := datadogLogServiceKey("entity-dd", "datadog:org", "checkout", "production")
+	claim := observedServiceNameClaim("entity-otel", "Checkout", "production")
+	if a, b := evalBothWays(t, key, claim); a || b {
 		t.Error("C9 merged `checkout` with `Checkout`")
 	}
 }
 
-// Stated Kubernetes namespaces or clusters that disagree keep the two apart.
+// Stated Kubernetes placements that disagree keep the two apart.
 func TestC9RequiresAgreeingKubernetesPlacement(t *testing.T) {
-	logs := datadogLogServiceClaim("entity-dd", "datadog:org", "checkout", "production")
-	logs.Attributes[resolution.AttrK8sCluster] = "eu-1"
-	otel := observedServiceNameClaim("entity-otel", "checkout", "production")
-	otel.Attributes[resolution.AttrK8sCluster] = "us-1"
-	if a, b := evalBothWays(t, logs, otel); a || b {
+	key := datadogLogServiceKey("entity-dd", "datadog:org", "checkout", "production")
+	key.Attributes[resolution.AttrK8sCluster] = "eu-1"
+	claim := observedServiceNameClaim("entity-otel", "checkout", "production")
+	claim.Attributes[resolution.AttrK8sCluster] = "us-1"
+	if a, b := evalBothWays(t, key, claim); a || b {
 		t.Error("C9 merged across two clusters")
 	}
-	otel.Attributes[resolution.AttrK8sCluster] = "eu-1"
-	if a, b := evalBothWays(t, logs, otel); !a || !b {
+	claim.Attributes[resolution.AttrK8sCluster] = "eu-1"
+	if a, b := evalBothWays(t, key, claim); !a || !b {
 		t.Error("C9 did not merge with agreeing clusters")
 	}
 }
 
-// Two Datadog organisations stating the same log service name are two sources and two services
-// (FR-062): neither C1 nor C9 merges them.
+// Two organisations' log services with one name are two services (FR-062): no rule merges two
+// correlation keys, and the namespace is not identifying.
 func TestTwoOrganisationsSameLogServiceNeverMerge(t *testing.T) {
-	a := datadogLogServiceClaim("entity-org-a", "datadog:org-a", "checkout", "production")
-	b := datadogLogServiceClaim("entity-org-b", "datadog:org-b", "checkout", "production")
-	store := fakeStore{claims: []resolution.Claim{a, b}}
-	for _, claim := range []resolution.Claim{a, b} {
-		matches, err := resolution.Evaluate(context.Background(), store, claim)
+	a := datadogLogServiceKey("entity-org-a", "datadog:org-a", "checkout", "production")
+	b := datadogLogServiceKey("entity-org-b", "datadog:org-b", "checkout", "production")
+	store := fakeStore{correlations: []resolution.Correlation{a, b}}
+	for _, key := range []resolution.Correlation{a, b} {
+		matches, err := resolution.EvaluateCorrelation(context.Background(), store, key)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,11 +116,11 @@ func TestTwoOrganisationsSameLogServiceNeverMerge(t *testing.T) {
 	}
 }
 
-// One source claiming both sides is one opinion, not corroboration.
+// One source stating both sides is one opinion, not corroboration.
 func TestC9NeedsTwoSources(t *testing.T) {
-	logs := datadogLogServiceClaim("entity-dd", "otel:nova", "checkout", "production")
-	otel := observedServiceNameClaim("entity-otel", "checkout", "production")
-	if a, b := evalBothWays(t, logs, otel); a || b {
-		t.Error("C9 merged two claims from one source")
+	key := datadogLogServiceKey("entity-dd", "otel:nova", "checkout", "production")
+	claim := observedServiceNameClaim("entity-otel", "checkout", "production")
+	if a, b := evalBothWays(t, key, claim); a || b {
+		t.Error("C9 merged two observations from one source")
 	}
 }

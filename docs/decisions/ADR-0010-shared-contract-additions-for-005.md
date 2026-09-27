@@ -54,14 +54,23 @@ documentation, rather than per HTTP method.
 
 ### Item 4 — C9: a Datadog log service is an OpenTelemetry service, in the same environment
 
-A new **certain** rule. A `datadog.log_service` claim and an `otel.service.name` claim (observed, or a
-platform's declared name) are one entity when the names are equal after the published normalisation,
+A new **certain** rule. A `datadog.log_service` **correlation key** and an `otel.service.name` claim
+(observed, or a platform's declared name) are one entity when the names are equal after the published normalisation,
 **both environments are stated and equal**, and any Kubernetes namespace or cluster both sides state
 agrees. It is the specification's FR-059, generalised from APM services to log sources.
 
 Datadog does not claim `otel.service.name` directly because C1 merges on any identifying namespace
 without checking the environment, and a staging service would merge into production. That C1 hazard
 predates this feature; it is recorded as a known limit for its own change, not fixed here.
+
+**The Datadog side is a correlation key, and C9 is the first cross-kind rule.** One source states the
+same service name for its production and its staging node, and an identity claim is unique per
+(namespace, value, source), so as a claim the name landed on whichever node was processed first —
+`datadog-log-service-merge-01`'s shuffle step caught it, as feature 004 found for `deploy.*`. As a
+correlation key it is shared, which is what it is. That makes C9 pair a correlation with a claim, and a
+rule triggered by only one of them fires in one arrival order only. The registry therefore gains
+`Rule.CrossKind`: the one case allowed both evaluators, because each looks up only the other kind, so a
+pair is found once by whichever event is stored second. An ordinary rule with both still panics.
 
 ## Consequences
 
