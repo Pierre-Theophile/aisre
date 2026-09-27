@@ -65,8 +65,11 @@ func (f *Feeder) emitInstance(ctx context.Context, desc feeder.Description, em f
 	node.Props = props
 	node.Pointers = pointers
 	node.SourceObservedAt = at
-	if err := emit(ctx, em, feeder.UpsertNode(desc,
-		feeder.NewID(desc.SourceID, "sql_instance", obs.Instance.Value()), node)); err != nil {
+	id, node, err := f.stateAssertion(desc.SourceID, "sql_instance", obs.Instance.Value(), node, at, time.Time{})
+	if err != nil {
+		return err
+	}
+	if err := emit(ctx, em, feeder.UpsertNode(desc, id, node)); err != nil {
 		return err
 	}
 	if err := f.emitClaims(ctx, desc, em, obs.Instance.Ref(), obs.Claims(), obs.Labels.Environment, at); err != nil {
@@ -373,8 +376,11 @@ func (f *Feeder) emitCluster(ctx context.Context, desc feeder.Description, em fe
 	node.Props = props
 	node.Pointers = obs.Pointers()
 	node.SourceObservedAt = at
-	if err := emit(ctx, em, feeder.UpsertNode(desc,
-		feeder.NewID(desc.SourceID, "gke_cluster", obs.Cluster.Value()), node)); err != nil {
+	id, node, err := f.stateAssertion(desc.SourceID, "gke_cluster", obs.Cluster.Value(), node, at, time.Time{})
+	if err != nil {
+		return err
+	}
+	if err := emit(ctx, em, feeder.UpsertNode(desc, id, node)); err != nil {
 		return err
 	}
 	return f.emitClaims(ctx, desc, em, obs.Cluster.Ref(), obs.Claims(), obs.Labels.Environment, at)
@@ -628,8 +634,11 @@ func (f *Feeder) applyForwardingRules(ctx context.Context, desc feeder.Descripti
 		node := obs.NodeFact(at)
 		node.Props = props
 		node.SourceObservedAt = at
-		if err := emit(ctx, em, feeder.UpsertNode(desc,
-			feeder.NewID(desc.SourceID, "load_balancer", obs.LoadBalancer.Value()), node)); err != nil {
+		id, node, err := f.stateAssertion(desc.SourceID, "load_balancer", obs.LoadBalancer.Value(), node, at, time.Time{})
+		if err != nil {
+			return err
+		}
+		if err := emit(ctx, em, feeder.UpsertNode(desc, id, node)); err != nil {
 			return err
 		}
 		if err := f.emitClaims(ctx, desc, em, obs.LoadBalancer.Ref(), obs.Claims(), "", at); err != nil {

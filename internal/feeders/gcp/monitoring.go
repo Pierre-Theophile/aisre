@@ -237,6 +237,9 @@ type AlertPolicyObservation struct {
 	// CreateTime is the policy's creation instant where the API reports one. A policy with no
 	// creation record has an unknown valid start rather than an invented one.
 	CreateTime time.Time
+	// MutateTime is the instant of the policy's latest edit, from its mutation record, where the API
+	// reports one. It dates a later state of the policy (003 T183); it is never a creation instant.
+	MutateTime time.Time
 }
 
 // ObserveAlertPolicy reads one policy.
@@ -260,6 +263,9 @@ func ObserveAlertPolicy(policy *monitoringpb.AlertPolicy, labels LabelPolicy) (A
 	obs.Labels = labels.Apply(parsed.Project, policy.GetUserLabels())
 	if record := policy.GetCreationRecord(); record.GetMutateTime() != nil {
 		obs.CreateTime = record.GetMutateTime().AsTime().UTC()
+	}
+	if record := policy.GetMutationRecord(); record.GetMutateTime() != nil {
+		obs.MutateTime = record.GetMutateTime().AsTime().UTC()
 	}
 
 	seen := map[string]struct{}{}
@@ -909,8 +915,11 @@ func (f *Feeder) emitAlertPolicy(ctx context.Context, desc feeder.Description, e
 	node.Props = props
 	node.Pointers = pointers
 	node.SourceObservedAt = at
-	if err := emit(ctx, em, feeder.UpsertNode(desc,
-		feeder.NewID(desc.SourceID, "alert_policy", obs.Policy.Value()), node)); err != nil {
+	id, node, err := f.stateAssertion(desc.SourceID, "alert_policy", obs.Policy.Value(), node, at, obs.MutateTime)
+	if err != nil {
+		return err
+	}
+	if err := emit(ctx, em, feeder.UpsertNode(desc, id, node)); err != nil {
 		return err
 	}
 	if err := f.emitClaims(ctx, desc, em, obs.Policy.Ref(), obs.Claims(), obs.Labels.Environment, at); err != nil {

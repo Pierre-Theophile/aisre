@@ -199,6 +199,9 @@ type Feeder struct {
 	splits map[string]TrafficSplit
 	// identities is the last observed uid per service, for the recreation rule (FR-025).
 	identities map[string]Identity
+	// states is the last state this run asserted of each re-read node kind, so a changed state gets
+	// an event id of its own (nodestate.go, 003 T183).
+	states map[string]assertedState
 	// held is the traffic shifts observed and not yet dated.
 	held []HeldSplit
 	// recreations are services deleted and recreated under one name, for the checkpoint note: a
@@ -319,6 +322,7 @@ func New(opts Options) (*Feeder, error) {
 		proposals:   map[string]bool{},
 		dnsRecords:  map[string]DNSRecord{},
 		dnsPending:  map[string][]string{},
+		states:      map[string]assertedState{},
 	}, nil
 }
 
