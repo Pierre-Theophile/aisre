@@ -370,8 +370,21 @@ applicable and SC-024 is asserted instead.
 - [ ] T094 Close research §5 O4: check the organisation's voice-agent platform's own documentation for a runtime commit variable, and add it to the guide's vendor-hosted section if it exists, else keep the build-time recipe; fixture: unit
 - [X] T095 [P] Complete `docs/connectors/datadog.md`: capabilities, the gate and what it cannot prove (O2), the operation list (now enforced), cost; fixture: unit
 - [X] T096 [P] Update `docs/schema/digests.md` (or the page that documents `VersionBreakdown`) for `deploy_ref`; fixture: unit
-- [ ] T097 Run the full local gate: `make gen build test lint verify`, `go test -race ./...`, `buf lint`, `buf breaking`, `check-no-secrets.sh` and self-test, `check-specs.sh`, `check-migrations.sh`, `fixture verify --report fixtures/*/` and `check-report.sh`; fixture: every datadog-* fixture
-- [ ] T098 Reproduce [quickstart.md](./quickstart.md) §0–§6 on a clean worktree and record the run as `quickstart-run-<date>.md`, fixing every doc and code drift it exposes; fixture: datadog-backend-logs-01
+- [X] T097 Run the full local gate: `make gen build test lint verify`, `go test -race ./...`, `buf lint`, `buf breaking`, `check-no-secrets.sh` and self-test, `check-specs.sh`, `check-migrations.sh`, `fixture verify --report fixtures/*/` and `check-report.sh`; fixture: every datadog-* fixture
+  - *T097 notes, 2026-09-27:* all checks pass:
+    - `make generate-check` (the generated code is up to date);
+    - `buf lint`, and `buf breaking` against main;
+    - `go test -race ./...`;
+    - golangci-lint;
+    - `check-no-secrets.sh` and its self-test;
+    - `check-specs.sh` and `check-migrations.sh`;
+    - `fixture verify --report` on 79 fixtures, and `check-report.sh` (every assertion held).
+- [X] T098 Reproduce [quickstart.md](./quickstart.md) §0–§6 on a clean worktree and record the run as `quickstart-run-<date>.md`, fixing every doc and code drift it exposes; fixture: datadog-backend-logs-01
+  - *T098 notes:* run on 2026-09-27 and recorded in
+    [quickstart-run-2026-09-27.md](./quickstart-run-2026-09-27.md). §0–§6 pass. It found four places
+    where the file had drifted: two test patterns that matched nothing or too little, a fixture that
+    was never built, and fixtures added later that the file did not name. All four are fixed in the
+    quickstart.
 - [ ] T099 With a read-only key: run quickstart §7 (`--dry-run`, then `--once` against the organisation), record the startup gate's verdict (O2) and the first live version-stamp verdict — **blocked on the key**; fixture: private corpus
 
 ---
