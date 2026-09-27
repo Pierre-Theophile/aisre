@@ -69,8 +69,8 @@ type Meta struct {
 		After string `json:"after"`
 	} `json:"page"`
 	// Status is "done" or "timeout"; a timeout is a partial answer.
-	Status    string   `json:"status"`
-	RequestID string   `json:"request_id"`
+	Status    string `json:"status"`
+	RequestID string `json:"request_id"`
 	// RawWarnings are kept whole: any warning means the answer may be partial.
 	RawWarnings []json.RawMessage `json:"warnings"`
 }
