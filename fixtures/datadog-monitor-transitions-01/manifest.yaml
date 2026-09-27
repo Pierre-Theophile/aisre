@@ -1,0 +1,77 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-monitor-transitions-01
+family: datadog-monitors
+description: 'Four monitors polled from a structural twin of Datadog''s monitor list. `checkout errors` goes OK → ALERT at 14:32 → OK at 15:10, and the alert''s validity is [14:32, 15:10), Datadog''s own instants rather than the polls that read them, with the history marked sampled and the recovery kept. `checkout latency` flaps — alert 14:40:00, ok 14:40:30, alert 14:40:50 — and only the first alert is emitted, the rest stated as flapping in the checkpoint, until its real recovery at 14:50. `search heartbeat` goes to no data at 14:45 and back at 14:55, stated as not triggering. `billing errors` alerts at 14:51:30 on a service nothing has asserted yet: its WATCHES edge is kept unattached, and attaches when the billing log source is watched from 15:00. Only the polls at which something changed are recorded; the unchanged polls between them re-send ids already sent. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:19:00Z
+    end: 2026-09-21T15:30:00Z
+
+queries:
+  # The alert while it was open: the query that fails if the alert is dated at the poll (14:33)
+  # rather than at Datadog's 14:32, or its recovery at the poll (15:11) rather than 15:10.
+  - name: checkout-errors-asof-1432
+    kind: subgraph
+    focus: datadog.monitor=7
+    valid_at: 2026-09-21T14:32:00Z
+    observed_at: 2026-09-21T15:30:00Z
+    hops: 1
+    direction: both
+  - name: checkout-errors-asof-1509
+    kind: subgraph
+    focus: datadog.monitor=7
+    valid_at: 2026-09-21T15:09:59Z
+    observed_at: 2026-09-21T15:30:00Z
+    hops: 1
+    direction: both
+  - name: checkout-errors-asof-1510
+    kind: subgraph
+    focus: datadog.monitor=7
+    valid_at: 2026-09-21T15:10:00Z
+    observed_at: 2026-09-21T15:30:00Z
+    hops: 1
+    direction: both
+  # The flapping monitor at 14:45: still alerting from 14:40:00, because the 14:40:30 recovery and
+  # the 14:40:50 re-alert were flapping and are stated, not applied.
+  - name: checkout-latency-asof-1445
+    kind: subgraph
+    focus: datadog.monitor=9
+    valid_at: 2026-09-21T14:45:00Z
+    observed_at: 2026-09-21T15:30:00Z
+    hops: 1
+    direction: both
+  # The no-data monitor never alerted.
+  - name: search-heartbeat-asof-1450
+    kind: subgraph
+    focus: datadog.monitor=11
+    valid_at: 2026-09-21T14:50:00Z
+    observed_at: 2026-09-21T15:30:00Z
+    hops: 1
+    direction: both
+  # The billing alert watches a service asserted only from 15:00: at 14:55 the edge's target is
+  # unknown, and by 15:30 it is attached to the billing log source.
+  - name: billing-errors-known-at-1455
+    kind: subgraph
+    focus: datadog.monitor=12
+    valid_at: 2026-09-21T15:30:00Z
+    observed_at: 2026-09-21T14:55:00Z
+    hops: 1
+    direction: both
+  - name: billing-errors-asof-1530
+    kind: subgraph
+    focus: datadog.monitor=12
+    valid_at: 2026-09-21T15:30:00Z
+    observed_at: 2026-09-21T15:30:00Z
+    hops: 1
+    direction: both

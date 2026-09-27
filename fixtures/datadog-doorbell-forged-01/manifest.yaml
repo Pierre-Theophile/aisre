@@ -1,0 +1,29 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-doorbell-forged-01
+family: datadog-monitors
+description: 'What a doorbell ring costs: at most one extra poll, and nothing else. `checkout errors` alerts at 14:32. The doorbell-triggered poll at 14:32:05 and the scheduled poll at 14:32:20 both read it, and a forged or replayed ring that slipped under the rate limit would add the poll at 14:32:10: three reads of one transition, and the graph ends with exactly one transition, dated 14:32 (SC-003, SC-020). The ring''s body reaches nothing (pkg/feeder/doorbell never reads it) and a forged secret is refused before the bell rings (internal/feeders/datadog poller_test.go); what this fixture proves is the other half, that an extra poll creates, alters and retracts nothing. Only the polls at which something changed are recorded; the unchanged polls between them re-send ids already sent. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:19:00Z
+    end: 2026-09-21T14:45:00Z
+
+queries:
+  # One transition and one state, however many polls read it.
+  - name: checkout-errors-after-three-reads
+    kind: subgraph
+    focus: datadog.monitor=7
+    valid_at: 2026-09-21T14:45:00Z
+    observed_at: 2026-09-21T14:45:00Z
+    hops: 1
+    direction: both

@@ -1,0 +1,416 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package datadog
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
+	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+)
+
+// The feeder half (contracts/datadog-feeder.md).
+//
+// It reads payloads — a page of the monitor list, a poll marker — from a feeder.Source and emits
+// events, so a live run and the replay of a recorded fixture are one code path (FR-044). The live
+// poller that fetches the payloads, and the doorbell that asks it to poll now, sit outside: they push
+// into a source, and nothing they do reaches the graph except through here.
+//
+// It emits events only and never reads the graph to decide what to emit (constitution III). What it
+// remembers between payloads — the last state of each monitor group, the monitors a complete poll
+// listed — only saves calls or detects a change; every event id is built from Datadog-stated facts, so
+// a restarted feeder re-sends ids already sent, which are no-ops.
+
+// SchemaVersion is the event schema version this feeder emits.
+const SchemaVersion = "1.0.0"
+
+// The payload kinds, which are also the fixture directory names a recording stores them under.
+const (
+	// PayloadMonitors is one page of `GET /api/v1/monitor?group_states=all`: a JSON array of
+	// monitors, each with its group states.
+	PayloadMonitors = "monitors"
+	// PayloadDiscovery is one discovery tick: the log sources watched at that instant, whose SERVICE
+	// nodes and log-service correlations are asserted every tick whatever the graph holds
+	// (contract §2). The list is in the payload rather than only in Options so that a recording states
+	// the configuration its live run had, and a source added mid-run replays at the instant it was.
+	PayloadDiscovery = "discovery"
+	// PayloadPoll declares a poll's outcome. It is its own payload because a partial poll's defining
+	// property is that pages are missing, which only a separate marker can state.
+	PayloadPoll = "poll"
+)
+
+// The monitor poll cadence (contract §3): 15–30 s, default 20 s.
+const (
+	DefaultPollInterval = 20 * time.Second
+	MinPollInterval     = 15 * time.Second
+	MaxPollInterval     = 30 * time.Second
+)
+
+// DefaultHistory is how far back a group's stated instants are emitted the first time this run sees
+// the group. It bounds a first start: a monitor that last resolved three months ago is not news, and
+// emitting its whole stated history would flood the intake with incidents long closed.
+const DefaultHistory = 24 * time.Hour
+
+// Options configures one feeder run.
+type Options struct {
+	// OrgSlug suffixes the source id. Required.
+	OrgSlug string
+	// Site is the Datadog site (e.g. datadoghq.eu). It builds the link to a monitor and is stated in
+	// the checkpoint; empty means no link.
+	Site string
+	// Capabilities in force. Nil uses DefaultCapabilities.
+	Capabilities Capabilities
+	// MonitorTags is the tag filter (FR-025c): a monitor is in scope only if it carries every one.
+	// Empty means every monitor the key can read.
+	MonitorTags []string
+	// PollInterval is the monitor poll cadence, recorded on every transition as the sampling
+	// interval. Zero uses DefaultPollInterval.
+	PollInterval time.Duration
+	// History overrides DefaultHistory.
+	History time.Duration
+	// OperatorAsserted is the gate's assertion, "operator_asserted by <name> at <instant>", when the
+	// start rested on one; every checkpoint records it (read-only-operations.md §3).
+	OperatorAsserted string
+	// LogSources are the watched `<env>/<service>` log sources, used by a discovery tick that names
+	// none of its own.
+	LogSources []LogSource
+	// Log is where operational telemetry goes. Nil discards.
+	Log *slog.Logger
+}
+
+// Validate refuses options that could not produce an honest run.
+func (o Options) Validate() error {
+	if _, err := Describe(o.OrgSlug); err != nil {
+		return err
+	}
+	if o.PollInterval != 0 && (o.PollInterval < MinPollInterval || o.PollInterval > MaxPollInterval) {
+		return fmt.Errorf("datadog: a monitor poll interval of %s is outside the published %s–%s; a "+
+			"longer one is a sampling the transitions' marker would understate, and a shorter one spends "+
+			"the quota the human reserve is kept for", o.PollInterval, MinPollInterval, MaxPollInterval)
+	}
+	if o.History < 0 {
+		return fmt.Errorf("datadog: a negative history (%s)", o.History)
+	}
+	for _, tag := range o.MonitorTags {
+		if !strings.Contains(tag, ":") || strings.ContainsAny(tag, " ,") {
+			return fmt.Errorf("datadog: monitor tag %q is not a single `key:value`", tag)
+		}
+	}
+	return nil
+}
+
+// Feeder reads one Datadog organisation.
+type Feeder struct {
+	opts Options
+	desc feeder.Description
+	log  *slog.Logger
+
+	mu sync.Mutex
+	// groups is the last observed state of each alerting group, keyed by its entity value. It is
+	// what makes a change detectable, and what bounds the stated instants already emitted.
+	groups map[string]groupState
+	// series is the per-entity series the published suppression filter reads.
+	series map[string]*eventlog.AlertSeries
+	// cycle is the monitors this poll has listed so far; listed is what the last COMPLETE poll
+	// listed. A monitor in listed and not in a complete cycle has been deleted or left scope.
+	cycle  map[string]monitorObservation
+	listed map[string]monitorObservation
+	// emittedGroups are the group entities a transition was emitted for, per monitor, so a retracted
+	// monitor's groups are retracted with it.
+	emittedGroups map[string]map[string]bool
+	// For the next checkpoint: what was stated rather than emitted.
+	suppressed []string
+	undated    []string
+	retracted  []string
+	unresolved []string
+	outOfScope int
+}
+
+// New returns a feeder over opts.
+func New(opts Options) (*Feeder, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
+	desc, err := Describe(opts.OrgSlug)
+	if err != nil {
+		return nil, err
+	}
+	desc.SchemaVersion = SchemaVersion
+	desc.Namespaces = []string{NSService, NSLogService, NSMonitor}
+	if opts.Capabilities == nil {
+		opts.Capabilities = DefaultCapabilities()
+	}
+	if opts.PollInterval == 0 {
+		opts.PollInterval = DefaultPollInterval
+	}
+	if opts.History == 0 {
+		opts.History = DefaultHistory
+	}
+	log := opts.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	return &Feeder{
+		opts: opts, desc: desc, log: log,
+		groups: map[string]groupState{}, series: map[string]*eventlog.AlertSeries{},
+		cycle: map[string]monitorObservation{}, listed: map[string]monitorObservation{},
+		emittedGroups: map[string]map[string]bool{},
+	}, nil
+}
+
+// Describe returns the feeder's contract.
+func (f *Feeder) Describe() feeder.Description { return f.desc }
+
+// Run reads from src and writes to em until src is exhausted or ctx ends.
+func (f *Feeder) Run(ctx context.Context, src feeder.Source, em feeder.Emitter) error {
+	if err := f.desc.Validate(); err != nil {
+		return err
+	}
+	defer func() {
+		if err := em.Flush(ctx); err != nil {
+			f.log.ErrorContext(ctx, "flush failed", "error", err)
+		}
+	}()
+	for {
+		payload, err := src.Next(ctx)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := f.apply(ctx, em, payload); err != nil {
+			return err
+		}
+	}
+}
+
+// PollMarker is the `poll` payload: what a poll covered and whether it finished.
+type PollMarker struct {
+	// Outcome is "complete" or "partial".
+	Outcome string `json:"outcome"`
+	// Pages is how many pages the poll read.
+	Pages int `json:"pages,omitempty"`
+	// Reason says why a partial poll stopped: a page failure, a timeout, the quota.
+	Reason string `json:"reason,omitempty"`
+}
+
+// apply dispatches one payload. A payload kind nobody handles is an error, never a silently ignored
+// file in a fixture directory.
+func (f *Feeder) apply(ctx context.Context, em feeder.Emitter, payload feeder.Payload) error {
+	switch payload.Kind {
+	case PayloadMonitors:
+		if !f.opts.Capabilities.Enabled(CapMonitors) {
+			return fmt.Errorf("datadog: a %s payload arrived with the monitors capability off; replaying "+
+				"it would make the capability decorative", payload.Kind)
+		}
+		return f.applyMonitors(ctx, em, payload.Bytes, payload.At)
+	case PayloadDiscovery:
+		if !f.opts.Capabilities.Enabled(CapLogs) {
+			return fmt.Errorf("datadog: a %s payload arrived with the logs capability off", payload.Kind)
+		}
+		var tick DiscoveryTick
+		if err := json.Unmarshal(payload.Bytes, &tick); err != nil {
+			return fmt.Errorf("datadog: decoding a %s payload: %w", payload.Kind, err)
+		}
+		return f.applyDiscovery(ctx, em, tick, payload.At)
+	case PayloadPoll:
+		var marker PollMarker
+		if err := json.Unmarshal(payload.Bytes, &marker); err != nil {
+			return fmt.Errorf("datadog: decoding a %s payload: %w", payload.Kind, err)
+		}
+		return f.applyPoll(ctx, em, marker, payload.At)
+	default:
+		return fmt.Errorf("datadog: payload kind %q is not one this feeder reads (%s, %s); a payload "+
+			"nobody handles is a fixture that silently tests less than it claims",
+			payload.Kind, PayloadMonitors, PayloadPoll+", "+PayloadDiscovery)
+	}
+}
+
+// DiscoveryTick is the `discovery` payload.
+type DiscoveryTick struct {
+	// LogSources are the watched sources as `<env>/<service>`. Empty uses Options.LogSources.
+	LogSources []string `json:"log_sources,omitempty"`
+}
+
+// applyDiscovery asserts every watched log source's SERVICE node and log-service correlation. The
+// event ids are the source's own, so an unchanged tick re-sends ids already sent (T063 builds the
+// version-stamp discovery on this tick).
+func (f *Feeder) applyDiscovery(ctx context.Context, em feeder.Emitter, tick DiscoveryTick, at time.Time) error {
+	sources := f.opts.LogSources
+	if len(tick.LogSources) > 0 {
+		sources = nil
+		for _, spec := range tick.LogSources {
+			src, err := ParseLogSource(spec)
+			if err != nil {
+				return err
+			}
+			sources = append(sources, src)
+		}
+	}
+	for _, src := range sources {
+		batch, err := LogSourceEvents(f.desc, src, at)
+		if err != nil {
+			return err
+		}
+		for _, ev := range batch {
+			if err := emit(ctx, em, ev); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// applyPoll closes a poll: retractions if it was complete, then the checkpoint.
+func (f *Feeder) applyPoll(ctx context.Context, em feeder.Emitter, marker PollMarker, at time.Time) error {
+	var complete bool
+	switch marker.Outcome {
+	case "complete":
+		complete = true
+	case "partial":
+	default:
+		return fmt.Errorf("datadog: poll outcome %q is neither \"complete\" nor \"partial\"; a poll whose "+
+			"outcome is unstated cannot be evidence of absence (FR-012)", marker.Outcome)
+	}
+
+	f.mu.Lock()
+	var gone []monitorObservation
+	if complete {
+		for id, obs := range f.listed {
+			if _, still := f.cycle[id]; !still {
+				gone = append(gone, obs)
+			}
+		}
+		f.listed = f.cycle
+	}
+	// A partial poll keeps what the last complete one listed: an unread page is not a deletion.
+	f.cycle = map[string]monitorObservation{}
+	f.mu.Unlock()
+
+	sort.Slice(gone, func(i, j int) bool { return gone[i].ID < gone[j].ID })
+	for _, obs := range gone {
+		if err := f.retractMonitor(ctx, em, obs, at); err != nil {
+			return err
+		}
+	}
+	return em.Checkpoint(ctx, feeder.CheckpointFact{
+		ExtentFrom: at.Add(-f.opts.PollInterval),
+		ExtentTo:   at,
+		GapBefore:  !complete,
+		Note:       f.checkpointNote(marker, complete),
+	})
+}
+
+// retractMonitor ends a deleted monitor's validity, and its groups'. There is no stated instant for a
+// deletion, so the end is this poll: the last poll that listed it and this one bound the instant, and
+// the checkpoint says so.
+func (f *Feeder) retractMonitor(ctx context.Context, em feeder.Emitter, obs monitorObservation, at time.Time) error {
+	f.mu.Lock()
+	groups := make([]string, 0, len(f.emittedGroups[obs.ID]))
+	for g := range f.emittedGroups[obs.ID] {
+		groups = append(groups, g)
+	}
+	delete(f.emittedGroups, obs.ID)
+	f.retracted = append(f.retracted, fmt.Sprintf("monitor %s (%s): absent from a complete poll; ended at "+
+		"that poll, the deletion falling between it and the previous one", obs.ID, obs.Name))
+	f.mu.Unlock()
+	sort.Strings(groups)
+	stamp := at.UTC().Format(time.RFC3339)
+	for _, g := range groups {
+		ref := feeder.Ref(NSMonitor, g)
+		if err := emit(ctx, em, feeder.RetractNode(f.desc, feeder.NewID(f.desc.SourceID, "retract", g, stamp),
+			feeder.NodeRetraction{Meta: feeder.Meta{SourceObservedAt: at}, Ref: ref, ValidEnd: at})); err != nil {
+			return err
+		}
+	}
+	return emit(ctx, em, feeder.RetractNode(f.desc, feeder.NewID(f.desc.SourceID, "retract", obs.ID, stamp),
+		feeder.NodeRetraction{Meta: feeder.Meta{SourceObservedAt: at}, Ref: obs.Ref(), ValidEnd: at}))
+}
+
+// checkpointNote states the scope in force and everything this poll stated rather than emitted, then
+// clears the latter (FR-057, FR-012).
+func (f *Feeder) checkpointNote(marker PollMarker, complete bool) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	lines := []string{
+		"datadog monitor poll: " + marker.Outcome,
+		"capabilities: " + f.opts.Capabilities.String(),
+		"site: " + orUnset(f.opts.Site),
+		"read-only: " + readOnlyStatement(f.opts.OperatorAsserted),
+		"monitor tag filter: " + orUnset(strings.Join(f.opts.MonitorTags, ",")),
+		fmt.Sprintf("poll interval: %s; every transition is sampled at it, and one that opened and closed "+
+			"between two polls is visible only through the instants Datadog states", f.opts.PollInterval),
+		fmt.Sprintf("monitors listed: %d; out of the tag scope and skipped: %d", len(f.listed), f.outOfScope),
+	}
+	if !complete {
+		lines = append(lines, "partial: "+orUnset(marker.Reason)+"; nothing unread was retracted")
+	}
+	add := func(title string, items []string) {
+		items = uniqueSorted(items)
+		if len(items) > 0 {
+			lines = append(lines, title+":")
+			for _, item := range items {
+				lines = append(lines, "  - "+item)
+			}
+		}
+	}
+	add("suppressed transitions (stated, not triggering)", f.suppressed)
+	add("undated transitions (a state changed and Datadog states no instant for it; not emitted, "+
+		"because a transition is keyed on its instant and the poll instant is never used)", f.undated)
+	add("unresolved watched entities (no service and environment in the query, tags or group)", f.unresolved)
+	add("retracted", f.retracted)
+	f.suppressed, f.undated, f.retracted, f.unresolved, f.outOfScope = nil, nil, nil, nil, 0
+	return strings.Join(lines, "\n")
+}
+
+func readOnlyStatement(asserted string) string {
+	if asserted == "" {
+		return "verified by the startup gate, or not applicable to a replay"
+	}
+	return asserted
+}
+
+func uniqueSorted(items []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if !seen[item] {
+			seen[item] = true
+			out = append(out, item)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func orUnset(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return s
+}
+
+// emit sends one event and turns a refusal into an error: this feeder never emits something the graph
+// should refuse.
+func emit(ctx context.Context, em feeder.Emitter, ev *graphv1.EventEnvelope) error {
+	result, err := em.Emit(ctx, ev)
+	if err != nil {
+		return err
+	}
+	if result.GetStatus() == graphv1.IngestResult_REJECTED {
+		return fmt.Errorf("datadog: the graph refused event %s: %s %s",
+			ev.GetEventId(), result.GetReasonCode(), result.GetReasonDetail())
+	}
+	return nil
+}

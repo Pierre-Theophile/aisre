@@ -52,8 +52,12 @@ one quiet window, only under the published silence rule.
 - **Transitions** are derived by comparing each group's state with the previous poll, and **dated
   from Datadog's stated instants** — `last_triggered_ts` for a move into alert or warn,
   `last_resolved_ts` into OK, `last_nodata_ts` into no data — never from the poll instant (FR-020).
-  Where no stated instant corresponds, the transition is emitted with an unknown valid start rather
-  than the poll instant.
+  Every stated instant newer than the newest already emitted for the group is a transition, in time
+  order, so a group that alerted and resolved between two polls still delivers both. Where the status
+  changed and no stated instant corresponds, the transition is **not emitted** and the checkpoint
+  states it as undated: the event schema requires a transition's instant (it is a third of the key),
+  and the poll instant is never used. *(Corrected 2026-09-27: this line used to say "emitted with an
+  unknown valid start", which the shipped schema refuses.)*
 - **Key**: the published 4-tuple `(source, monitor id, group, transition instant)`; the same
   transition learned by a poll and by a doorbell-triggered poll is one event (FR-025a).
 - **Every polled history is `sampled`** at the poll interval (ADR-0009 item 3). A transition that

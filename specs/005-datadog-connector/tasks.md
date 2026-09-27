@@ -179,17 +179,35 @@ dated by Datadog, polled with an optional doorbell.
 **Independent test**: `fixtures/datadog-monitor-transitions-01` — OK → ALERT 14:32 → OK 15:10 gives
 `[14:32, 15:10)`, history marked sampled, the recovery kept.
 
-- [ ] T052 [US2] Write `internal/feeders/datadog/monitors.go`: paged `GET /api/v1/monitor?group_states=all`, tag filter (FR-025c), definitions asserted as ALERT nodes on change only with the monitor query pointer and link ([data-model.md §2](./data-model.md)); fixture: datadog-monitor-transitions-01
-- [ ] T053 [US2] Derive transitions in `internal/feeders/datadog/transitions.go` by comparing group states with the previous poll, dated from `last_triggered_ts` / `last_resolved_ts` / `last_nodata_ts`, unknown start where none corresponds, never the poll instant ([contracts/datadog-feeder.md](./contracts/datadog-feeder.md) §3); fixture: datadog-monitor-transitions-01
-- [ ] T054 [US2] Emit through `pkg/feeder`'s `alert.transition` builder with the 4-tuple key, `sampled` and `sampled_interval_seconds`, flapping and no-data suppression stated, recoveries emitted; fixture: datadog-monitor-transitions-01
-- [ ] T055 [US2] Resolve watched entities from the monitor query and tags into WATCHES edges, unresolved ones recorded unattached for auto-attach (FR-019); fixture: datadog-monitor-transitions-01
-- [ ] T056 [US2] Retract a deleted monitor or one leaving scope, never on a partial read, with the gap declared (FR-012, FR-085); fixture: datadog-monitor-transitions-01
-- [ ] T057 [US2] Wire the doorbell (T024) into the feeder's poll loop so a ring enqueues "poll now" only; fixture: datadog-doorbell-forged-01
-- [ ] T058 [US2] Write `internal/cli/feed_datadog.go`: `aisre feed datadog` with `--site`, `--watch`, `--capabilities`, `--assert-read-only`, `--dry-run`, `--once`, and the startup gate of [contracts/read-only-operations.md](./contracts/read-only-operations.md) §3; fixture: unit
-- [ ] T059 [US2] Build `fixtures/datadog-monitor-transitions-01` (the 14:32/15:10 sequence, a flapping monitor, a no-data monitor, a monitor watching an unknown entity that later appears); fixture: datadog-monitor-transitions-01
-- [ ] T060 [P] [US2] Build `fixtures/datadog-grouped-monitor-01`: one monitor alerting on two groups at different instants gives two alerts and no monitor-level alert (SC-004); fixture: datadog-grouped-monitor-01
-- [ ] T061 [P] [US2] Build `fixtures/datadog-doorbell-forged-01`: forged, replayed and malformed rings cost at most one poll and write nothing; the same transition via doorbell and schedule is one event (SC-003, SC-020); fixture: datadog-doorbell-forged-01
-- [ ] T062 [US2] Assert SC-003's exactness (valid time equals Datadog's instant in 100 % of transitions) and SC-022 (every listed monitor is an ALERT within one poll, differences enumerated) over the fixtures; fixture: datadog-monitor-transitions-01
+- [X] T052 [US2] Write `internal/feeders/datadog/monitors.go`: paged `GET /api/v1/monitor?group_states=all`, tag filter (FR-025c), definitions asserted as ALERT nodes on change only with the monitor query pointer and link ([data-model.md §2](./data-model.md)); fixture: datadog-monitor-transitions-01
+- [X] T053 [US2] Derive transitions in `internal/feeders/datadog/transitions.go` by comparing group states with the previous poll, dated from `last_triggered_ts` / `last_resolved_ts` / `last_nodata_ts`, stated as undated in the checkpoint where none corresponds, never the poll instant ([contracts/datadog-feeder.md](./contracts/datadog-feeder.md) §3); fixture: datadog-monitor-transitions-01
+- [X] T054 [US2] Emit through `pkg/feeder`'s `alert.transition` builder with the 4-tuple key, `sampled` and `sampled_interval_seconds`, flapping and no-data suppression stated, recoveries emitted; fixture: datadog-monitor-transitions-01
+- [X] T055 [US2] Resolve watched entities from the monitor query and tags into WATCHES edges, unresolved ones recorded unattached for auto-attach (FR-019); fixture: datadog-monitor-transitions-01
+- [X] T056 [US2] Retract a deleted monitor or one leaving scope, never on a partial read, with the gap declared (FR-012, FR-085); fixture: datadog-monitor-transitions-01
+  - *Done notes (T052–T056, T059, T060, T062):* `feeder.go`, `monitors.go`, `transitions.go`. A
+    transition is every stated instant newer than the newest already emitted for its group, so one that
+    opened and closed between two polls is still delivered and a restart re-derives the same ids. A
+    status change with no stated instant is **not emitted** and is stated in the checkpoint (the schema
+    refuses a transition without its instant; the contract's "unknown start" line is corrected). A
+    `discovery` payload asserts the watched log sources (T063 builds on it). The transitions fixture's
+    shuffle step found an arrival-order bug in the projector, fixed here: a WATCHES edge attached
+    after its target arrived was dated from the alert's earliest version of any kind — the monitor
+    definition — instead of its first transition, as the direct path dates it
+    (`internal/projector/attach.go`).
+- [X] T057 [US2] Wire the doorbell (T024) into the feeder's poll loop so a ring enqueues "poll now" only; fixture: datadog-doorbell-forged-01
+- [X] T058 [US2] Write `internal/cli/feed_datadog.go`: `aisre feed datadog` with `--site`, `--watch`, `--capabilities`, `--assert-read-only`, `--dry-run`, `--once`, and the startup gate of [contracts/read-only-operations.md](./contracts/read-only-operations.md) §3; fixture: unit
+  - *Done notes (T057, T058, T061):* `poller.go` turns live reads into the same payloads a
+    recording holds; a doorbell ring calls `Poller.PollNow`, non-blocking and coalescing, and the body
+    is never read. `gate.go` is the startup gate: an unscoped application key carries every permission
+    of its user and is **not** evidence of read-only, so it needs `--assert-read-only` like a key whose
+    scopes Datadog will not state; the assertion is written into every checkpoint. `aisre feed
+    datadog` refuses `--record` on a live run until the sanitised tee exists (T080). The permission
+    names in contract §4 other than `logs_read_data` and `events_read` remain unconfirmed against
+    Datadog's reference.
+- [X] T059 [US2] Build `fixtures/datadog-monitor-transitions-01` (the 14:32/15:10 sequence, a flapping monitor, a no-data monitor, a monitor watching an unknown entity that later appears); fixture: datadog-monitor-transitions-01
+- [X] T060 [P] [US2] Build `fixtures/datadog-grouped-monitor-01`: one monitor alerting on two groups at different instants gives two alerts and no monitor-level alert (SC-004); fixture: datadog-grouped-monitor-01
+- [X] T061 [P] [US2] Build `fixtures/datadog-doorbell-forged-01`: forged, replayed and malformed rings cost at most one poll and write nothing; the same transition via doorbell and schedule is one event (SC-003, SC-020); fixture: datadog-doorbell-forged-01
+- [X] T062 [US2] Assert SC-003's exactness (valid time equals Datadog's instant in 100 % of transitions) and SC-022 (every listed monitor is an ALERT within one poll, differences enumerated) over the fixtures; fixture: datadog-monitor-transitions-01
 
 **Checkpoint**: an alert can be named by monitor id and handed to the engine with its pointers.
 

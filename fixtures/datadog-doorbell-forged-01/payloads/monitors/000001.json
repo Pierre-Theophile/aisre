@@ -1,0 +1,1 @@
+[{"id":7,"name":"checkout errors","type":"log alert","query":"logs(\"service:checkout env:production status:error\").index(\"*\").rollup(\"count\").last(\"5m\") \u003e 10","message":"Paging the owning team; see the runbook.","tags":["env:production","team:payments"],"priority":2,"modified":"2026-09-01T09:00:00Z","state":{"groups":{"*":{"status":"OK"}}}}]
