@@ -64,7 +64,7 @@ telemetry: it holds attribute names and shares, never a log line or a count of e
 | `conventions_version` | the version of the published list in force |
 
 **Acceptance** is by share, not by stability: a candidate qualifies when it is present on at least
-the published share of the service's lines **and** of its error-level lines (research §3.2). Whether
+the published share of the service's lines **and** of its error-level lines (research §3.1). Whether
 the value changed during the window is not a criterion. The audit's case — `version` on 255 of 37 M
 lines, all start-up lines of an SDK — is rejected with its share stated.
 

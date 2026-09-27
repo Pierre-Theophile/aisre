@@ -156,7 +156,7 @@ set), **X3** (the `alert.transition` idempotency key) and **I12** (enum names in
 
 A read-only look at the organisation's Datadog logs before planning (7 days, 2026-09-20 to 27)
 found that the assumption behind `errors_by_version` did not hold. The logs came from one source
-(LiveKit Cloud voice agents, about 37 M lines a week, 3,606 of them error-level), deployed by a
+(vendor-hosted voice agents, about 37 M lines a week, 3,606 of them error-level), deployed by a
 platform none of features 003 and 004 feeds. The only `version` present was the agent SDK's
 (`1.3.6`, on 255 worker-start lines, constant all week), and no revision, image, commit or release
 attribute existed on any line. Datadog's SQL `version` and `env` columns came back empty even where
@@ -165,7 +165,7 @@ search showed a value, because both were remapped from custom attributes.
 - Q: How does `errors_by_version` work when the logs carry no deploy identifier, and how does it
   stay independent of how a service is deployed? → A: **The service stamps its own logs, and the
   connector joins on what the stamp says, not on who deployed it.** The project is generic: it must
-  work for Cloud Run, Kubernetes, Vercel, a vendor-hosted runtime like LiveKit Cloud, a VM, or any
+  work for Cloud Run, Kubernetes, Vercel, a vendor-hosted runtime, a VM, or any
   deployment type added later. So (1) the connector **discovers** which log attribute carries the
   deployed version from a published, ordered list of conventions, configurable per service, and
   mints it as the log pointer's `join_keys["version"]` (FR-040c); (2) each version value is

@@ -99,6 +99,14 @@ of monitors; the design does not depend on that.
 **Gate result: PASS**, with one decision record owed before implementation (ADR-0010, Gaps 1–4
 below) and one disclosed shortfall under VIII.
 
+**Re-check after Phase 1 design: PASS, unchanged.** Designing the contracts surfaced three things,
+each resolved inside them rather than as a deviation: a log-observed rollout's identity is built from
+Datadog-stated facts only, so a restart re-sends ids rather than needing remembered state
+([datadog-feeder.md §4](./contracts/datadog-feeder.md), III); a monitor pointer takes the published
+kind of what it queries rather than a new kind ([pointer-vocabularies.md §2](./contracts/pointer-vocabularies.md), IX);
+and the scope names not stated in the endpoint documentation are marked unconfirmed rather than
+asserted ([read-only-operations.md §4](./contracts/read-only-operations.md), V).
+
 ## Phase 0 findings that shape the plan: what the code already delivers, and six gaps
 
 The full ledger is [research.md §1](./research.md). In short, **delivered and used as-is**: the
