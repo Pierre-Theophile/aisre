@@ -270,6 +270,15 @@ func planUpsert(existing []segment, sourceID, eventID string, at time.Time, from
 			return s
 		}
 		next := s.clone()
+		if len(s.assertions) == 0 && at.Before(s.start) {
+			// A segment no node assertion supports is a placeholder: markPlaceholder minted it for
+			// an edge endpoint, and its start — flagged unknown when the edge's was — is the first
+			// instant anything referred to the entity. An assertion from before it says the entity
+			// was already there, so that start is no longer a first observation, and keeping the
+			// flag would stop coalesce merging across it: the entity would carry a boundary at the
+			// edge's instant only when the edge happened to arrive first (003 T184).
+			next.fromUnknown = false
+		}
 		next.assertions[sourceID] = eventID
 		return next
 	}

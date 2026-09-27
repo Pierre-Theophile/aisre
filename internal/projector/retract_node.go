@@ -89,7 +89,7 @@ func (p *Projector) cascadeEdges(ctx context.Context, tx pgx.Tx, entityID string
 		if err != nil {
 			return err
 		}
-		assertions, err := p.edgeAssertions(ctx, tx, edgeEventIDs(existing))
+		assertions, err := p.edgeAssertions(ctx, tx, key.typ, edgeEventIDs(existing))
 		if err != nil {
 			return err
 		}

@@ -121,7 +121,7 @@ func (p *Projector) applyUpsertEdge(ctx context.Context, tx pgx.Tx, env *graphv1
 	if err != nil {
 		return err
 	}
-	assertions, err := p.edgeAssertions(ctx, tx, edgeEventIDs(existing, env.GetEventId()))
+	assertions, err := p.edgeAssertions(ctx, tx, key.typ, edgeEventIDs(existing, env.GetEventId()))
 	if err != nil {
 		return err
 	}
@@ -240,7 +240,7 @@ func edgeEventIDs(rows []*edgeRow, extra ...string) []string {
 	return slices.Compact(ids)
 }
 
-func (p *Projector) edgeAssertions(ctx context.Context, tx pgx.Tx, eventIDs []string) (map[string]edgeAssertion, error) {
+func (p *Projector) edgeAssertions(ctx context.Context, tx pgx.Tx, typ graph.EdgeType, eventIDs []string) (map[string]edgeAssertion, error) {
 	out := map[string]edgeAssertion{}
 	if len(eventIDs) == 0 {
 		return out, nil
@@ -277,6 +277,14 @@ func (p *Projector) edgeAssertions(ctx context.Context, tx pgx.Tx, eventIDs []st
 			body = AlertWatchAssertion(transition, nil)
 		} else if err := protojson.Unmarshal(payload, body); err != nil {
 			return nil, fmt.Errorf("projector: decode edge assertion %s: %w", assertion.eventID, err)
+		}
+		// Only an assertion of THIS series' edge type is one. A version's evidence can name an event
+		// that asserted a different edge: a change that attached late records the event that created
+		// its target, and when that was a `runs_on` edge minting the service, reading it here made the
+		// `changed_by` series look asserted by it — open-ended from that edge's instant — but only in
+		// the orders where an edge minted the target first (003 T184).
+		if graph.EdgeTypeFromProto(body.GetType()) != typ {
+			continue
 		}
 		assertion.assertedAt = assertion.assertedAt.UTC()
 		assertion.props = body.GetProps().GetFields()

@@ -1020,12 +1020,22 @@ func absorbedAssertions(segments []segment, assertions map[string]nodeAssertion)
 	seen := map[string]bool{}
 	var out []nodeAssertion
 	for _, seg := range segments {
-		for _, eventID := range seg.assertions {
-			if seen[eventID] {
-				continue
+		// Restatements too: coalescing folds a later same-content assertion into the segment it
+		// agrees with, and remembers it here so that its INSTANT survives (segments.go). A merge that
+		// re-applied only the primary assertions dropped that instant for the absorbed side alone, so
+		// whether it survived depended on which side of the merge it happened to have landed on —
+		// arrival order, which gcp-cross-source-merge-01's shuffle found (003 T184).
+		for _, eventIDs := range []map[string]string{seg.assertions, seg.restatements} {
+			for _, eventID := range eventIDs {
+				if seen[eventID] {
+					continue
+				}
+				if _, known := assertions[eventID]; !known {
+					continue
+				}
+				seen[eventID] = true
+				out = append(out, assertions[eventID])
 			}
-			seen[eventID] = true
-			out = append(out, assertions[eventID])
 		}
 	}
 	slices.SortFunc(out, func(a, b nodeAssertion) int {
@@ -1098,7 +1108,7 @@ func (p *Projector) absorbEdges(ctx context.Context, tx pgx.Tx, mergedIDs []stri
 			// is the conservative answer; re-pointing it would mean two current rows.
 			continue
 		}
-		assertions, err := p.edgeAssertions(ctx, tx, edgeEventIDs(rows))
+		assertions, err := p.edgeAssertions(ctx, tx, key.typ, edgeEventIDs(rows))
 		if err != nil {
 			return err
 		}
@@ -1287,7 +1297,7 @@ func (p *Projector) reassertEdge(ctx context.Context, tx pgx.Tx, key edgeKey, fo
 	if err != nil {
 		return err
 	}
-	assertions, err := p.edgeAssertions(ctx, tx, edgeEventIDs(existing))
+	assertions, err := p.edgeAssertions(ctx, tx, key.typ, edgeEventIDs(existing))
 	if err != nil {
 		return err
 	}

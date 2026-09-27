@@ -55,7 +55,7 @@ func (p *Projector) applyRetractEdge(ctx context.Context, tx pgx.Tx, env *graphv
 		// feeder said so; the projection has nothing to change.
 		return nil
 	}
-	assertions, err := p.edgeAssertions(ctx, tx, edgeEventIDs(existing))
+	assertions, err := p.edgeAssertions(ctx, tx, key.typ, edgeEventIDs(existing))
 	if err != nil {
 		return err
 	}

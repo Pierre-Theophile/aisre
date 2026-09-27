@@ -42,8 +42,11 @@ import (
 //
 // The remembered states are per run. After a restart the first poll is a first state again, dated as
 // one; a node that changed while the feeder was down is asserted from its original start, and loses to
-// the previous run's later state for instants after it. That is the Cloud Run restart limit, recorded
-// with its fix as T184.
+// the previous run's later state for instants after it. Cloud Run services no longer have this limit:
+// they state `updateTime`, so every poll asserts the current state from it and a restart re-dates
+// nothing (003 T184). Three of these kinds state no update instant, so there is nothing to date the
+// state a restarted feeder finds from, and the limit stays. The alert policy keeps it too: its mutation
+// record could date a first state the same way, and does not yet.
 
 // assertedState is the last state of one node this run emitted.
 type assertedState struct {

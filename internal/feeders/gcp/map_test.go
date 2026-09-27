@@ -647,3 +647,41 @@ func TestACloudSQLDiffWithNoAuditEntryIsHeldAndStated(t *testing.T) {
 // measures its staleness bound from the *arrival* and not from an entry's own timestamp, so a test
 // that passed the zero instant would release every entry to the catch-all immediately (audit.go).
 var auditArrival = time.Date(2026, 9, 21, 14, 25, 0, 0, time.UTC)
+
+// A service the platform has never updated states no instant to date a later state from. Re-polled
+// unchanged, it is not re-asserted — each poll would otherwise be a new state with an unknown start
+// (003 T184). Re-polled changed, it is asserted once, from the observation and marked unknown.
+func TestANeverUpdatedServiceIsReassertedOnlyWhenItChanges(t *testing.T) {
+	f := newFeeder(t)
+	em := &recordingEmitter{}
+	never := strings.Replace(checkoutService, `"updateTime": "2026-09-21T14:18:00Z"`, `"updateTime": "2026-09-01T09:00:00Z"`, 1)
+	moved := strings.Replace(never, `"team": "payments"`, `"team": "checkout"`, 1)
+	poll := func(h int) time.Time { return time.Date(2026, 9, 21, h, 0, 0, 0, time.UTC) }
+	src := &countingSource{payloads: []feeder.Payload{
+		{Kind: gcpfeeder.PayloadServices, At: poll(10), Bytes: servicePayload(t, never)},
+		{Kind: gcpfeeder.PayloadServices, At: poll(11), Bytes: servicePayload(t, never)},
+		{Kind: gcpfeeder.PayloadServices, At: poll(12), Bytes: servicePayload(t, moved)},
+		{Kind: gcpfeeder.PayloadServices, At: poll(13), Bytes: servicePayload(t, moved)},
+	}}
+	if err := f.Run(context.Background(), src, em); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	ids := map[string]*graphv1.UpsertNode{}
+	var order []string
+	for _, ev := range em.events {
+		if node := ev.GetUpsertNode(); node != nil && node.GetRef().GetNamespace() == gcpfeeder.NSService {
+			if _, dup := ids[ev.GetEventId()]; !dup {
+				order = append(order, ev.GetEventId())
+			}
+			ids[ev.GetEventId()] = node
+		}
+	}
+	if len(order) != 2 {
+		t.Fatalf("%d distinct service assertions over four polls, want 2 (the creation and the one change): %v", len(order), order)
+	}
+	changed := ids[order[1]]
+	if !changed.GetValidFromUnknown() || !changed.GetValidAt().AsTime().Equal(poll(12)) {
+		t.Errorf("the change is dated %v (unknown=%v); with no stated instant it begins, unknown, at the poll that saw it (%v)",
+			changed.GetValidAt().AsTime(), changed.GetValidFromUnknown(), poll(12))
+	}
+}
