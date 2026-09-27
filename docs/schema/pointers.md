@@ -377,6 +377,51 @@ Registering the name now is what lets `error_spans` become a live operation **wi
 if Cloud Trace is ever enabled. Until then the term is served, answering `NO_DATA` with the absent
 source named.
 
+### `datadog-logs/v1` — a Datadog log-search query
+
+**Backend kind** `datadog` · **executed by** `POST /api/v2/logs/events/search` and
+`POST /api/v2/logs/analytics/aggregate`, both named query operations (ADR-0010 item 3) · added by
+feature 005
+
+```
+service:voice-agent env:production
+```
+
+A published subset of Datadog's log-search syntax: `service:<v>` and `env:<v>` always, `index:<v>`
+where configured, and at most the tag and attribute terms the feeder itself writes. No free text and
+no wildcard on `service`. The organisation, the site host and any credential are never in it (005
+FR-037): the site is configuration.
+
+**Why not `otel-semconv`.** Datadog's grammar distinguishes a **tag** (`version:x`) from an
+**attribute** (`@version:x`), and they are different fields with different contents: a library that
+logs its own `version` in a JSON body produces the *attribute* `@version`, which is not the
+deployment's `version` *tag*, and 005's audit found exactly that — an SDK version on start-up lines
+that a tag-blind selector would have read as the service's version. `otel-semconv/1.30` has one flat
+attribute space and cannot state the distinction, so a translated selector could silently match the
+wrong field.
+
+**Join roles.** `version` is the attribute version-stamp discovery accepted, spelled as the grammar
+spells it (`version` for the tag, `@version` for the attribute); absent when discovery found none,
+which is when the engine answers `errors_by_version` itself (ADR-0010 item 2). `host` is `host` where
+the logs carry one. `workload`, `pod` and `trace` are omitted: the default capabilities cannot express
+them.
+
+### `datadog-monitor/v1` — a Datadog monitor's query
+
+**Backend kind** `datadog` · **executed by** `GET /api/v1/monitor/{monitor_id}` · added by feature 005
+
+The monitor's query string exactly as Datadog stores it, plus the monitor id. Never rewritten. The
+pointer's kind is the kind of what the monitor queries — `METRIC` for a metric monitor, `LOG` for a
+log monitor — and a monitor whose type has no published kind gets a `SOURCE_LINK` only.
+
+**Why not `otel-semconv`.** Monitor queries span Datadog's metric, log and composite grammars, each
+with its own aggregation, grouping and threshold syntax (`avg(last_5m):sum:… > 0.5`). None of it is
+expressible as attribute equality, and a monitor query is only meaningful in its monitor type's
+grammar.
+
+**Join roles.** None: a monitor's `by {…}` group names are its grouping, not the entity's, and are
+carried as attributes.
+
 ### Adding one
 
 A new vocabulary is a schema change (constitution IX): version it in the name the way the ones above

@@ -132,6 +132,15 @@ const (
 	// PropK8sClaimKind is whether PropK8sClaimKey was a "label" or an "annotation".
 	PropK8sClaimKind = "sre.k8s.claim_kind"
 
+	// PropChangeValidFromIsABound marks a change whose valid start is a BOUND — the change happened
+	// at or before it — rather than the instant it happened (005 FR-040g). Its value says what the
+	// bound was read from, e.g. "first_seen_in_logs". A rollout inferred from the first log line
+	// carrying a new version is the case: logs say when a version was first seen running, never when
+	// it was deployed, and a reader must not take the one for the other. Feature 003's owner marker
+	// (sre.gcp.owner_valid_from_is_a_bound) predates this and is left as it is: it marks an owner, not
+	// a change, and moving it would rewrite goldens for no change in meaning.
+	PropChangeValidFromIsABound = "sre.change.valid_from_is_a_bound"
+
 	// PropConfigKind is what a config node holds: "configmap", "secret", "flag". The value
 	// "secret" is what makes the graph refuse any property that would carry the material.
 	PropConfigKind = "sre.config.kind"

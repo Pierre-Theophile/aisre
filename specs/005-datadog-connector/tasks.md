@@ -93,28 +93,29 @@ can issue an unpublished request.
 
 ### 2E — The Datadog quota reader (G5)
 
-- [ ] T021 Add a Datadog header reader beside the GitHub one in `pkg/feeder/quota.go`: `X-RateLimit-Reset` as seconds from now, `X-RateLimit-Period`, bucket named by `X-RateLimit-Name` ([research.md §2.3](./research.md)); fixture: unit
-- [ ] T022 Assert against recorded Datadog headers that the reset is in the future, two endpoints sharing a name share a bucket, and a response with no headers falls back to the static budget and says so (FR-081a); fixture: unit
+- [X] T021 Add a Datadog header reader beside the GitHub one in `pkg/feeder/quota.go`: `X-RateLimit-Reset` as seconds from now, `X-RateLimit-Period`, bucket named by `X-RateLimit-Name` ([research.md §2.3](./research.md)); fixture: unit
+- [X] T022 Assert against recorded Datadog headers that the reset is in the future, two endpoints sharing a name share a bucket, and a response with no headers falls back to the static budget and says so (FR-081a); fixture: unit
 
 ### 2F — The shared doorbell and the Datadog campaign scope (G6)
 
-- [ ] T023 Lift the payload-free `Ring` and token bucket from `internal/feeders/gcp/doorbell.go` into `pkg/feeder/doorbell/`, leaving the GCP feeder on the shared package with its goldens unchanged; fixture: gcp-forged-doorbell-01 (existing, goldens unchanged)
-- [ ] T024 Add an HTTP transport to `pkg/feeder/doorbell/`: requires the configured shared-secret header, never reads the body, drops and counts a missing or wrong secret, rate-limited (FR-025b); fixture: unit
-- [ ] T025 [P] Add Datadog scope fields (organisation, site, environments, indexes, log sources) to `internal/campaign/record.go` and make the parity step's credential message platform-neutral; fixture: unit
+- [X] T023 Lift the payload-free `Ring` and token bucket from `internal/feeders/gcp/doorbell.go` into `pkg/feeder/doorbell/`, leaving the GCP feeder on the shared package with its goldens unchanged; fixture: gcp-forged-doorbell-01 (existing, goldens unchanged)
+- [X] T024 Add an HTTP transport to `pkg/feeder/doorbell/`: requires the configured shared-secret header, never reads the body, drops and counts a missing or wrong secret, rate-limited (FR-025b); fixture: unit
+- [X] T025 [P] Add Datadog scope fields (organisation, site, environments, indexes, log sources) to `internal/campaign/record.go` and make the parity step's credential message platform-neutral; fixture: unit
 
 ### 2G — The pointer vocabularies and the bound marker
 
-- [ ] T026 [P] Register `datadog-logs/v1` and `datadog-monitor/v1` in `pkg/feeder/pointer.go` and `docs/schema/pointers.md` per [contracts/pointer-vocabularies.md](./contracts/pointer-vocabularies.md), each with its reason for not being OTel; `pkg/feeder/vocabularies_test.go` must pass; fixture: unit
-- [ ] T027 [P] Add the published property `sre.change.valid_from_is_a_bound` to `pkg/feeder/props.go`, and move 003's owner-local marker onto it only if no golden moves (else leave 003's key and record why); fixture: unit
+- [X] T026 [P] Register `datadog-logs/v1` and `datadog-monitor/v1` in `pkg/feeder/pointer.go` and `docs/schema/pointers.md` per [contracts/pointer-vocabularies.md](./contracts/pointer-vocabularies.md), each with its reason for not being OTel; `pkg/feeder/vocabularies_test.go` must pass; fixture: unit
+- [X] T027 [P] Add the published property `sre.change.valid_from_is_a_bound` to `pkg/feeder/props.go`, and move 003's owner-local marker onto it only if no golden moves (else leave 003's key and record why); fixture: unit **Done: 003's key left as it is** — it marks an owner rather than a change, and moving it would rewrite GCP goldens for no change in meaning; the reason is on the new constant.
 
 ### 2H — Version stamps, for any deployment type (FR-040c–FR-040e)
 
-- [ ] T028 Create `pkg/feeder/versionstamp/conventions.go`: the ordered convention list v1.0.0 of [contracts/version-stamping.md](./contracts/version-stamping.md) §2, tag and attribute as **separate candidates**, with a per-service override; fixture: unit
-- [ ] T029 Implement the verdict in `pkg/feeder/versionstamp/verdict.go`: per candidate the line share and error-line share, acceptance at the published 95 % / 95 % defaults over a one-hour window, first accepted wins, every rejection with its reason ([data-model.md §3](./data-model.md)); fixture: unit
-- [ ] T030 Assert stability is **not** a criterion (a constant value on every line is accepted) and the audit's case is rejected: 255 of 37.2 M lines, all on start-up lines, 0 % of error lines; fixture: unit
-- [ ] T031 Implement `pkg/feeder/versionstamp/normalise.go`: value → `deploy.commit_sha` / `deploy.image` (name + digest pair) / `deploy.release`, else an absent reason, using `pkg/feeder/deployref.go` only ([contracts/version-stamping.md](./contracts/version-stamping.md) §4); fixture: unit
-- [ ] T032 Assert each absent reason: an abbreviated sha is `ABBREVIATED_SHA` and never padded, `:latest` is `MUTABLE_TAG`, a bare `sha256:…` is `BARE_DIGEST`; fixture: unit
-- [ ] T033 Fill `deploy_ref` in the **GCP** backend's `errors_by_version` (`internal/backends/gcp/errors_by_version.go`) where a revision's image digest is known, via `versionstamp`, and re-record the affected GCP goldens as additions only; fixture: gcp-rollout-traffic-shift-01
+- [X] T028 Create `pkg/feeder/versionstamp/conventions.go`: the ordered convention list v1.0.0 of [contracts/version-stamping.md](./contracts/version-stamping.md) §2, tag and attribute as **separate candidates**, with a per-service override; fixture: unit
+- [X] T029 Implement the verdict in `pkg/feeder/versionstamp/verdict.go`: per candidate the line share and error-line share, acceptance at the published 95 % / 95 % defaults over a one-hour window, first accepted wins, every rejection with its reason ([data-model.md §3](./data-model.md)); fixture: unit
+- [X] T030 Assert stability is **not** a criterion (a constant value on every line is accepted) and the audit's case is rejected: 255 of 37.2 M lines, all on start-up lines, 0 % of error lines; fixture: unit
+- [X] T031 Implement `pkg/feeder/versionstamp/normalise.go`: value → `deploy.commit_sha` / `deploy.image` (name + digest pair) / `deploy.release`, else an absent reason, using `pkg/feeder/deployref.go` only ([contracts/version-stamping.md](./contracts/version-stamping.md) §4); fixture: unit
+- [X] T032 Assert each absent reason: an abbreviated sha is `ABBREVIATED_SHA` and never padded, `:latest` is `MUTABLE_TAG`, a bare `sha256:…` is `BARE_DIGEST`; fixture: unit
+- [X] T033 Fill `deploy_ref` in the **GCP** backend's `errors_by_version` (`internal/backends/gcp/errors_by_version.go`) where a revision's image digest is known, via `versionstamp`, and re-record the affected GCP goldens as additions only; fixture: gcp-rollout-traffic-shift-01 **Done 2026-09-27, differently from written.** The backend sees only the revision label from Cloud Monitoring; the image digest lives in the graph, and reading it there would make a telemetry backend a graph reader. So each group's revision name goes through `versionstamp.Normalise` like any stamped value and becomes `deploy.release` — a Cloud Run revision name is a platform-assigned release identifier. It joins to nothing until a feeder correlates on it (T100). No golden moved: no GCP fixture's goldens hold an `errors_by_version` digest, and all 68 fixtures verify.
+- [ ] T100 Correlate each Cloud Run rollout's revision name as `deploy.release` in the GCP feeder (`internal/feeders/gcp/rollout.go`), beside its image digest, so a GCP `errors_by_version` group and a log stamped `DD_VERSION=$K_REVISION` both resolve to the rollout. C8 still excludes `deploy.release`, so this is a lookup join, never a merge; add `K_REVISION` as the zero-effort Cloud Run recipe in the stamping guide (T093); fixture: gcp-rollout-traffic-shift-01
 
 **Checkpoint**: the schema is extended, C9 fires and holds its apart-pair, the engine answers an
 unstamped pointer, and two backends share one version-stamp rule. User stories may begin.

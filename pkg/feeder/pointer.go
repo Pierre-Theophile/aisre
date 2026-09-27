@@ -143,6 +143,24 @@ const (
 // deployment has no version attribute to group by — it IS the version.
 var DeployVocabularies = []string{VocabGitHubResource, VocabVercelResource}
 
+// The Datadog vocabularies (005 T026; specs/005-datadog-connector/contracts/pointer-vocabularies.md).
+const (
+	// VocabDatadogLogs is a Datadog log-search query. Not otel-semconv-expressible: Datadog's grammar
+	// distinguishes a TAG (`version:x`) from an ATTRIBUTE (`@version:x`), and the two are different
+	// fields with different contents — a library's own JSON `version` stays `@version` and is not
+	// the deployment's `version` tag (005 research §2.4). OpenTelemetry has no way to state that
+	// distinction, so a translated selector could silently match the wrong field. Contract §1.
+	VocabDatadogLogs = "datadog-logs/v1"
+	// VocabDatadogMonitor is a Datadog monitor's own query, exactly as Datadog stores it, plus the
+	// monitor id. Not otel-semconv-expressible: monitor queries span Datadog's metric, log and
+	// composite grammars, each with its own aggregation and threshold syntax, and a monitor query is
+	// only meaningful in its type's grammar. Contract §2.
+	VocabDatadogMonitor = "datadog-monitor/v1"
+)
+
+// DatadogVocabularies is the set registered by feature 005, in the order the page documents them.
+var DatadogVocabularies = []string{VocabDatadogLogs, VocabDatadogMonitor}
+
 // VocabURL is a dashboard's URL or identifier in its backend. There is no OpenTelemetry vocabulary
 // for "a dashboard", which is the documented reason DashboardPointer does not use one.
 const VocabURL = "url"
@@ -163,6 +181,8 @@ var Vocabularies = []string{
 	VocabGCPMonitoringFilter,
 	VocabGCPLoggingQuery,
 	VocabGCPTraceFilter,
+	VocabDatadogLogs,
+	VocabDatadogMonitor,
 }
 
 // GCPVocabularies is the set registered by feature 003, in the order

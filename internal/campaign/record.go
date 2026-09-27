@@ -90,9 +90,37 @@ type Scope struct {
 	// decision 2026-09-21). It is empty rather than a list of every region name because a list
 	// would go stale the day Google adds one, and "all" is the actual intent.
 	Regions []string `yaml:"regions,omitempty"`
+	// Datadog is the Datadog scope in force over the window, for a campaign recording that
+	// connector (005 T025, FR-007, FR-070d). A window names projects, a Datadog scope, or both.
+	Datadog *DatadogScope `yaml:"datadog,omitempty"`
 	// Why says what changed and why, for the reader who finds two windows and wants to know which
 	// one to trust for a given instant. Both are true; this says what happened between them.
 	Why string `yaml:"why,omitempty"`
+}
+
+// DatadogScope is what a Datadog campaign window covered (005 FR-007): the site, the environments,
+// the watched log sources and the indexes. Monitors are scoped by tag in the connector's own
+// configuration and recorded in its checkpoints, so they are not repeated here.
+type DatadogScope struct {
+	// Site is the Datadog site, e.g. `datadoghq.eu`. Configuration, never a pointer field.
+	Site string `yaml:"site"`
+	// Environments are the `env` values in scope.
+	Environments []string `yaml:"environments"`
+	// LogSources are the watched `<env>/<service>` pairs.
+	LogSources []string `yaml:"log_sources,omitempty"`
+	// Indexes are the log indexes searched; empty means the default.
+	Indexes []string `yaml:"indexes,omitempty"`
+}
+
+func (d DatadogScope) validate(window int) error {
+	switch {
+	case strings.TrimSpace(d.Site) == "":
+		return fmt.Errorf("campaign: scope window %d's Datadog scope names no site", window)
+	case len(d.Environments) == 0:
+		return fmt.Errorf("campaign: scope window %d's Datadog scope names no environment; a service "+
+			"name is unique only within one, and an empty list would read as \"all\"", window)
+	}
+	return nil
 }
 
 // AllRegions reports whether this window covered every region.
@@ -198,8 +226,12 @@ func (r Record) Validate() error {
 	if err := r.validateScopes(); err != nil {
 		return err
 	}
-	if err := r.Mailbox.validate(); err != nil {
-		return err
+	// The mailbox is the GCP vendor-notice half's access path. A campaign recording only a connector
+	// that reads no mailbox — a Datadog-only campaign (005 T025) — has none to authorise.
+	if r.recordsProjects() {
+		if err := r.Mailbox.validate(); err != nil {
+			return err
+		}
 	}
 	if len(r.Signatories) == 0 {
 		return errors.New("campaign: a record needs at least one signatory; FR-140 requires a " +
@@ -238,10 +270,15 @@ func (r Record) validateScopes() error {
 		if scope.From.IsZero() {
 			return fmt.Errorf("campaign: scope window %d has no start instant", i+1)
 		}
-		if len(scope.Projects) == 0 {
-			return fmt.Errorf("campaign: scope window %d names no project; no code or checked-in "+
-				"default may assume a project name (FR-131), so an empty list is a record that "+
-				"says nothing rather than one that means \"all\"", i+1)
+		if len(scope.Projects) == 0 && scope.Datadog == nil {
+			return fmt.Errorf("campaign: scope window %d names no project and no Datadog scope; no "+
+				"code or checked-in default may assume a project name (FR-131), so an empty list is a "+
+				"record that says nothing rather than one that means \"all\"", i+1)
+		}
+		if scope.Datadog != nil {
+			if err := scope.Datadog.validate(i + 1); err != nil {
+				return err
+			}
 		}
 		if !scope.To.IsZero() && !scope.To.After(scope.From) {
 			return fmt.Errorf("campaign: scope window %d ends (%s) at or before it starts (%s)",
@@ -288,6 +325,17 @@ func (m Mailbox) validate() error {
 			"would understate what was authorised (FR-132)")
 	}
 	return nil
+}
+
+// recordsProjects reports whether any window names a GCP project, which is what brings the
+// vendor-notice mailbox into the campaign.
+func (r Record) recordsProjects() bool {
+	for _, scope := range r.Scopes {
+		if len(scope.Projects) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // ScopeAt returns the window in force at an instant, and whether one was.
