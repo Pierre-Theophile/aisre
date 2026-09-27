@@ -17,6 +17,8 @@ import (
 
 	"github.com/Pierre-Theophile/aisre/internal/datadogx"
 	ddfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/datadog"
+	"github.com/Pierre-Theophile/aisre/internal/feeders/deployrecord"
+	"github.com/Pierre-Theophile/aisre/internal/sanitise"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/doorbell"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/emit"
@@ -35,10 +37,11 @@ import (
 // DD_API_KEY and DD_APP_KEY, and DD_APP_KEY_ID so the gate can read the application key's own scopes.
 // A key on a command line is in every shell history and every process listing.
 //
-// # Recording a live run is refused until the sanitised tee is wired (T080)
+// # Recording a live run is sanitised in the connector (T080)
 //
-// A live Datadog response carries service names, hosts and monitor names; writing it to disk before
-// the sanitiser has seen it is what FR-137 forbids at any point, including during a failed run.
+// A live Datadog response carries service names, hosts and monitor names. --record routes every payload
+// through internal/feeders/deployrecord's tee with the Datadog pre-pass: only the sanitiser's output is
+// written, and the recording's events are derived from those bytes, never recorded from the live run.
 
 func init() { addFeedSubcommand(newFeedDatadogCommand) }
 
@@ -59,6 +62,8 @@ type feedDatadogOptions struct {
 	doorbellEnv    string
 	batchSize      int
 	overrides      []string
+	quotaShare     float64
+	quotaReserve   int
 }
 
 func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
@@ -90,8 +95,9 @@ func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
 		"perform the startup read-only gate and nothing else: no monitor read, no event, no server connection")
 	flags.BoolVar(&opts.once, "once", false, "one discovery tick and one monitor poll, then exit")
 	flags.StringVar(&opts.replayDir, "replay", "", "read payloads from this fixture directory instead of Datadog")
-	flags.StringVar(&opts.recordDir, "record", "", "write payloads and events to this fixture directory; "+
-		"refused on a live run until the sanitised recording tee is wired (FR-137, T080)")
+	flags.StringVar(&opts.recordDir, "record", "", "write payloads and events to this fixture directory; on a "+
+		"live run every payload is sanitised in the connector before a byte is written, under the corpus key "+
+		"(FR-137)")
 	flags.DurationVar(&opts.pollInterval, "poll-interval", ddfeeder.DefaultPollInterval,
 		"monitor poll cadence, "+ddfeeder.MinPollInterval.String()+"–"+ddfeeder.MaxPollInterval.String()+
 			", recorded on every transition as its sampling interval")
@@ -104,6 +110,10 @@ func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
 	flags.StringSliceVar(&opts.overrides, "version-override", nil,
 		"a service's version field as <env>/<service>=<name> (a tag) or =@<name> (an attribute); it is the "+
 			"only candidate for that service, recorded as the operator's, and still subject to the share test")
+	flags.Float64Var(&opts.quotaShare, "quota-share", 0.5,
+		"the fraction of what Datadog says is left in a rate-limit bucket this connector may spend (FR-081)")
+	flags.IntVar(&opts.quotaReserve, "quota-reserve", 20,
+		"calls left unspent in every bucket whatever the share works out to, for people and their tools (FR-081)")
 	return cmd
 }
 
@@ -133,15 +143,23 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 	case opts.recordDir != "" && !live:
 		return exitErrorf(ExitUsage, "feed datadog: --record and --replay are mutually exclusive; "+
 			"re-recording a replay would produce a fixture of a fixture")
-	case opts.recordDir != "" && live:
-		return exitErrorf(ExitUsage, "feed datadog: --record on a live run is refused: the sanitised "+
-			"recording tee is not wired yet (T080), and recording a live Datadog response would write "+
-			"service names, hosts and monitor names to disk unsanitised, which FR-137 forbids at any point")
 	case live && opts.site == "":
 		return exitErrorf(ExitUsage, "feed datadog: --site is required for a live run; the API host is "+
 			"api.<site>, and a key is valid on one site only")
 	}
 
+	// A live recording is sanitised in the connector before anything touches disk (FR-137): the
+	// sanitiser is built first, from the contract table and the corpus key, and without the key the run
+	// is refused here — before a directory exists and before anything is read.
+	var san *sanitise.Sanitiser
+	if opts.recordDir != "" && live && !opts.dryRun {
+		built, err := recordingSanitiser()
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed datadog: --record on a live run is sanitised in the connector "+
+				"before anything touches disk (FR-137), and it cannot start: %v", err)
+		}
+		san = built
+	}
 	if opts.dryRun {
 		return runFeedDatadogDryRun(ctx, opts, caps, cmd)
 	}
@@ -159,10 +177,19 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 	}
 
 	var src feeder.Source
+	var recording *deployrecord.Tee
 	var bell *doorbell.Bell
 	var poller *ddfeeder.Poller
+	var usage func() string
 	if live {
-		client, err := datadogClient(opts.site, caps)
+		budget, err := datadogx.NewBudget(feeder.QuotaPolicy{
+			Share: opts.quotaShare, Reserve: opts.quotaReserve, StaticAllowance: 30,
+		})
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed datadog: %v", err)
+		}
+		usage = budget.Report
+		client, err := datadogClient(opts.site, caps, budget)
 		if err != nil {
 			return exitErrorf(ExitUsage, "feed datadog: %v", err)
 		}
@@ -178,12 +205,20 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 		poller = &ddfeeder.Poller{
 			Pager: client, Tags: opts.monitorTags, Interval: opts.pollInterval, LogSources: sources,
 			Capabilities: caps, Push: chanSource.Push,
-			Measurer: datadogx.Measurer{Client: client}, VersionOverrides: overrides,
+			Measurer: datadogx.Measurer{Client: client}, VersionOverrides: overrides, Usage: usage,
 		}
 		if opts.doorbellListen != "" {
 			if bell, err = startDatadogDoorbell(ctx, opts, poller, logger); err != nil {
 				return exitErrorf(ExitUsage, "feed datadog: %v", err)
 			}
+		}
+		if san != nil {
+			tee, err := deployrecord.NewTee(chanSource, ddfeeder.Kind, san, opts.recordDir)
+			if err != nil {
+				return exitErrorf(ExitUsage, "feed datadog: %v", err)
+			}
+			recording = tee.WithPrepare(ddfeeder.PreparePayload(san))
+			src = recording
 		}
 		go func() {
 			defer chanSource.Close()
@@ -216,6 +251,28 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 		return exitErrorf(ExitTransport, "feed datadog: %v", err)
 	}
 	runErr := f.Run(ctx, src, connect)
+	if recording != nil {
+		// Finished whatever ended the run: the payloads on disk are sanitised, and the events are
+		// derived from them by a feeder configured in the recording's vocabulary.
+		shadowOpts, err := ddfeeder.PseudonymousOptions(san, feederOpts)
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed datadog: %v", err)
+		}
+		shadow, err := ddfeeder.New(shadowOpts)
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed datadog: %v", err)
+		}
+		events, err := recording.Finish(context.WithoutCancel(ctx), opts.recordDir, "datadog", shadow)
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "feed datadog: the recording was not completed: %v\n", err)
+		} else {
+			fmt.Fprintf(cmd.ErrOrStderr(), "recorded %d sanitised payload(s) and %d derived event(s) to %s; refused: %v\n",
+				recording.Written(), events, opts.recordDir, recording.Dropped())
+		}
+	}
+	if usage != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "datadog usage: %s\n", usage())
+	}
 	if bell != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "doorbell: %s\n", bell.Report())
 	}
@@ -230,13 +287,13 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 
 // datadogClient builds the live client over the surface of the enabled capabilities, from the keys in
 // the environment.
-func datadogClient(site string, caps ddfeeder.Capabilities) (*datadogx.Client, error) {
+func datadogClient(site string, caps ddfeeder.Capabilities, budget *datadogx.Budget) (*datadogx.Client, error) {
 	apiKey, appKey := os.Getenv("DD_API_KEY"), os.Getenv("DD_APP_KEY")
 	if apiKey == "" || appKey == "" {
 		return nil, fmt.Errorf("DD_API_KEY and DD_APP_KEY must be set; a key on the command line is in every " +
 			"shell history and process listing, so there is no flag for one")
 	}
-	return datadogx.New(datadogx.Options{Site: site, APIKey: apiKey, AppKey: appKey, Surface: ddfeeder.SurfaceFor(caps)})
+	return datadogx.New(datadogx.Options{Site: site, APIKey: apiKey, AppKey: appKey, Surface: ddfeeder.SurfaceFor(caps), Budget: budget})
 }
 
 // startDatadogDoorbell serves the doorbell. A valid ring asks the poller for a poll now; the body is
@@ -275,7 +332,7 @@ func runFeedDatadogDryRun(ctx context.Context, opts *feedDatadogOptions, caps dd
 		fmt.Fprintf(out, "  declares %s\n", op)
 	}
 	fmt.Fprintf(out, "read scopes allowed: %s\n", strings.Join(ddfeeder.AllowedScopes(caps), ", "))
-	client, err := datadogClient(opts.site, caps)
+	client, err := datadogClient(opts.site, caps, nil)
 	if err != nil {
 		return exitErrorf(ExitUsage, "feed datadog --dry-run: %v", err)
 	}

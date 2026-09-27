@@ -40,6 +40,8 @@ type Options struct {
 	HTTP *http.Client
 	// Now is the clock the rate-limit reset is measured from. Nil uses time.Now.
 	Now func() time.Time
+	// Budget, when set, paces every call (budget.go). Nil issues every call it is asked for.
+	Budget *Budget
 }
 
 // Client issues the published operations.
@@ -50,6 +52,7 @@ type Client struct {
 	surf   *feeder.ReadOnlySurface
 	http   *http.Client
 	now    func() time.Time
+	budget *Budget
 
 	mu       sync.Mutex
 	readings map[string]feeder.Reading
@@ -79,7 +82,7 @@ func New(opts Options) (*Client, error) {
 	}
 	return &Client{
 		base: base, apiKey: opts.APIKey, appKey: opts.AppKey, surf: opts.Surface, http: client, now: now,
-		readings: map[string]feeder.Reading{},
+		readings: map[string]feeder.Reading{}, budget: opts.Budget,
 	}, nil
 }
 
@@ -101,6 +104,12 @@ type StatusError struct {
 	Message    string
 }
 
+// HTTPStatus is the status Datadog answered.
+func (e *StatusError) HTTPStatus() int { return e.Status }
+
+// RetryAfterDuration is how long Datadog said to wait before retrying, zero when it said nothing.
+func (e *StatusError) RetryAfterDuration() time.Duration { return e.RetryAfter }
+
 func (e *StatusError) Error() string {
 	return fmt.Sprintf("datadogx: %s answered %d: %s", e.Op, e.Status, e.Message)
 }
@@ -110,6 +119,11 @@ func (e *StatusError) Error() string {
 func (c *Client) Do(ctx context.Context, op feeder.ReadOperation, path string, query map[string]string, body any) (*Response, error) {
 	if _, err := c.surf.Issuable(op); err != nil {
 		return nil, err
+	}
+	if c.budget != nil {
+		if err := c.budget.allow(ddfeeder.AreaOf(ctx), op, c.now()); err != nil {
+			return nil, err
+		}
 	}
 	method, _, _ := strings.Cut(string(op), " ")
 	var reader io.Reader
@@ -139,6 +153,9 @@ func (c *Client) Do(ctx context.Context, op feeder.ReadOperation, path string, q
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		if c.budget != nil {
+			c.budget.sent(ddfeeder.AreaOf(ctx), op, nil)
+		}
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -153,6 +170,16 @@ func (c *Client) Do(ctx context.Context, op feeder.ReadOperation, path string, q
 		c.mu.Lock()
 		c.readings[reading.Family] = reading
 		c.mu.Unlock()
+		if c.budget != nil {
+			c.budget.observe(op, reading)
+		}
+	}
+	if c.budget != nil {
+		var charged *feeder.Reading
+		if out.HasQuota {
+			charged = &out.Reading
+		}
+		c.budget.sent(ddfeeder.AreaOf(ctx), op, charged)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		se := &StatusError{Op: op, Status: resp.StatusCode, Message: errorMessage(raw)}
@@ -212,4 +239,13 @@ func (c *Client) ListMonitorsPage(ctx context.Context, tags string, page, pageSi
 		return nil, err
 	}
 	return resp.Body, nil
+}
+
+// Usage is the usage report of the client's budget, empty without one. The feeder and the backend each
+// build their own client and budget, so each reports its own calls (FR-084a).
+func (c *Client) Usage() string {
+	if c.budget == nil {
+		return ""
+	}
+	return c.budget.Report()
 }

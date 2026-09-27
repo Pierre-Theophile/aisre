@@ -486,6 +486,51 @@ func ContractPolicy() *Policy {
 	}
 	keep("vercel.poll-marker.outcome", "`complete` or `partial`")
 	drop("vercel.poll-marker.reason", "an error message, which quotes project names")
+	// --- The Datadog feeder's payloads (005 T080) ---------------------------------------------------
+	//
+	// Rooted at `datadog.<payload kind>`. They reach this table after internal/feeders/datadog's
+	// pre-pass (recording.go), which keeps only the fields the feeder reads and rewrites every identifier
+	// inside free text — a query's `service:…`, a group key's `env:…`, a tag's `team:…` — with the keyed
+	// pseudonym for its kind, so the query, the tags and the group keys are kept here AS REWRITTEN. The
+	// monitor's notification message, its creator, options and roles never get this far.
+	keep("datadog.monitors[].id", "an opaque counter Datadog assigns; it names no person, service or host, "+
+		"and the query pointer executes against it")
+	pseudo("datadog.monitors[].name", KindAlertPolicy, "a monitor's name, which routinely names the service")
+	keep("datadog.monitors[].type", "a published vocabulary")
+	keep("datadog.monitors[].query", "the monitor's query, its identifiers rewritten by the pre-pass (FR-074)")
+	keep("datadog.monitors[].tags[]", "identifier tags only, rewritten by the pre-pass; any other tag was dropped there")
+	keep("datadog.monitors[].tags", "absent (null) when no identifier tag survived the pre-pass")
+	keep("datadog.monitors[].priority", "a number from 1 to 5")
+	keep("datadog.monitors[].overall_state", "a published vocabulary")
+	keep("datadog.monitors[].created", "an instant")
+	keep("datadog.monitors[].modified", "the instant an edit is dated by")
+	keep("datadog.monitors[].state.groups.*", "per-group status and Datadog's stated instants; the group keys "+
+		"were rewritten by the pre-pass")
+	keep("datadog.discovery.log_sources[]", "watched sources, pseudonymised by the pre-pass")
+	keep("datadog.discovery.window.*", "the window measured")
+	keep("datadog.discovery.measurements[].source", "pseudonymised by the pre-pass")
+	for _, count := range []string{"lines", "error_lines", "host_lines"} {
+		keep("datadog.discovery.measurements[]."+count, "a count of lines where a field is present, never of an event")
+	}
+	keep("datadog.discovery.measurements[].candidates[].*", "a published convention's label and presence counts")
+	keep("datadog.discovery.measurements[].values[].value", "a deployed version (see `version`); the join to the "+
+		"deploy feeders' changes")
+	keep("datadog.discovery.measurements[].values[].first_seen", "an instant")
+	keep("datadog.discovery.measurements[].values[].beyond_horizon", "a flag")
+	keep("datadog.discovery.measurements[].tags[].key", "an allowlisted tag key")
+	keep("datadog.discovery.measurements[].tags[].value", "pseudonymised by the pre-pass")
+	keep("datadog.discovery.measurements[].tags[].lines", "a count")
+	keep("datadog.discovery.measurements[].failed", "a fixed sentence; the vendor's reason is withheld by the pre-pass")
+	keep("datadog.discovery.measurements[].values_failed", "a fixed sentence; the vendor's reason is withheld by the pre-pass")
+	keep("datadog.poll.outcome", "`complete` or `partial`")
+	keep("datadog.poll.pages", "a count")
+	drop("datadog.poll.reason", "an error message, which quotes URLs and names")
+	keep("datadog.poll.stop_reason", "`quota` or `rate_limited`, the connector's own typed stop")
+	keep("datadog.poll.deferred[]", "area names from the published deferral order")
+	keep("datadog.poll.resume_at", "the instant Datadog's Retry-After ends")
+	keep("datadog.poll.usage", "the connector's usage report: its area names, Datadog's rate-limit bucket names "+
+		"(X-RateLimit-Name, a published vocabulary) and counts")
+
 	drop("envs[].contentHint.*", "vendor-defined and unbounded, and it names backing stores")
 	drop("envs[].comment", "free text somebody wrote next to a secret, which is where a value gets pasted")
 	drop("envs[].edgeConfigTokenId", "a token identifier")

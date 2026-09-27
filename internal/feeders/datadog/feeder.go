@@ -224,6 +224,15 @@ type PollMarker struct {
 	Pages int `json:"pages,omitempty"`
 	// Reason says why a partial poll stopped: a page failure, a timeout, the quota.
 	Reason string `json:"reason,omitempty"`
+	// StopReason is the typed stop, when the poll or an area was stopped by the budget or by Datadog:
+	// StopQuota or StopRateLimited (FR-083). A stop is never the same fact as having found nothing.
+	StopReason string `json:"stop_reason,omitempty"`
+	// Deferred are the areas that yielded since the last poll, in the published order (FR-082).
+	Deferred []string `json:"deferred,omitempty"`
+	// ResumeAt is when a rate-limited poller reads again: Datadog's own Retry-After, never a guess.
+	ResumeAt *time.Time `json:"resume_at,omitempty"`
+	// Usage is the budget's usage report at the poll (FR-084).
+	Usage string `json:"usage,omitempty"`
 }
 
 // apply dispatches one payload. A payload kind nobody handles is an error, never a silently ignored
@@ -357,8 +366,15 @@ func (f *Feeder) applyPoll(ctx context.Context, em feeder.Emitter, marker PollMa
 			return err
 		}
 	}
+	// A complete poll vouches for the interval it sampled. A partial one vouches for nothing: its extent
+	// is the instant it ran, so the gap it declares runs from the last instant anything covered to it,
+	// never an interval that ends before it starts.
+	from := at.Add(-f.opts.PollInterval)
+	if !complete {
+		from = at
+	}
 	return em.Checkpoint(ctx, feeder.CheckpointFact{
-		ExtentFrom: at.Add(-f.opts.PollInterval),
+		ExtentFrom: from,
 		ExtentTo:   at,
 		GapBefore:  !complete,
 		Note:       f.checkpointNote(marker, complete),
@@ -408,6 +424,20 @@ func (f *Feeder) checkpointNote(marker PollMarker, complete bool) string {
 	}
 	if !complete {
 		lines = append(lines, "partial: "+orUnset(marker.Reason)+"; nothing unread was retracted")
+	}
+	if marker.StopReason != "" {
+		stop := "stopped: " + marker.StopReason
+		if marker.ResumeAt != nil {
+			stop += "; reading again from " + marker.ResumeAt.UTC().Format(time.RFC3339) + ", as Datadog asked"
+		}
+		lines = append(lines, stop)
+	}
+	if len(marker.Deferred) > 0 {
+		lines = append(lines, "deferred for quota, in the published order: "+strings.Join(marker.Deferred, ", ")+
+			"; what they would have read is unread, not absent")
+	}
+	if marker.Usage != "" {
+		lines = append(lines, "usage: "+marker.Usage)
 	}
 	add := func(title string, items []string) {
 		items = uniqueSorted(items)

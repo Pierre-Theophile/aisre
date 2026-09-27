@@ -65,7 +65,14 @@ type Poller struct {
 	// measurer's default of seven days.
 	FirstSeenHorizon time.Duration
 
+	// Usage, when set, is the budget's usage report, stated on every poll marker (FR-084).
+	Usage func() string
+
 	pollNow chan struct{}
+	// resumeAt is when Datadog said to read again after a 429; nothing is read before it.
+	resumeAt time.Time
+	// deferred are the areas that yielded to the budget since the last poll marker.
+	deferred map[Area]bool
 	// known are the stamp values already listed, per source. It only saves calls: a restarted poller
 	// lists them again, and the feeder re-derives the ids already sent (contract §4).
 	known map[string]map[string]bool
@@ -111,12 +118,18 @@ func (p *Poller) Discover(ctx context.Context) error {
 		tick.Window = &DiscoveryWindow{From: to.Add(-window), To: to}
 		for _, src := range p.LogSources {
 			key := src.Env + "/" + src.Service
-			m, err := p.Measurer.Measure(ctx, src, p.VersionOverrides[key], tick.Window.From, tick.Window.To)
-			if err != nil {
-				if ctx.Err() != nil {
-					return ctx.Err()
+			var m SourceMeasurement
+			if p.waiting() {
+				m = SourceMeasurement{Failed: StopRateLimited}
+			} else {
+				var err error
+				m, err = p.Measurer.Measure(WithArea(ctx, AreaDiscovery), src, p.VersionOverrides[key], tick.Window.From, tick.Window.To)
+				if err != nil {
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					m = SourceMeasurement{Failed: p.failure(AreaDiscovery, err)}
 				}
-				m = SourceMeasurement{Failed: err.Error()}
 			}
 			m.Source = key
 			if m.Failed == "" {
@@ -143,13 +156,22 @@ func (p *Poller) PollOnce(ctx context.Context) error {
 		size = DefaultPageSize
 	}
 	marker := PollMarker{Outcome: "complete"}
+	area := WithArea(ctx, AreaMonitors)
 	for page := 0; ; page++ {
-		raw, err := p.Pager.ListMonitorsPage(ctx, strings.Join(p.Tags, ","), page, size)
+		if p.waiting() {
+			marker.Outcome, marker.Reason = "partial", fmt.Sprintf("page %d: not read, Datadog asked to wait", page)
+			marker.StopReason = StopRateLimited
+			break
+		}
+		raw, err := p.Pager.ListMonitorsPage(area, strings.Join(p.Tags, ","), page, size)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			marker.Outcome, marker.Reason = "partial", fmt.Sprintf("page %d: %v", page, err)
+			if reason := p.failure(AreaMonitors, err); reason == StopQuota || reason == StopRateLimited {
+				marker.StopReason = reason
+			}
 			break
 		}
 		var items []json.RawMessage
@@ -167,11 +189,57 @@ func (p *Poller) PollOnce(ctx context.Context) error {
 			break
 		}
 	}
+	if p.waiting() {
+		resume := p.resumeAt
+		marker.ResumeAt = &resume
+	}
+	marker.Deferred = p.takeDeferred()
+	if p.Usage != nil {
+		marker.Usage = p.Usage()
+	}
 	raw, err := json.Marshal(marker)
 	if err != nil {
 		return err
 	}
 	return p.Push(ctx, feeder.Payload{Kind: PayloadPoll, At: p.now(), Bytes: raw})
+}
+
+// waiting reports whether Datadog's Retry-After is still running.
+func (p *Poller) waiting() bool {
+	return !p.resumeAt.IsZero() && p.now().Before(p.resumeAt)
+}
+
+// failure classifies a failed read for area: a quota stop defers the area, a 429 starts the wait
+// Datadog asked for. It returns what the payload states: the typed stop, or the error itself.
+func (p *Poller) failure(area Area, err error) string {
+	reason, wait := stopOf(err)
+	switch reason {
+	case StopQuota:
+		if p.deferred == nil {
+			p.deferred = map[Area]bool{}
+		}
+		p.deferred[area] = true
+		return reason
+	case StopRateLimited:
+		if wait > 0 {
+			p.resumeAt = p.now().Add(wait)
+		}
+		return reason
+	default:
+		return err.Error()
+	}
+}
+
+// takeDeferred lists the deferred areas in the published order, and clears them.
+func (p *Poller) takeDeferred() []string {
+	var out []string
+	for _, a := range []Area{AreaMonitors, AreaDiscovery, AreaRollouts, AreaInvestigation} {
+		if p.deferred[a] {
+			out = append(out, string(a))
+		}
+	}
+	p.deferred = nil
+	return out
 }
 
 // Run polls every Interval, discovers every DiscoveryInterval, and polls at once when PollNow is
@@ -230,9 +298,13 @@ func (p *Poller) sight(ctx context.Context, src LogSource, key string, m *Source
 	if p.known[key] == nil {
 		p.known[key] = map[string]bool{}
 	}
-	sightings, err := p.Measurer.Sightings(ctx, src, FacetOf(v.Accepted), w.From, w.To, p.FirstSeenHorizon, p.known[key])
+	if p.waiting() {
+		m.ValuesFailed = StopRateLimited
+		return
+	}
+	sightings, err := p.Measurer.Sightings(WithArea(ctx, AreaRollouts), src, FacetOf(v.Accepted), w.From, w.To, p.FirstSeenHorizon, p.known[key])
 	if err != nil {
-		m.ValuesFailed = err.Error()
+		m.ValuesFailed = p.failure(AreaRollouts, err)
 		return
 	}
 	for _, s := range sightings {

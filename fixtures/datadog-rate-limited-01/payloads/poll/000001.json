@@ -1,0 +1,1 @@
+{"outcome":"complete","pages":1,"deferred":["rollouts"],"usage":"bucket logs_analytics: 28 of 300 left (platform_reported), 11 spent by this connector; bucket monitors_list: 899 of 1000 left (platform_reported), 0 spent by this connector; discovery: 12 call(s) on logs_analytics; monitors: 1 call(s) on monitors_list; rollouts: 1 call(s) deferred for quota"}

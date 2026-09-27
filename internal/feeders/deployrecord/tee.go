@@ -47,8 +47,20 @@ type Tee struct {
 	san      *sanitise.Sanitiser
 	out      *record.PayloadRecorder
 
+	// prepare, when set, rewrites a payload before the policy pass: for a vendor whose identifiers
+	// also live inside free text (a Datadog monitor's query, its group keys and tags) and must be
+	// pseudonymised with the same key as the fields that name them, so the recording still joins.
+	prepare func(kind string, raw []byte) ([]byte, error)
+
 	mu      sync.Mutex
 	dropped map[string]int
+}
+
+// WithPrepare sets a pre-pass run on each payload before the policy's; its output, never the input,
+// goes on to the sanitiser. A pre-pass that fails drops the payload like a policy refusal.
+func (t *Tee) WithPrepare(prepare func(kind string, raw []byte) ([]byte, error)) *Tee {
+	t.prepare = prepare
+	return t
 }
 
 var _ feeder.Source = (*Tee)(nil)
@@ -77,7 +89,16 @@ func (t *Tee) Next(ctx context.Context) (feeder.Payload, error) {
 	if err != nil {
 		return p, err
 	}
-	clean, err := t.san.JSON(t.platform+"."+p.Kind, p.Bytes)
+	raw := p.Bytes
+	if t.prepare != nil {
+		if raw, err = t.prepare(p.Kind, raw); err != nil {
+			t.mu.Lock()
+			t.dropped["the pre-pass refused it: "+err.Error()]++
+			t.mu.Unlock()
+			return p, nil
+		}
+	}
+	clean, err := t.san.JSON(t.platform+"."+p.Kind, raw)
 	if err != nil {
 		var canary *sanitise.CanarySurvivedError
 		if errors.As(err, &canary) {

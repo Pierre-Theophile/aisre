@@ -1,0 +1,36 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-rate-limited-01
+family: datadog-budget
+description: 'The connector''s budget under an incident, recorded from the live poller, the real client and its budget against a twin that answers with rate-limit headers. At 14:00 discovery measures `checkout` and the rollout lookup is deferred to leave half the share to the areas ahead of it; at 14:05 the people working an incident spend the log bucket down, discovery stops at the reserve (typed `quota`), and the monitor list answers 429, so the poll is partial (typed `rate_limited`) and resumes at the stated reset; a doorbell ring inside the wait reads nothing; at 14:10 the poll is complete again and discovery is still deferred. No monitor is retracted by a partial poll. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T13:59:00Z
+    end: 2026-09-21T14:30:00Z
+
+queries:
+  # A partial poll retracts nothing: the monitor is still an alert after the 429 and the unread ring.
+  - name: the-monitor-survives-the-rate-limit
+    kind: subgraph
+    focus: datadog.monitor=7001
+    valid_at: 2026-09-21T14:08:00Z
+    observed_at: 2026-09-21T14:30:00Z
+    hops: 1
+    direction: both
+  # The log source's pointer and verdict as the 14:00 measurement left them: the quota stop at 14:05
+  # changed nothing it could not read.
+  - name: checkout-pointer-through-the-quota-stop
+    kind: pointers
+    focus: datadog.service=production/checkout
+    valid_at: 2026-09-21T14:20:00Z
+    observed_at: 2026-09-21T14:30:00Z
