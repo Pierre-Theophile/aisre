@@ -41,8 +41,9 @@ the pointer is about without reading Datadog's grammar (FR-036).
   composite, a synthetic check) gets the `SOURCE_LINK` only, and the omission is stated as a
   property rather than forced into the nearest kind. No new pointer kind is added.
   **Backend**: `datadog`.
-- **Selector**: the monitor's query string exactly as Datadog stores it, plus the monitor id. Never
-  rewritten: a monitor query is only meaningful in the monitor type's own grammar.
+- **Selector**: the monitor's query string exactly as Datadog stores it. Never rewritten: a monitor
+  query is only meaningful in the monitor type's own grammar. The monitor id is the attribute
+  `datadog.monitor.id` (decimal), which is what the backend executes against.
 - **Why not OTel semantic conventions**: monitor queries span Datadog's metric, log and composite
   grammars, each with its own aggregation and threshold syntax; none of it is expressible as OTel
   attributes.

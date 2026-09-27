@@ -158,6 +158,11 @@ const (
 	VocabDatadogMonitor = "datadog-monitor/v1"
 )
 
+// AttrDatadogMonitorID is the pointer attribute a `datadog-monitor/v1` pointer carries its monitor id
+// in, as decimal. The selector stays the monitor's query exactly as Datadog stores it; the id is what
+// the backend executes against (GET /api/v1/monitor/{id}). Contract §2.
+const AttrDatadogMonitorID = "datadog.monitor.id"
+
 // DatadogVocabularies is the set registered by feature 005, in the order the page documents them.
 var DatadogVocabularies = []string{VocabDatadogLogs, VocabDatadogMonitor}
 
