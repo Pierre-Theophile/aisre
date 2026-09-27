@@ -104,7 +104,7 @@ And the cases that produce **no** reference, each recorded on the group as
 
 When the accepted attribute's value set gains a value that normalises to `deploy.commit_sha` or
 `deploy.image`, the feeder emits a `ROLLOUT` change: valid start the first indexed line carrying it,
-**marked `sre.change.valid_from_is_a_bound`**, actor kind `UNKNOWN`, a correlation key with
+**marked `sre.change.valid_from_is_a_bound`**, actor kind unspecified (the logs name no actor; `UNKNOWN` would claim one was observed), a correlation key with
 `deployment.environment.name`, and a `changed-by` edge to the service. Details in
 [data-model.md §6](../data-model.md). No change is inferred from a `deploy.release` value or from a
 value with no reference; the checkpoint counts both.

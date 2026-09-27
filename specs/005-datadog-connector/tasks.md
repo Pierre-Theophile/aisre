@@ -252,13 +252,25 @@ as a bound, merged by C9 then C8 with a deploy feeder's rollout of the same comm
 **Independent test**: `fixtures/datadog-log-rollout-merge-01` shows **one** rollout in the ranked
 change list, carrying the stated instant.
 
-- [ ] T069 [US5] Write `internal/feeders/datadog/rollouts.go` per [contracts/datadog-feeder.md](./contracts/datadog-feeder.md) §4: values per interval, first indexed line within the published 7-day horizon, id from value and first-seen instant only, `deploy.*` correlation key with `deployment.environment.name`, `valid_from_is_a_bound`, actor `UNKNOWN`; fixture: datadog-log-rollout-01
-- [ ] T070 [US5] Assert release-form and unreferenceable values emit no change and are counted; alternation emits once per value with the overlap recorded; a value first seen beyond the horizon emits nothing; fixture: datadog-log-rollout-01
-- [ ] T071 [US5] Assert restart safety: two feeder runs over the same recorded interval emit identical ids, with no process state carried between them; fixture: datadog-log-rollout-01
-- [ ] T072 [US5] Build `fixtures/datadog-log-rollout-01`: a service on a platform no feeder covers deploys twice; each rollout stands alone, marked as a bound; fixture: datadog-log-rollout-01
-- [ ] T073 [US5] Build `fixtures/datadog-log-rollout-merge-01`: the same commit deployed by Cloud Run (stated instant) and first seen in Datadog logs later; C9 then C8 give one rollout; the pair with the same commit in another environment stays apart; fixture: datadog-log-rollout-merge-01
-- [ ] T074 [US5] Close research §5 O3: establish which valid start the merged change carries; if it is the bound, fix the merge so the stated instant wins while the bound stays visible, and record it; fixture: datadog-log-rollout-merge-01
-- [ ] T075 [US5] Assert US5 scenario 9: the new version's `errors_by_version` group names the same `deploy.commit_sha` the merged change claims, and the engine resolves it to that change; fixture: datadog-log-rollout-merge-01
+- [X] T069 [US5] Write `internal/feeders/datadog/rollouts.go` per [contracts/datadog-feeder.md](./contracts/datadog-feeder.md) §4: values per interval, first indexed line within the published 7-day horizon, id from value and first-seen instant only, `deploy.*` correlation key with `deployment.environment.name`, `valid_from_is_a_bound`, actor kind unspecified; fixture: datadog-log-rollout-01
+- [X] T070 [US5] Assert release-form and unreferenceable values emit no change and are counted; alternation emits once per value with the overlap recorded; a value first seen beyond the horizon emits nothing; fixture: datadog-log-rollout-01
+- [X] T071 [US5] Assert restart safety: two feeder runs over the same recorded interval emit identical ids, with no process state carried between them; fixture: datadog-log-rollout-01
+- [X] T072 [US5] Build `fixtures/datadog-log-rollout-01`: a service on a platform no feeder covers deploys twice; each rollout stands alone, marked as a bound; fixture: datadog-log-rollout-01
+- [X] T073 [US5] Build `fixtures/datadog-log-rollout-merge-01`: the same commit deployed by Cloud Run (stated instant) and first seen in Datadog logs later; C9 then C8 give one rollout; the pair with the same commit in another environment stays apart; fixture: datadog-log-rollout-merge-01
+- [X] T074 [US5] Close research §5 O3: establish which valid start the merged change carries; if it is the bound, fix the merge so the stated instant wins while the bound stays visible, and record it; fixture: datadog-log-rollout-merge-01
+- [X] T075 [US5] Assert US5 scenario 9: the new version's `errors_by_version` group names the same `deploy.commit_sha` the merged change claims, and the engine resolves it to that change; fixture: datadog-log-rollout-merge-01
+
+  - *Done notes (T069–T075):* the live poller lists, for a stamped source, the stamp's new values and
+    the instant of each one's first indexed line within the seven-day horizon (one aggregate, then two
+    searches per new value: the first line, and whether any line precedes the horizon); the values ride
+    on the discovery payload, and `rollouts.go` turns each commit or image into a ROLLOUT whose id is
+    the value and that instant only. Its actor is left **unspecified**, not UNKNOWN: the logs name no
+    actor, and UNKNOWN would claim one was observed (data-model §6 said UNKNOWN; corrected here). The
+    overlap of a canary's values is stated in the checkpoint rather than on the changes: a change
+    emitted at first sight cannot later gain a property without a second event under the same id.
+    O3 is closed in research §5: the merged change carries the stated instant. T075's engine half is
+    `internal/investigation/engine/versionchange.go`: an errors_by_version answer names, under each
+    group, the ranked change whose sources stated the same `deploy.*` reference.
 
 **Checkpoint**: "did errors start with this deploy?" is answered the same way whatever deployed it.
 
@@ -269,9 +281,17 @@ change list, carrying the stated instant.
 **Independent test**: replay tag payloads; owners, `owned-by` edges and claims match goldens; a key off
 the allowlist becomes nothing.
 
-- [ ] T076 [US6] Write `internal/feeders/datadog/tags.go`: the published allowlist, team/owner tags to OWNER nodes and `owned-by` edges with unknown valid start (FR-065, FR-066); fixture: datadog-tags-01
-- [ ] T077 [US6] Emit identity claims for allowlisted identifier tags, never measurements (FR-067); keep both claims where two keys name one owner differently (FR-068); fixture: datadog-tags-01
-- [ ] T078 [US6] Build `fixtures/datadog-tags-01` including an off-allowlist key and a numeric tag that must not become a property; fixture: datadog-tags-01
+- [X] T076 [US6] Write `internal/feeders/datadog/tags.go`: the published allowlist, team/owner tags to OWNER nodes and `owned-by` edges with unknown valid start (FR-065, FR-066); fixture: datadog-tags-01
+- [X] T077 [US6] Emit identity claims for allowlisted identifier tags, never measurements (FR-067); keep both claims where two keys name one owner differently (FR-068); fixture: datadog-tags-01
+- [X] T078 [US6] Build `fixtures/datadog-tags-01` including an off-allowlist key and a numeric tag that must not become a property; fixture: datadog-tags-01
+
+- *Done notes (T076–T078):* the tags read are the ones on a watched log source's own lines, measured
+  at each discovery tick (one aggregate per allowlisted key: `team`, `owner`, and the
+  `kube_namespace`+`kube_deployment` pair). A value is the source's only on the published line share;
+  the rest is stated in the checkpoint. Owners are OWNER nodes and `owned-by` edges from the log
+  source, valid from unknown like the source itself; the pair is an identity claim
+  `k8s.deployment=<ns>/<name>`. Monitor tags are not read for ownership: a monitor's owner is its
+  watched service's. `IsMeasurement` moved from the GCP feeder to `pkg/feeder`, shared.
 
 ---
 

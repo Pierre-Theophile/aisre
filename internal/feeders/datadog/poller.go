@@ -33,6 +33,8 @@ type MonitorPager interface {
 // discovery reads, bounded: one aggregate for the totals, one for hosts, one per candidate.
 type Measurer interface {
 	Measure(ctx context.Context, src LogSource, override string, from, to time.Time) (SourceMeasurement, error)
+	// Sightings lists the new values of an accepted stamp with their first indexed line (rollouts.go).
+	Sightings(ctx context.Context, src LogSource, facet string, from, to time.Time, horizon time.Duration, known map[string]bool) ([]ValueSighting, error)
 }
 
 // DefaultPageSize is the monitor list's page size.
@@ -59,7 +61,14 @@ type Poller struct {
 	// Push hands a payload to the feeder's source.
 	Push func(ctx context.Context, p feeder.Payload) error
 
+	// FirstSeenHorizon is how far back a new value's first line is looked for. Zero uses the
+	// measurer's default of seven days.
+	FirstSeenHorizon time.Duration
+
 	pollNow chan struct{}
+	// known are the stamp values already listed, per source. It only saves calls: a restarted poller
+	// lists them again, and the feeder re-derives the ids already sent (contract §4).
+	known map[string]map[string]bool
 }
 
 // PollNow asks for a poll as soon as possible. It never blocks, and rings between two polls are one.
@@ -110,6 +119,9 @@ func (p *Poller) Discover(ctx context.Context) error {
 				m = SourceMeasurement{Failed: err.Error()}
 			}
 			m.Source = key
+			if m.Failed == "" {
+				p.sight(ctx, src, key, &m, *tick.Window)
+			}
 			tick.Measurements = append(tick.Measurements, m)
 		}
 	}
@@ -203,4 +215,28 @@ func (p *Poller) Run(ctx context.Context) error {
 			return err
 		}
 	}
+}
+
+// sight adds the new values of the source's accepted stamp to its measurement. A failure is stated on
+// the measurement and costs only the rollouts of this interval: the next one looks again.
+func (p *Poller) sight(ctx context.Context, src LogSource, key string, m *SourceMeasurement, w DiscoveryWindow) {
+	v, err := DecideVerdict(*m, p.VersionOverrides[key], versionstamp.Thresholds{}, w.To.Sub(w.From))
+	if err != nil || !v.Stamped() {
+		return
+	}
+	if p.known == nil {
+		p.known = map[string]map[string]bool{}
+	}
+	if p.known[key] == nil {
+		p.known[key] = map[string]bool{}
+	}
+	sightings, err := p.Measurer.Sightings(ctx, src, FacetOf(v.Accepted), w.From, w.To, p.FirstSeenHorizon, p.known[key])
+	if err != nil {
+		m.ValuesFailed = err.Error()
+		return
+	}
+	for _, s := range sightings {
+		p.known[key][s.Value] = true
+	}
+	m.Values = sightings
 }

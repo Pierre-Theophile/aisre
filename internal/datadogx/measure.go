@@ -4,6 +4,7 @@ package datadogx
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	ddfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/datadog"
@@ -69,6 +70,45 @@ func (m Measurer) Measure(ctx context.Context, src ddfeeder.LogSource, override 
 		}
 		out.Candidates = append(out.Candidates, ddfeeder.CandidateCount{Label: c.Label(), Lines: lines, ErrorLines: errorLines})
 	}
+	tags, err := m.tags(ctx, base, from, to, indexes)
+	if err != nil {
+		return out, err
+	}
+	out.Tags = tags
+	return out, nil
+}
+
+// tags counts the allowlisted tag values on the source's lines: one aggregate per owner key and one
+// for the Kubernetes pair (005 T076). Only allowlisted keys are ever asked for (FR-066).
+func (m Measurer) tags(ctx context.Context, base string, from, to time.Time, indexes []string) ([]ddfeeder.TagCount, error) {
+	var out []ddfeeder.TagCount
+	for _, key := range ddfeeder.TagKeysMeasured() {
+		facets := strings.Split(key, "/")
+		group := make([]GroupBy, 0, len(facets))
+		for _, f := range facets {
+			group = append(group, GroupBy{Facet: f, Limit: 10})
+		}
+		res, _, err := m.Client.AggregateLogs(ctx, AggregateRequest{
+			Compute: []Compute{{Aggregation: "count", Type: "total"}},
+			Filter:  NewLogFilter(base, from, to, indexes),
+			GroupBy: group,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range res.Data.Buckets {
+			values := make([]string, 0, len(facets))
+			for _, f := range facets {
+				values = append(values, b.Key(f))
+			}
+			value := strings.Join(values, "/")
+			if strings.Contains("/"+value+"/", "//") || value == "" {
+				continue // a line without the key (or half the pair) names nothing
+			}
+			n, _ := b.Count(0)
+			out = append(out, ddfeeder.TagCount{Key: key, Value: value, Lines: n})
+		}
+	}
 	return out, nil
 }
 
@@ -82,4 +122,68 @@ func presence(c versionstamp.Candidate) string {
 	default:
 		return "@" + c.Name + ":*"
 	}
+}
+
+// DefaultFirstSeenHorizon is how far back a new value's first line is looked for (contract §4).
+const DefaultFirstSeenHorizon = 7 * 24 * time.Hour
+
+// Sightings lists the values of facet seen in [from, to) that are not in known, each with its first
+// indexed line within the horizon (005 T069). A value with lines in the day before the horizon is
+// marked BeyondHorizon: it was deployed before the connector could see it. Costs one aggregate, then two
+// searches per new value.
+func (m Measurer) Sightings(ctx context.Context, src ddfeeder.LogSource, facet string, from, to time.Time, horizon time.Duration, known map[string]bool) ([]ddfeeder.ValueSighting, error) {
+	if horizon <= 0 {
+		horizon = DefaultFirstSeenHorizon
+	}
+	base := "service:" + src.Service + " env:" + src.Env
+	indexes := m.Indexes
+	if src.Index != "" {
+		indexes = []string{src.Index}
+	}
+	out, _, err := m.Client.AggregateLogs(ctx, AggregateRequest{
+		Compute: []Compute{{Aggregation: "count", Type: "total"}},
+		Filter:  NewLogFilter(base, from, to, indexes),
+		GroupBy: []GroupBy{{Facet: facet, Limit: 50}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	first := func(clause string, a, b time.Time) (time.Time, bool, error) {
+		page, _, err := m.Client.SearchLogs(ctx, SearchRequest{
+			Filter: NewLogFilter(base+" "+clause, a, b, indexes), Sort: "timestamp", Page: SearchPage{Limit: 1},
+		})
+		if err != nil || len(page.Data) == 0 {
+			return time.Time{}, false, err
+		}
+		return page.Data[0].Attributes.Timestamp.UTC(), true, nil
+	}
+	var sightings []ddfeeder.ValueSighting
+	for _, b := range out.Data.Buckets {
+		value := b.Key(facet)
+		if value == "" || known[value] {
+			continue
+		}
+		clause := facetClause(facet, value)
+		seen, ok, err := first(clause, to.Add(-horizon), to)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		_, older, err := first(clause, to.Add(-horizon-24*time.Hour), to.Add(-horizon))
+		if err != nil {
+			return nil, err
+		}
+		sightings = append(sightings, ddfeeder.ValueSighting{Value: value, FirstSeen: seen, BeyondHorizon: older})
+	}
+	return sightings, nil
+}
+
+// facetClause spells `facet:value`, quoting a value the query syntax would split.
+func facetClause(facet, value string) string {
+	if strings.ContainsAny(value, ` :"()\*?`) {
+		value = `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
+	}
+	return facet + ":" + value
 }

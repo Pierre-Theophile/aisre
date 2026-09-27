@@ -115,7 +115,16 @@ func fixtureOptions() ddfeeder.Options {
 
 func generateMonitorFixture(t *testing.T, fx monitorFixture) {
 	t.Helper()
-	dir := filepath.Join(repoRoot(t), fx.dir)
+	generateFixture(t, fx.dir, fx.family, fx.description+" Only the polls at which something changed are "+
+		"recorded; the unchanged polls between them re-send ids already sent.",
+		fixtureOptions(), fx.payloadsOf(t), fx.steps[0].at.Add(-time.Minute), fx.end, fx.queries)
+}
+
+// generateFixture runs the feeder over payloads, recording them and its events into dir, and writes the
+// manifest with its queries.
+func generateFixture(t *testing.T, fixture, family, description string, opts ddfeeder.Options, payloads []feeder.Payload, start, end time.Time, queries string) {
+	t.Helper()
+	dir := filepath.Join(repoRoot(t), fixture)
 	for _, generated := range []string{"payloads", "events.jsonl", "rejected.jsonl", "manifest.yaml", "golden"} {
 		if err := os.RemoveAll(filepath.Join(dir, generated)); err != nil {
 			t.Fatal(err)
@@ -124,12 +133,12 @@ func generateMonitorFixture(t *testing.T, fx monitorFixture) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	f, err := ddfeeder.New(fixtureOptions())
+	f, err := ddfeeder.New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	clock := &arrivalClock{}
-	src := record.Wrap(clock.wrap(source.NewSliceSource(fx.payloadsOf(t))), dir)
+	src := record.Wrap(clock.wrap(source.NewSliceSource(payloads)), dir)
 	memory := emit.NewMemoryEmitter(f.Describe(), emit.WithMemoryClock(clock.Now))
 	events := record.Emitter(memory, dir)
 	if err := f.Run(t.Context(), src, events); err != nil {
@@ -145,13 +154,11 @@ func generateMonitorFixture(t *testing.T, fx monitorFixture) {
 		t.Fatalf("%d events refused; the first is %s (%s)", len(rejected), rejected[0].GetEventId(), rejected[0].GetReasonDetail())
 	}
 	if err := record.WriteManifest(dir, record.Manifest{
-		Family: fx.family,
-		Description: fx.description + " Only the polls at which something changed are recorded; the " +
-			"unchanged polls between them re-send ids already sent. Synthetic structural twin: no " +
-			"identifier is derived from the organisation.",
-		Sources: []record.ManifestSource{record.SourceOf(f.Describe())},
-		Start:   fx.steps[0].at.Add(-time.Minute),
-		End:     fx.end,
+		Family:      family,
+		Description: description + " Synthetic structural twin: no identifier is derived from the organisation.",
+		Sources:     []record.ManifestSource{record.SourceOf(f.Describe())},
+		Start:       start,
+		End:         end,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +167,7 @@ func generateMonitorFixture(t *testing.T, fx monitorFixture) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, append(existing, []byte(fx.queries)...), 0o644); err != nil {
+	if err := os.WriteFile(path, append(existing, []byte(queries)...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

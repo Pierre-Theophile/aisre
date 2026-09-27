@@ -50,6 +50,9 @@ type Catalogue struct {
 	// translation only exists for a node some answer actually described (T081, FR-016).
 	refByID map[string]string
 	idByRef map[string]string
+	// changeByKey is the change each stated deploy reference belongs to, "namespace=value" → entity
+	// id, learned from ranked changes (versionchange.go).
+	changeByKey map[string]string
 	// edgeTypes is the published type of each edge in the neighbourhood, keyed "src\x00dst". A
 	// span query over an edge has to name the edge's own type, and guessing `calls` for an edge
 	// the graph calls `depends_on` asks a question no recording holds.

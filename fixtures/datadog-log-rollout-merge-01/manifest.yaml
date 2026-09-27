@@ -1,0 +1,47 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-log-rollout-merge-01
+family: datadog-cross-source
+description: 'One rollout, whatever saw it. Cloud Run rolls checkout out to a new revision at 14:18 from commit NEW, stated by its commit-sha label; the Datadog connector first sees NEW in checkout''s production logs at 14:19:12, a bound. C9 makes the log source and the Cloud Run service one entity and C8 makes the two rollouts one change. The same commit first seen in staging''s logs at 14:40 is another rollout, refused by C8 on the environment. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T13:59:00Z
+    end: 2026-09-21T16:00:00Z
+
+
+queries:
+  # The question an investigation asks: what changed on checkout before the incident? ONE rollout,
+  # carrying both sources' facts, because C9 and then C8 merged them.
+  - name: what-changed-on-checkout
+    kind: diff
+    focus: gcp.cloudrun.service=twin-production/europe-west1/checkout
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T15:00:00Z
+    reference_at: 2026-09-21T14:30:00Z
+    observed_at: 2026-09-21T16:00:00Z
+    hops: 1
+    direction: both
+  - name: why-the-log-rollout-is-the-cloud-run-rollout
+    kind: audit
+    ref_a: datadog.change=production/checkout@7e6d5c4b3a2918070f1e2d3c4b5a69788796a5b4@2026-09-21T14:19:12Z
+    ref_b: gcp.change=rollout-created/twin-production/europe-west1/checkout/checkout-00007-new@2026-09-21T14:18:00Z
+    observed_at: 2026-09-21T16:00:00Z
+  - name: why-the-staging-rollout-is-not-the-production-one
+    kind: audit
+    ref_a: datadog.change=staging/checkout@7e6d5c4b3a2918070f1e2d3c4b5a69788796a5b4@2026-09-21T14:40:00Z
+    ref_b: gcp.change=rollout-created/twin-production/europe-west1/checkout/checkout-00007-new@2026-09-21T14:18:00Z
+    observed_at: 2026-09-21T16:00:00Z

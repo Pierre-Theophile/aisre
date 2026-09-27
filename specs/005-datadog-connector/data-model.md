@@ -105,7 +105,7 @@ environment.
 | ref | `datadog.change` = `<env>/<service>@<version>@<first-seen>` | one per version value first seen, not per alternation |
 | valid start | the first instant a line carrying the new version was indexed | **a bound**: the rollout happened at or before it. Marked with the published property `sre.change.valid_from_is_a_bound` (new in `pkg/feeder`, generalising 003's owner-local marker) |
 | target | `changed-by` edge to the §1 service | |
-| actor kind | `UNKNOWN` unless the logs state one | never inferred from a name (FR-033a) |
+| actor kind | unspecified unless the logs state one | never inferred from a name (FR-033a); not `UNKNOWN`, which would claim an actor was observed (corrected 2026-09-27) |
 | correlation key | the value's `deploy.commit_sha` or `deploy.image`, with `deployment.environment.name` | what C8 reads. A `deploy.release` value is recorded but C8 excludes it, so such a rollout never merges — the stamping guide says so |
 | not emitted when | the value normalises to no `deploy.*` form | stated in the checkpoint, never guessed |
 | overlap | two values alternating in one window (canary, rolling deploy) | one change on first sight of each; the overlap interval is recorded on both |
