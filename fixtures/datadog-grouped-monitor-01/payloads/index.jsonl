@@ -1,0 +1,7 @@
+{"kind":"discovery","at":"2026-09-21T14:20:00Z","seq":0,"file":"discovery/000001.json"}
+{"kind":"monitors","at":"2026-09-21T14:20:20Z","seq":0,"file":"monitors/000001.json"}
+{"kind":"poll","at":"2026-09-21T14:20:21Z","seq":0,"file":"poll/000001.json"}
+{"kind":"monitors","at":"2026-09-21T14:33:00Z","seq":0,"file":"monitors/000002.json"}
+{"kind":"poll","at":"2026-09-21T14:33:01Z","seq":0,"file":"poll/000002.json"}
+{"kind":"monitors","at":"2026-09-21T14:41:20Z","seq":0,"file":"monitors/000003.json"}
+{"kind":"poll","at":"2026-09-21T14:41:21Z","seq":0,"file":"poll/000003.json"}

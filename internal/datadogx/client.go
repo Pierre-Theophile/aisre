@@ -188,3 +188,28 @@ func errorMessage(raw []byte) string {
 
 // DefaultSurface is the surface of the default capabilities, re-exported so a caller needs one import.
 func DefaultSurface() *feeder.ReadOnlySurface { return ddfeeder.DefaultSurface }
+
+// DoRaw issues a body-less published operation and returns its status and body; a non-2xx status is an
+// answer here rather than an error. It is how the feeder's startup gate reads, without importing this
+// package.
+func (c *Client) DoRaw(ctx context.Context, op, path string) (int, []byte, error) {
+	resp, err := c.Do(ctx, feeder.ReadOperation(op), path, nil, nil)
+	var status *StatusError
+	if errors.As(err, &status) {
+		return resp.Status, resp.Body, nil
+	}
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.Status, resp.Body, nil
+}
+
+// ListMonitorsPage issues one page of the monitor list and returns the raw body, which is the payload a
+// feeder replays.
+func (c *Client) ListMonitorsPage(ctx context.Context, tags string, page, pageSize int) ([]byte, error) {
+	_, resp, err := c.ListMonitors(ctx, tags, page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
+}

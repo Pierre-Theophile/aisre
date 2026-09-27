@@ -1,0 +1,55 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-grouped-monitor-01
+family: datadog-monitors
+description: 'One monitor grouped by service alerts on two groups at different instants — checkout at 14:32, payments at 14:41 — while search stays OK. That is two alerts, each its group''s entity (`datadog.monitor=21#<group>`) watching its own service, and no monitor-level alert: the monitor is never reported alerting because one of its groups is (FR-022, SC-004). Only the polls at which something changed are recorded; the unchanged polls between them re-send ids already sent. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:19:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The monitor: one ALERT node with its query and link, and no state of its own.
+  - name: errors-by-service-monitor
+    kind: subgraph
+    focus: datadog.monitor=21
+    valid_at: 2026-09-21T15:00:00Z
+    observed_at: 2026-09-21T15:00:00Z
+    hops: 1
+    direction: both
+  # Each alerting group is its own alert, watching its own service.
+  - name: errors-by-service-checkout
+    kind: subgraph
+    focus: datadog.monitor=21#env:production,service:checkout
+    valid_at: 2026-09-21T15:00:00Z
+    observed_at: 2026-09-21T15:00:00Z
+    hops: 1
+    direction: both
+  - name: errors-by-service-payments-asof-1440
+    kind: subgraph
+    focus: datadog.monitor=21#env:production,service:payments
+    valid_at: 2026-09-21T14:40:00Z
+    observed_at: 2026-09-21T15:00:00Z
+    hops: 1
+    direction: both
+    expect_empty: >-
+      the payments group is an alert only from its first transition at 14:41; before it, the
+      monitor has no alert of that group's, and a group-level alert conjured from the monitor would be the
+      monitor reported alerting because one group is (FR-022)
+  - name: errors-by-service-payments
+    kind: subgraph
+    focus: datadog.monitor=21#env:production,service:payments
+    valid_at: 2026-09-21T15:00:00Z
+    observed_at: 2026-09-21T15:00:00Z
+    hops: 1
+    direction: both

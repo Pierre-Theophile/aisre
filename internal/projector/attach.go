@@ -97,34 +97,36 @@ func (p *Projector) attachChanges(ctx context.Context, tx pgx.Tx, entityID strin
 // attachAlerts finds the alerts waiting to watch this ref and creates their WATCHES edges
 // (003 FR-048).
 //
-// The edge's valid time is the alert version's, not the moment the target showed up: the alert has
-// been watching this thing since it was configured to, and dating the edge from the discovery would
-// say the alert started watching when the graph happened to learn about the target — an
-// arrival-order artefact of exactly the kind FR-021 forbids.
+// The edge's valid time is the naming transition's, not the moment the target showed up: dating it
+// from the discovery would say the alert started watching when the graph happened to learn about the
+// target — an arrival-order artefact of exactly the kind FR-021 forbids.
 func (p *Projector) attachAlerts(ctx context.Context, tx pgx.Tx, entityID string, ref graph.Ref, eventID string, observedAt time.Time) error {
 	waiting, err := p.nodesWaitingFor(ctx, tx, ref, AlertUnattachedWatchesProp, "true", observedAt)
 	if err != nil {
 		return err
 	}
-	// One edge per ALERT, dated from when that alert first existed — not one per state segment.
+	// One edge per ALERT, dated from the alert's first transition — the instant the edge would have had
+	// if the target had been known when that transition arrived, which is what applyAlertTransition
+	// gives it on the direct path.
 	//
 	// An alert's state is segmented in valid time: one that has fired and recovered has two current
-	// versions. But WHAT IT WATCHES is not a property of a state segment — the alert has been
-	// watching the same entity through every transition, continuously. So linking per version would
-	// produce several WATCHES edges with different valid starts for one relationship, and dating the
-	// edge from whichever segment happens to carry the unattached list would date it from the last
-	// transition rather than from when the watch began.
+	// versions. WHAT IT WATCHES is not a property of a state segment, so one edge is created, not one
+	// per version, and it starts at the earliest version a transition wrote (the one carrying
+	// sre.alert.state).
 	//
-	// The instant used is therefore the earliest valid lower bound among the alert's current
-	// versions, read separately below. That is when the graph first knew this alert, which is when
-	// it started watching as far as anything here can say; inventing anything earlier would be a
-	// guess, and anything later would claim the alert was not watching during a window it was.
+	// It used to start at the alert's earliest current version of ANY kind. For a monitor whose
+	// definition a feeder asserts, that is the definition's instant, weeks before the transition, and it
+	// made the edge's start depend on arrival order: with the target already known, the direct path
+	// dates it from the transition, so a corpus in which the target arrived first and one in which it
+	// arrived second gave two graphs. datadog-monitor-transitions-01's shuffle step caught it (005 T059),
+	// the reordering window covering a transition and the discovery tick that asserted its target; an
+	// arrival-order artefact is exactly what FR-021 forbids.
 	byAlert := map[string][]string{}
 	for _, alert := range waiting {
 		byAlert[alert.entityID] = append(byAlert[alert.entityID], alert.producedBy...)
 	}
 	for alertID, producedBy := range byAlert {
-		start, err := p.earliestCurrentValid(ctx, tx, alertID)
+		start, err := p.earliestTransition(ctx, tx, alertID)
 		if err != nil {
 			return err
 		}
@@ -333,16 +335,15 @@ func clonePropsWithout(props propSet, key string) propSet {
 	return out
 }
 
-// earliestCurrentValid is the earliest valid lower bound among an entity's current versions: when
-// the graph first believes the thing existed, across however many segments its state has since been
-// cut into.
-func (p *Projector) earliestCurrentValid(ctx context.Context, tx pgx.Tx, entityID string) (time.Time, error) {
+// earliestTransition is the earliest valid lower bound among an alert's current versions that a
+// transition wrote: when the graph first knew the alert to be in a state.
+func (p *Projector) earliestTransition(ctx context.Context, tx pgx.Tx, entityID string) (time.Time, error) {
 	var start time.Time
 	err := tx.QueryRow(ctx, `
 		SELECT min(lower(valid)) FROM graph.entity_versions
-		WHERE entity_id = $1 AND upper_inf(observed)`, entityID).Scan(&start)
+		WHERE entity_id = $1 AND upper_inf(observed) AND props ? $2`, entityID, AlertStateProp).Scan(&start)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("projector: earliest valid of %s: %w", entityID, err)
+		return time.Time{}, fmt.Errorf("projector: earliest transition of %s: %w", entityID, err)
 	}
 	return start.UTC(), nil
 }
