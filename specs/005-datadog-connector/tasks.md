@@ -72,8 +72,8 @@ can issue an unpublished request.
 
 ### 2B — The deploy ref on a version group (G1)
 
-- [ ] T009 Add `deploy_ref` (`sreagent.graph.v1.Ref`) and `deploy_ref_absent_reason` (enum `ABBREVIATED_SHA`, `MUTABLE_TAG`, `BARE_DIGEST`, `NOT_A_STABLE_IDENTIFIER`) to `VersionBreakdown` in `api/sreagent/investigation/v1/investigation.proto`; regenerate with `make gen` ([data-model.md §7.1](./data-model.md)); fixture: unit
-- [ ] T010 Run `buf lint` and `buf breaking --against '.git#branch=main'`, and confirm every existing golden is byte-identical because both fields are absent when unset; fixture: unit
+- [X] T009 Add `deploy_ref` (`sreagent.graph.v1.Ref`) and `deploy_ref_absent_reason` (enum `ABBREVIATED_SHA`, `MUTABLE_TAG`, `BARE_DIGEST`, `NOT_A_STABLE_IDENTIFIER`) to `VersionBreakdown` in `api/sreagent/investigation/v1/investigation.proto`; regenerate with `make gen` ([data-model.md §7.1](./data-model.md)); fixture: unit
+- [X] T010 Run `buf lint` and `buf breaking --against '.git#branch=main'`, and confirm every existing golden is byte-identical because both fields are absent when unset; fixture: unit
 
 ### 2C — `NO_DATA` for an unstamped pointer, answered by the engine (G2)
 

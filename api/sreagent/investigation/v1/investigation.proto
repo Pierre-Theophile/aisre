@@ -239,7 +239,25 @@ message OnsetDigest {
   Window examined = 7;
 }
 
-message VersionBreakdown { string version = 1; int64 errors = 2; int64 total = 3; double error_rate = 4; JoinKeys join_keys = 5; DrillDown drill_down = 6; }
+// Why a version group names no deploy identifier (005 FR-040d, ADR-0010 item 1). UNSPECIFIED means
+// the group has one, or the backend predates the field; it is never a synonym for "none".
+enum DeployRefAbsentReason {
+  DEPLOY_REF_ABSENT_REASON_UNSPECIFIED = 0;
+  ABBREVIATED_SHA = 1;         // looks like a commit, but the full form cannot be recovered
+  MUTABLE_TAG = 2;             // an image tag two rollouts could share, e.g. :latest
+  BARE_DIGEST = 3;             // an image digest with no image name
+  NOT_A_STABLE_IDENTIFIER = 4; // empty, or containing whitespace
+}
+
+// One version's errors. deploy_ref is the version normalised into the platform-neutral deploy
+// vocabulary (deploy.commit_sha, deploy.image, deploy.release) by pkg/feeder/versionstamp, so the
+// group names the same identifier a deploy feeder's change claims, whichever platform deployed it
+// (005 FR-040d, ADR-0010 item 1). Absent when the value has none; the reason then says why.
+message VersionBreakdown {
+  string version = 1; int64 errors = 2; int64 total = 3; double error_rate = 4; JoinKeys join_keys = 5; DrillDown drill_down = 6;
+  sreagent.graph.v1.Ref deploy_ref = 7;
+  DeployRefAbsentReason deploy_ref_absent_reason = 8;
+}
 message ErrorsByVersionDigest { repeated VersionBreakdown versions = 1; string version_attribute = 2; }
 
 message Exemplar { string text = 1; string redaction_applied = 2; JoinKeys join_keys = 3; }
