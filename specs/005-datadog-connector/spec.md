@@ -179,8 +179,9 @@ search showed a value, because both were remapped from custom attributes.
   organisation uses — were rejected: the first leaves the term permanently unanswerable, the
   second ties a generic contract to one vendor. (FR-040b–FR-040e, US5 scenarios 8–10, Assumptions)
 - Q: What happens to a service whose deploy platform no feeder covers? → A: It must still be
-  investigable, since the project is generic. The connector asserts its SERVICE node from the log
-  source when no feeder has (FR-040f), and a change in the version stamped on its logs becomes a
+  investigable, since the project is generic. The connector asserts a SERVICE node for every
+  watched log source and resolution merges it with any other feeder's node for the same service
+  (FR-040f), and a change in the version stamped on its logs becomes a
   rollout, dated from first sight as a bound and merged by C8 with any deploy feeder's record of
   the same rollout (FR-040g). The earlier rule — a log source nobody else knows is an unattached
   claim — made exactly this organisation's Datadog service uninvestigable. (FR-040f, FR-040g,
@@ -974,7 +975,7 @@ so (FR-008b). Every unmarked row is always in force.
 | Team or owner tag | OWNER node and `owned-by` edge | ref in the `owner.team` namespace | unknown start | tag or catalog poll |
 | Service, environment and version tags | node properties and identity claims | claims in the namespace the tag names | as the node version they belong to | with the node |
 | *(apm_topology)* Host associated with an in-scope service | INFRA_RESOURCE node and `runs-on` edge | ref in the `datadog.host` namespace; claims for the Kubernetes node or cloud instance identifier where the host's tags state one | unknown start; retracted under the silence rule | host poll |
-| A service whose logs live in Datadog, however its node got into the graph (features 003, 004, 001) | **a log pointer and the monitor pointers added to the existing node**, never a second node; where no feeder asserted the service, a SERVICE node asserted by this connector (FR-040f) | claims in the Datadog log-source namespace, with the log service, source and environment attributes the index is keyed on | with the node version | log-configuration poll; additive, never replacing another source's pointers (FR-039) |
+| A service whose logs live in Datadog, however its node got into the graph (features 003, 004, 001) | **a log pointer and the monitor pointers added to the existing node**, plus a SERVICE node this connector asserts for every watched log source, merged by a certain rule with another feeder's node for the same service where there is one (FR-040f) | claims in the Datadog log-source namespace, with the log service, source and environment attributes the index is keyed on | with the node version | log-configuration poll; additive, never replacing another source's pointers (FR-039) |
 | *(apm_topology)* Dependency target absent from the service list | THIRD_PARTY node | ref in `datadog.service` marked as unlisted | the window it was observed in | with the dependency poll |
 | A change in the version a watched service stamps on its logs (FR-040c) | CHANGE node, kind rollout, actor `UNKNOWN` unless stated, `changed-by` edge to the service | ref in the `datadog.change` namespace keyed by service, version and first-seen instant; the `deploy.*` claim of the version (FR-040d), so C8 merges it with a deploy feeder's rollout | the first instant a line with the new version was indexed, **marked as a bound** | discovery and error polls; nothing is inferred from a version with no `deploy.*` form (FR-040g) |
 | Metric, log, trace and dashboard queries | **pointers on the node**, never nodes | — | with the node version | with the node |
@@ -1041,9 +1042,15 @@ so (FR-008b). Every unmarked row is always in force.
   service. The default list, most specific first: Datadog's reserved `version` (unified service
   tagging, set by `DD_VERSION`); the OpenTelemetry `service.version`; `git.commit.sha` (Datadog
   source-code integration); `container.image.digest`; then the platform-specific revision
-  attributes the vocabulary registry names. A value that is constant across every service and
-  every day of the discovery window and names a library rather than the service (an SDK or
-  runtime version) MUST NOT be accepted as the version, and discovery MUST say why it skipped it.
+  attributes the vocabulary registry names. A candidate MUST be accepted only where it is present
+  on at least a published share of the service's lines **and** of its error-level lines over the
+  discovery window: a deployment stamp is on every line the service writes, while a field a
+  library logs on a few lines of its own (an SDK or runtime version on start-up lines) is not.
+  Whether the value changed during the window MUST NOT be a criterion, because a service that did
+  not deploy that week has a constant, correct version. A rejected candidate MUST be named with the
+  share it reached, so the discovery record says why it was skipped. *(Corrected during planning,
+  2026-09-27: the first wording rejected a value "constant across every service and every day",
+  which would also have rejected a real version that did not change.)*
   Discovery reads the **raw attribute** (`@version`, `@service.version`), never Datadog's derived
   SQL column alone, which can be empty where search shows a value. It is a cheap, bounded facet
   query per service per discovery interval, and its outcome — the attribute chosen, or every
@@ -1064,15 +1071,19 @@ so (FR-008b). Every unmarked row is always in force.
   alternative loses: an image digest joins only to sources that state digests, a release name only
   to sources that state the same name, and a semantic version joins to nothing unless a deploy
   source states it.
-- **FR-040f**: For a log source the connector is configured to watch whose service **no other
-  feeder has asserted**, the connector MUST assert a SERVICE node itself, ref in the
-  `datadog.service` namespace valued `<env>/<service>`, with claims for every other identifier the
-  logs state (the OpenTelemetry service name, the platform's own service or agent identifier where
-  present). It MUST carry the log pointer, the monitor pointers and the version join key as any
-  other node would. It MUST NOT assert a node for a log source it is not configured to watch, and
-  MUST NOT assert one where a feeder's node already claims the same service: the log pointer is
-  then attached to that node (FR-039). Its valid start is unknown unless Datadog states a
-  first-seen instant (FR-011's rule for the APM service list, applied here).
+- **FR-040f**: For every log source the connector is configured to watch, the connector MUST
+  assert a SERVICE node, ref in the `datadog.service` namespace valued `<env>/<service>`, with
+  claims for every other identifier the logs state (the OpenTelemetry service name, the platform's
+  own service or agent identifier where present), carrying the log pointer, the monitor pointers
+  and the version join key. It MUST do so **whether or not another feeder has asserted the same
+  service**, and MUST NOT consult the graph to decide: what a connector emits must not depend on
+  what other sources happened to deliver first (constitution III). Where another feeder's node is
+  the same service, a published certain rule merges the two and the pointers are additive on the
+  merged entity (FR-039, FR-059); where none is, the service is still investigable. It MUST NOT
+  assert a node for a log source it is not configured to watch. Its valid start is unknown unless
+  Datadog states a first-seen instant. *(Corrected during planning, 2026-09-27: the first wording
+  asserted the node only "where no other feeder has asserted" the service, which made the
+  connector's output depend on delivery order.)*
 - **FR-040g**: When the version a watched service stamps on its logs changes (FR-040c), the
   connector MUST emit a CHANGE node of kind rollout with actor kind `UNKNOWN` unless the logs state
   one, a `changed-by` edge to the service, and claims for the new version's `deploy.*` identifier
@@ -1536,10 +1547,9 @@ is lost with them:
   instead is the one linking a log source to the service feature 003 or 004 created.
 - **How a service is deployed is not assumed.** It may run on a platform a feeder covers (Cloud
   Run, Kubernetes, Vercel) or on one none does (a vendor-hosted runtime, a VM, a platform added
-  later). Where a feeder already created the service's node, this connector attaches log pointers
-  and monitor links to it and creates nothing. Where none did, the connector asserts the node
-  itself from the log source (FR-040f), in its own namespace with identity claims, so resolution
-  merges the two if a feeder later reports the same service. *(Corrected 2026-09-27: this used to
+  later). The connector asserts a node for every watched log source in its own namespace with
+  identity claims (FR-040f); where a feeder also reports the service, resolution merges the two and
+  the pointers are additive, and where none does, the connector's node is the one investigated. *(Corrected 2026-09-27: this used to
   say every such service already had a node from features 003, 004 or 001, and that an unknown
   log source was an unattached claim. The audit found the organisation's only Datadog service
   deployed on a platform no feature feeds, which under that rule could never be investigated.)*
