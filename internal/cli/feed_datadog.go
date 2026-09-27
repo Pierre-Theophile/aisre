@@ -58,6 +58,7 @@ type feedDatadogOptions struct {
 	doorbellHeader string
 	doorbellEnv    string
 	batchSize      int
+	overrides      []string
 }
 
 func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
@@ -100,6 +101,9 @@ func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
 	flags.StringVar(&opts.doorbellEnv, "doorbell-secret-env", "DD_DOORBELL_SECRET",
 		"environment variable holding the doorbell's shared secret")
 	flags.IntVar(&opts.batchSize, "batch", 256, "events per ingest batch")
+	flags.StringSliceVar(&opts.overrides, "version-override", nil,
+		"a service's version field as <env>/<service>=<name> (a tag) or =@<name> (an attribute); it is the "+
+			"only candidate for that service, recorded as the operator's, and still subject to the share test")
 	return cmd
 }
 
@@ -115,6 +119,14 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 			return exitErrorf(ExitUsage, "feed datadog: --watch: %v", err)
 		}
 		sources = append(sources, src)
+	}
+	overrides := map[string]string{}
+	for _, spec := range opts.overrides {
+		source, field, ok := strings.Cut(spec, "=")
+		if !ok {
+			return exitErrorf(ExitUsage, "feed datadog: --version-override %q is not <env>/<service>=<field>", spec)
+		}
+		overrides[source] = field
 	}
 	live := opts.replayDir == ""
 	switch {
@@ -140,7 +152,10 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 	logger := slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil))
 	feederOpts := ddfeeder.Options{
 		OrgSlug: opts.orgSlug, Site: opts.site, Capabilities: caps, MonitorTags: opts.monitorTags,
-		PollInterval: opts.pollInterval, LogSources: sources, Log: logger,
+		PollInterval: opts.pollInterval, LogSources: sources, Log: logger, VersionOverrides: overrides,
+	}
+	if err := feederOpts.Validate(); err != nil {
+		return exitErrorf(ExitUsage, "feed datadog: %v", err)
 	}
 
 	var src feeder.Source
@@ -163,6 +178,7 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 		poller = &ddfeeder.Poller{
 			Pager: client, Tags: opts.monitorTags, Interval: opts.pollInterval, LogSources: sources,
 			Capabilities: caps, Push: chanSource.Push,
+			Measurer: datadogx.Measurer{Client: client}, VersionOverrides: overrides,
 		}
 		if opts.doorbellListen != "" {
 			if bell, err = startDatadogDoorbell(ctx, opts, poller, logger); err != nil {

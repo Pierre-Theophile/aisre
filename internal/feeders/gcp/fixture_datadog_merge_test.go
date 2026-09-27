@@ -124,6 +124,12 @@ func writeDatadogMergeGCPHalf(t *testing.T, dir string, clock *arrivalClock) fee
 			twinDeclaringServiceJSON(ddMergeLateService, ddMergeLateService, labels)),
 		pollPayloadAt(cycleAt(1), "complete", ""),
 	}
+	return runGCPHalf(t, dir, clock, payloads)
+}
+
+// runGCPHalf runs the GCP feeder over payloads, recording them and its events into dir.
+func runGCPHalf(t *testing.T, dir string, clock *arrivalClock, payloads []feeder.Payload) feeder.Description {
+	t.Helper()
 	f, err := gcpfeeder.New(gcpfeeder.Options{
 		OrgSlug:         "twin",
 		Scope:           gcpfeeder.Scope{Projects: []string{twinProject}, Regions: []string{twinRegion}},

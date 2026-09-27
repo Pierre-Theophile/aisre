@@ -17,6 +17,7 @@ import (
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder/versionstamp"
 )
 
 // The feeder half (contracts/datadog-feeder.md).
@@ -84,6 +85,12 @@ type Options struct {
 	// LogSources are the watched `<env>/<service>` log sources, used by a discovery tick that names
 	// none of its own.
 	LogSources []LogSource
+	// VersionOverrides are per-source version attributes, `<env>/<service>` → `name` (a tag) or
+	// `@name` (an attribute). An override is recorded as `source: operator` and is subject to the same
+	// share test, so a typo reads as "not found" rather than as a silent empty split.
+	VersionOverrides map[string]string
+	// Thresholds are the share test's thresholds. Zero uses versionstamp's published defaults.
+	Thresholds versionstamp.Thresholds
 	// Log is where operational telemetry goes. Nil discards.
 	Log *slog.Logger
 }
@@ -100,6 +107,14 @@ func (o Options) Validate() error {
 	}
 	if o.History < 0 {
 		return fmt.Errorf("datadog: a negative history (%s)", o.History)
+	}
+	for source, spec := range o.VersionOverrides {
+		if _, err := ParseLogSource(source); err != nil {
+			return fmt.Errorf("datadog: version override for %q: %w", source, err)
+		}
+		if _, err := OverrideCandidate(spec); err != nil {
+			return err
+		}
 	}
 	for _, tag := range o.MonitorTags {
 		if !strings.Contains(tag, ":") || strings.ContainsAny(tag, " ,") {
@@ -134,6 +149,9 @@ type Feeder struct {
 	retracted  []string
 	unresolved []string
 	outOfScope int
+	// verdicts is the digest of the last assertion of each measured log source.
+	verdicts       map[string]string
+	discoveryNotes []string
 }
 
 // New returns a feeder over opts.
@@ -156,6 +174,9 @@ func New(opts Options) (*Feeder, error) {
 	if opts.History == 0 {
 		opts.History = DefaultHistory
 	}
+	if opts.Thresholds == (versionstamp.Thresholds{}) {
+		opts.Thresholds = versionstamp.DefaultThresholds()
+	}
 	log := opts.Log
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -164,7 +185,7 @@ func New(opts Options) (*Feeder, error) {
 		opts: opts, desc: desc, log: log,
 		groups: map[string]groupState{}, series: map[string]*eventlog.AlertSeries{},
 		cycle: map[string]monitorObservation{}, listed: map[string]monitorObservation{},
-		emittedGroups: map[string]map[string]bool{},
+		emittedGroups: map[string]map[string]bool{}, verdicts: map[string]string{},
 	}, nil
 }
 
@@ -241,6 +262,10 @@ func (f *Feeder) apply(ctx context.Context, em feeder.Emitter, payload feeder.Pa
 type DiscoveryTick struct {
 	// LogSources are the watched sources as `<env>/<service>`. Empty uses Options.LogSources.
 	LogSources []string `json:"log_sources,omitempty"`
+	// Window is what the measurements were taken over; nil when the tick carries none.
+	Window *DiscoveryWindow `json:"window,omitempty"`
+	// Measurements are the presence counts per source (discovery.go).
+	Measurements []SourceMeasurement `json:"measurements,omitempty"`
 }
 
 // applyDiscovery asserts every watched log source's SERVICE node and log-service correlation. The
@@ -258,18 +283,46 @@ func (f *Feeder) applyDiscovery(ctx context.Context, em feeder.Emitter, tick Dis
 			sources = append(sources, src)
 		}
 	}
+	measured := f.sourceMeasurements(tick)
 	for _, src := range sources {
 		batch, err := LogSourceEvents(f.desc, src, at)
 		if err != nil {
 			return err
 		}
+		m, ok := measured[src.Env+"/"+src.Service]
 		for _, ev := range batch {
+			if ok && m.Failed == "" && tick.Window != nil && ev.GetUpsertNode() != nil {
+				continue // the measured assertion below replaces the plain one
+			}
 			if err := emit(ctx, em, ev); err != nil {
 				return err
 			}
 		}
+		switch {
+		case ok && m.Failed == "" && tick.Window != nil:
+			if err := f.emitMeasuredSource(ctx, em, src, m, *tick.Window, at); err != nil {
+				return err
+			}
+		case ok:
+			f.mu.Lock()
+			f.discoveryNotes = append(f.discoveryNotes, fmt.Sprintf("%s/%s: not measured (%s); its pointer and "+
+				"verdict stand as last asserted", src.Env, src.Service, orUnset(m.Failed)))
+			f.mu.Unlock()
+		}
 	}
-	return nil
+	if tick.Window == nil {
+		return nil
+	}
+	// The discovery tick's own checkpoint: what was measured, with the shares, over which window.
+	f.mu.Lock()
+	lines := append([]string{"datadog log-source discovery", "capabilities: " + f.opts.Capabilities.String(),
+		fmt.Sprintf("thresholds: %.4g of lines and %.4g of error lines; conventions %s",
+			f.opts.Thresholds.LineShare, f.opts.Thresholds.ErrorLineShare, versionstamp.ConventionsVersion)},
+		f.discoveryLines()...)
+	f.mu.Unlock()
+	return em.Checkpoint(ctx, feeder.CheckpointFact{
+		ExtentFrom: tick.Window.From, ExtentTo: at, Note: strings.Join(lines, "\n"),
+	})
 }
 
 // applyPoll closes a poll: retractions if it was complete, then the checkpoint.
