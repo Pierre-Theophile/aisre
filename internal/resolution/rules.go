@@ -34,6 +34,9 @@ import (
 const (
 	// NamespaceOTelService is the OpenTelemetry `service.name` of a service.
 	NamespaceOTelService = "otel.service.name"
+	// NamespaceDatadogLogService is a Datadog log source's service name, with the environment as a
+	// supporting attribute (005 FR-058). Not identifying on its own; C9 reads it.
+	NamespaceDatadogLogService = "datadog.log_service"
 	// NamespaceK8sDeployment is a Kubernetes Deployment as `<namespace>/<name>`.
 	NamespaceK8sDeployment = "k8s.deployment"
 )
@@ -43,6 +46,8 @@ const (
 const (
 	// AttrK8sNamespace is the Kubernetes namespace a workload lives in.
 	AttrK8sNamespace = "k8s.namespace.name"
+	// AttrK8sCluster is the Kubernetes cluster, where a claim states one (C9).
+	AttrK8sCluster = "k8s.cluster.name"
 	// AttrK8sDeployment is the Kubernetes Deployment name carried on OTel resource attributes.
 	AttrK8sDeployment = "k8s.deployment.name"
 	// AttrServiceNamespace is the OpenTelemetry `service.namespace`.

@@ -147,13 +147,14 @@ as a number: zero automated merges from probable rules, measured on every fixtur
 | **C6** | the vendor allowlist maps a vendor to host names, and an observed outbound dependency's server address is one of them | somebody wrote that host name next to that vendor; it rests on a configured assertion and not on a resemblance |
 | **C7** | two sources claim the same Cloud SQL instance connection name — the instance as GCP lists it, and the address a caller reached it at | the connection name is globally unique and is the string every client is configured with |
 | **C8** | two change observations from **different sources** state the same deploy identifier (`deploy.commit_sha`, or `deploy.image` by digest) for a target they **share**, in the same environment | the identifier is one both platforms quote rather than resemble, and the shared target is a merge resolution already made |
+| **C9** | a Datadog log service (`datadog.log_service`) and an OpenTelemetry service (`otel.service.name`, observed or a platform's declared name) from **different sources** carry exactly the same name, **both state the same environment**, and any Kubernetes namespace or cluster both state agrees | a log service's name is configured to be the service's (`DD_SERVICE`, or `service.name` as Datadog maps it); the environment keeps staging out of production. Names compare exactly because Datadog lowercases them and a one-sided case-insensitive match would depend on arrival order (005 FR-059, ADR-0010 item 4) |
 
 Each requires an assertion that is only true because someone configured it — never a
 resemblance. A missing environment on either side of C2 is **not** a match: a certain rule may
 not gamble on `checkout` in staging being `checkout` in production.
 
 When several certain rules fire on one pair, the most **specific** one is recorded as the reason:
-C2 (30) = C5 (30) > C4 (25) = C6 (25) > C3 (20) > C7 (15) = C8 (15) > C1 (10). "This workload declares this service name"
+C2 (30) = C5 (30) = C9 (30) > C4 (25) = C6 (25) > C3 (20) > C7 (15) = C8 (15) > C1 (10). "This workload declares this service name"
 is a fact an operator can check; C3's resource attributes are a consequence of it.
 
 ### C1 does not fire on every namespace
@@ -168,12 +169,20 @@ and `IdentifyingNamespace` in `internal/resolution` is the published list of the
 | `deploy.image` | the same image runs in staging and in production, and a redeploy of one digest is a second rollout |
 | `deploy.release` | `v2.3.0` is a tag many repositories use in the same week |
 | `github.repo` | a repository is a claim on the service it ships and never a node, so in a monorepo two services share it |
+| `datadog.log_service` | two Datadog organisations, or two environments, state the same service name for different services (005 FR-062); **C9** merges on it, and only with an environment-agreeing OpenTelemetry service |
 
 Without that guard, registering the deploy vocabulary would have made C1 merge every change in a
 monorepo release — certainly, with a score of 1.0 and no human in the loop. The two `deploy.*`
 identifiers still do work: **C8** keys on them, with the agreement on a shared target that C1 has no
 way to require. `github.change`, `vercel.change` and `vercel.project` each name one thing and stay
 identifying.
+
+**A known limit, recorded rather than fixed here.** `otel.service.name` *is* identifying, so C1 merges
+two sources' claims of the same service name **whatever environment each states** — a staging and a
+production service reported by two different sources under one name become one entity. That predates
+feature 005, which avoids it by claiming `datadog.log_service` rather than `otel.service.name`, and it
+is left for its own change: making C1 environment-aware alters the outcome of every existing
+cross-source merge and deserves its own decision and fixtures.
 
 Since feature 004 T148 the three `deploy.*` namespaces are **correlation keys** (§1a) and the event log
 refuses a claim in any of them, so C1 should never see one. `github.repo` is not on that list — §1a says

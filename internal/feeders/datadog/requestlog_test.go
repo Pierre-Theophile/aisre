@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	ddfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/datadog"
+	"github.com/Pierre-Theophile/aisre/internal/resolution"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/testkit"
 )
@@ -92,5 +93,14 @@ func TestAnUnbuiltCapabilityCannotBeEnabled(t *testing.T) {
 	}
 	if got := caps.String(); got != "apm_topology=off,changes=off,logs=on,monitors=on,tags=off" {
 		t.Errorf("the checkpoint spelling is %q; every capability must be stated, off ones included", got)
+	}
+}
+
+// The namespace C9 reads is spelled the same by the feeder that mints it and the rule that reads it;
+// a difference would be a certain rule that silently never fires.
+func TestTheLogServiceNamespaceIsTheOneC9Reads(t *testing.T) {
+	t.Parallel()
+	if ddfeeder.NSLogService != resolution.NamespaceDatadogLogService {
+		t.Fatalf("the feeder mints %q and C9 reads %q", ddfeeder.NSLogService, resolution.NamespaceDatadogLogService)
 	}
 }

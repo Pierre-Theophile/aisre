@@ -83,13 +83,13 @@ can issue an unpublished request.
 
 ### 2D — C9: a Datadog log service is an OpenTelemetry service, in the same environment (G4)
 
-- [ ] T014 Declare the local namespaces `datadog.service`, `datadog.log_service`, `datadog.monitor`, `datadog.change` in `internal/feeders/datadog/refs.go`, with `datadog.log_service` carrying `deployment.environment.name` as a supporting attribute (FR-058); fixture: unit
-- [ ] T015 Write `internal/resolution/datadog.go` declaring **C9** per [data-model.md §4](./data-model.md): `datadog.log_service` = `otel.service.name` after normalisation, both environments stated and equal, agreeing Kubernetes namespace/cluster where both state one; certain; specificity above C1 (FR-059); fixture: datadog-log-service-merge-01
-- [ ] T016 Assert an unstated environment on either side never fires, two claims from one source never merge, and a Cloud Run **declared** OTel name counts as the OTel side; fixture: unit
+- [X] T014 Declare the local namespaces `datadog.service`, `datadog.log_service`, `datadog.monitor`, `datadog.change` in `internal/feeders/datadog/refs.go`, with `datadog.log_service` carrying `deployment.environment.name` as a supporting attribute (FR-058); fixture: unit
+- [X] T015 Write `internal/resolution/datadog.go` declaring **C9** per [data-model.md §4](./data-model.md): `datadog.log_service` = `otel.service.name` after normalisation, both environments stated and equal, agreeing Kubernetes namespace/cluster where both state one; certain; specificity above C1 (FR-059); fixture: datadog-log-service-merge-01
+- [X] T016 Assert an unstated environment on either side never fires, two claims from one source never merge, and a Cloud Run **declared** OTel name counts as the OTel side; fixture: unit
 - [ ] T017 Build `fixtures/datadog-log-service-merge-01`: a Datadog log service and a Cloud Run service with one OTel name in `production` (merge), and the same name in `staging` (must stay apart), with `ground_truth.cross_source_pairs` and `distinct_pairs`; fixture: datadog-log-service-merge-01
 - [ ] T018 Re-evaluate C9 when a claim's entity merges or a late claim arrives, as C8 does (`internal/projector/retrigger.go`), and assert the fixture's shuffle across six seeds; fixture: datadog-log-service-merge-01
 - [ ] T019 Probe T015–T016 by reverting each and confirm the fixture's goldens or shuffle fail; extend `scripts/check-report.sh` so `auto_merge/C9` is counted; fixture: datadog-log-service-merge-01
-- [ ] T020 [P] Add C9 to `docs/schema/resolution.md` with its condition table, and record the **pre-existing** C1 environment hazard (C1 merges `otel.service.name` across environments) as a known limit for its own change; fixture: datadog-log-service-merge-01
+- [X] T020 [P] Add C9 to `docs/schema/resolution.md` with its condition table, and record the **pre-existing** C1 environment hazard (C1 merges `otel.service.name` across environments) as a known limit for its own change; fixture: datadog-log-service-merge-01
 
 ### 2E — The Datadog quota reader (G5)
 
