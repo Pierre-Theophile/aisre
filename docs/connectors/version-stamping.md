@@ -101,8 +101,18 @@ gcloud run deploy checkout --image "$IMAGE" \
 #  --set-env-vars "OTEL_RESOURCE_ATTRIBUTES=service.version=$GIT_SHA"
 ```
 
-Cloud Run's own `K_REVISION` is a revision name, not a commit. Stamped as the version it becomes a
-`deploy.release`, which joins nothing until a feeder states the same release.
+**The zero-effort recipe.** Cloud Run sets `K_REVISION` in every container, so you can stamp without
+touching the pipeline:
+
+```sh
+DD_VERSION="$K_REVISION"   # set in the entrypoint, e.g. export DD_VERSION="$K_REVISION"
+```
+
+A revision name is not a commit, so it becomes a `deploy.release`. The GCP feeder states every
+rollout's revision name as that same `deploy.release`, so a log group and the GCP backend's
+`errors_by_version` group both resolve to the rollout, by lookup. It is never merged with another
+source's rollout, because C8 does not merge on releases. Stamp the commit when you can, and the
+revision when you cannot.
 
 ### Vercel
 
