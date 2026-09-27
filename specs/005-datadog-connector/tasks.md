@@ -49,10 +49,10 @@ the same phase, so the rule is proved on two backends before the first Datadog c
 **Purpose**: the package skeletons, the decision record, and the published operation list, so nothing
 can issue an unpublished request.
 
-- [ ] T001 [P] Create `internal/feeders/datadog/doc.go` stating the feeder half's scope per capability, its read-only posture, and that it never reads the graph to decide what to emit (FR-001, FR-040f); fixture: unit
-- [ ] T002 [P] Create `internal/backends/datadog/doc.go` stating the backend half's scope: all eight terms, digests only, nothing written to the graph (FR-001, FR-051); fixture: unit
-- [ ] T003 [P] Write `docs/decisions/ADR-0010-shared-contract-additions-for-005.md` recording Gaps G1–G4 of [plan.md](./plan.md) — the version group's deploy ref, the engine-side `NO_DATA`, named query operations, C9 — each with context, decision and the alternatives rejected in [research.md §1.2](./research.md); fixture: unit
-- [ ] T004 Write `docs/connectors/datadog.md`: capabilities and their scopes, and the operation table of [contracts/read-only-operations.md](./contracts/read-only-operations.md) §2 verbatim, marked **not yet enforced** until T008; fixture: unit
+- [X] T001 [P] Create `internal/feeders/datadog/doc.go` stating the feeder half's scope per capability, its read-only posture, and that it never reads the graph to decide what to emit (FR-001, FR-040f); fixture: unit
+- [X] T002 [P] Create `internal/backends/datadog/doc.go` stating the backend half's scope: all eight terms, digests only, nothing written to the graph (FR-001, FR-051); fixture: unit
+- [X] T003 [P] Write `docs/decisions/ADR-0010-shared-contract-additions-for-005.md` recording Gaps G1–G4 of [plan.md](./plan.md) — the version group's deploy ref, the engine-side `NO_DATA`, named query operations, C9 — each with context, decision and the alternatives rejected in [research.md §1.2](./research.md); fixture: unit
+- [X] T004 Write `docs/connectors/datadog.md`: capabilities and their scopes, and the operation table of [contracts/read-only-operations.md](./contracts/read-only-operations.md) §2 verbatim, marked **not yet enforced** until T008; fixture: unit
 
 **Checkpoint**: the decision record exists before any schema moves.
 
@@ -65,10 +65,10 @@ can issue an unpublished request.
 
 ### 2A — Named query operations on the read-only surface (G3)
 
-- [ ] T005 Extend `pkg/feeder/readonly.go` with named query operations: a `POST` is admissible only as an individual `ReadOperationSpec` carrying a non-empty published justification; any other non-GET/HEAD still panics at init ([contracts/read-only-operations.md](./contracts/read-only-operations.md) §1); fixture: unit
-- [ ] T006 Assert a planted unnamed `POST`, a `PUT`, a `PATCH` and a `DELETE` each panic at init, and a named query without a justification is refused; fixture: unit
-- [ ] T007 Write `internal/feeders/datadog/requestlog.go`: the Datadog operation table per capability, with only enabled capabilities' operations declared (FR-008b); fixture: unit
-- [ ] T008 Assert `docs/connectors/datadog.md` and the enforced table are the same list in both directions, and that the never-declared list of [read-only-operations.md](./contracts/read-only-operations.md) §2 is refused (FR-004, SC-015); fixture: unit
+- [X] T005 Extend `pkg/feeder/readonly.go` with named query operations: a `POST` is admissible only as an individual `ReadOperationSpec` carrying a non-empty published justification; any other non-GET/HEAD still panics at init ([contracts/read-only-operations.md](./contracts/read-only-operations.md) §1); fixture: unit
+- [X] T006 Assert a planted unnamed `POST`, a `PUT`, a `PATCH` and a `DELETE` each panic at init, and a named query without a justification is refused; fixture: unit
+- [X] T007 Write `internal/feeders/datadog/requestlog.go`: the Datadog operation table per capability, with only enabled capabilities' operations declared (FR-008b); fixture: unit
+- [X] T008 Assert `docs/connectors/datadog.md` and the enforced table are the same list in both directions, and that the never-declared list of [read-only-operations.md](./contracts/read-only-operations.md) §2 is refused (FR-004, SC-015); fixture: unit
 
 ### 2B — The deploy ref on a version group (G1)
 

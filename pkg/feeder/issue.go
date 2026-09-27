@@ -236,7 +236,7 @@ func (i *Issuer) StateChanges() int {
 		if row.Issued == 0 {
 			continue
 		}
-		if method, _, ok := splitOperation(op); !ok || !isReadMethod(method) {
+		if !i.surface.isRead(op) {
 			n++
 		}
 	}
