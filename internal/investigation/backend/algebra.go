@@ -377,9 +377,9 @@ func Validate(term *Term) error {
 		if err := requireWindow(name, "window", t.ErrorsByVersion.GetWindow()); err != nil {
 			return err
 		}
-		if t.ErrorsByVersion.GetVersionAttribute() == "" {
-			return badTerm(name, `names no version attribute; it is read from Pointer.join_keys["version"] and a pointer without one cannot be split by version (ADR-0005 D4)`)
-		}
+		// No version attribute is not a malformed term: it means the pointer's logs carry no
+		// version stamp, and the engine answers NO_DATA naming what was searched (unstamped.go;
+		// 005 FR-040b, ADR-0010 item 2). It never reaches a backend.
 	case *investigationv1.AlgebraTerm_MonitorState:
 		if err := requirePointer(name, t.MonitorState.GetPointer()); err != nil {
 			return err

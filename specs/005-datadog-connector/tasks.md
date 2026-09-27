@@ -77,9 +77,9 @@ can issue an unpublished request.
 
 ### 2C — `NO_DATA` for an unstamped pointer, answered by the engine (G2)
 
-- [ ] T011 In `internal/investigation/backend/algebra.go`, replace the `OUTSIDE_ALGEBRA` refusal of an `errors_by_version` term with no `version_attribute` by an engine answer: `NO_DATA`, coverage absent source "no version stamp on this pointer", listing the pointer's discovery-verdict candidates with their shares; no backend call ([contracts/version-stamping.md](./contracts/version-stamping.md) §5); fixture: unit
-- [ ] T012 Assert the answer is identical in live and recorded mode, needs no world entry, leaves every existing world's miss rate unchanged, and is the same whichever backend owns the pointer; fixture: unit
-- [ ] T013 Update [`specs/002-investigation-engine/contracts/telemetry-backend.md`](../002-investigation-engine/contracts/telemetry-backend.md) §1's `errors_by_version` row to state the engine-side answer, citing ADR-0010; fixture: unit
+- [X] T011 In `internal/investigation/backend/algebra.go`, replace the `OUTSIDE_ALGEBRA` refusal of an `errors_by_version` term with no `version_attribute` by an engine answer: `NO_DATA`, coverage absent source "no version stamp on this pointer", listing the pointer's discovery-verdict candidates with their shares; no backend call ([contracts/version-stamping.md](./contracts/version-stamping.md) §5); fixture: unit
+- [X] T012 Assert the answer is identical in live and recorded mode, needs no world entry, leaves every existing world's miss rate unchanged, and is the same whichever backend owns the pointer; fixture: unit
+- [X] T013 Update [`specs/002-investigation-engine/contracts/telemetry-backend.md`](../002-investigation-engine/contracts/telemetry-backend.md) §1's `errors_by_version` row to state the engine-side answer, citing ADR-0010; fixture: unit
 
 ### 2D — C9: a Datadog log service is an OpenTelemetry service, in the same environment (G4)
 

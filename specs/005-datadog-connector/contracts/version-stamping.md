@@ -28,7 +28,8 @@ Tried in order, each as a **separate candidate**. Version `1.0.0` of the list:
 | 1 | `version` | **tag** | unified service tagging: `DD_VERSION`, `tags.datadoghq.com/version`, `com.datadoghq.tags.version`; OpenTelemetry `service.version` as mapped by the backend |
 | 2 | `service.version` | attribute | OpenTelemetry log records whose resource attributes the backend keeps as attributes |
 | 3 | `version` | attribute | an application's own structured logger. **Also where libraries log their own version** — the reason the share test exists |
-| 4 | `git.commit.sha` | tag or attribute | source-code integration (`DD_GIT_COMMIT_SHA`, the OCI revision label) |
+| 4 | `git.commit.sha` | tag | source-code integration (`DD_GIT_COMMIT_SHA`, the OCI revision label) |
+| 4b | `git.commit.sha` | attribute | the same, where carried as an attribute |
 | 5 | `container.image.name` + `container.image.digest` | attribute pair | container runtimes and collectors that enrich with image metadata |
 | 6 | the version role of a registered platform vocabulary | attribute | e.g. `faas.version` (a Cloud Run revision) where the logs carry it |
 

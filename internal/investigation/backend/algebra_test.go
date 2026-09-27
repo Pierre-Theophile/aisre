@@ -196,7 +196,6 @@ func TestValidateRefusesATermThatCannotBeAnswered(t *testing.T) {
 		{"onset with no method", engine.Onset(pointer(), window, investigationv1.OnsetMethod_ONSET_METHOD_UNSPECIFIED), "method"},
 		{"onset with an inverted window", engine.Onset(pointer(), inverted, investigationv1.OnsetMethod_SEASONAL_CUSUM), "inverted"},
 		{"error_spans with no edge", engine.ErrorSpans("", "", graphv1.EdgeType_CALLS, window), "edge"},
-		{"errors_by_version with no version attribute", engine.ErrorsByVersion(pointer(), window, ""), "version"},
 		{"exemplars with no handle", engine.Exemplars(&engine.Handle{}, 5), "handle"},
 		{"drill_down with no handle", engine.DrillDown(nil), "handle"},
 		{"knowledge_search with no entities", engine.KnowledgeSearch(nil, []string{"x"}, 5), "entities"},
