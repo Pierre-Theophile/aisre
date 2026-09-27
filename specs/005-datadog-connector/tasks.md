@@ -238,7 +238,15 @@ goldens; a Cloud Run service with the same OTel name and environment shows both 
     do not yet draw on a quota budget (the Datadog feeder has none yet; FR-082 is Phase 7's).
   - *T068 deferred:* SC-016's path needs the owner (tags, T076) and the preceding changes (log-observed
     rollouts, Phase 6); it is asserted when those exist rather than against a graph that cannot answer.
-- [ ] T068 [US4] Assert SC-016's path end to end on the recorded corpus: monitor id → alert, watched entities, preceding changes, owner, executable pointers, in one command under 30 s; fixture: datadog-log-source-01
+- [X] T068 [US4] Assert SC-016's path end to end on the recorded corpus: monitor id → alert, watched entities, preceding changes, owner, executable pointers, in one command under 30 s; fixture: datadog-log-source-01
+  - *T068 notes:* the corpus is its own fixture, `datadog-monitor-to-owner-01`, and not
+    datadog-log-source-01, which has no monitor, owner or rollout. `TestSC016FromADatadogMonitorIDAlone`
+    runs `query diff datadog.monitor=<id> --at <trigger> --hops 2`. The answer names the alert, the
+    WATCHES edge, the log-observed rollout, the owner and the log pointer. The table output now prints
+    the pointers of the changed entities, which it did not before. Found on the way, and not changed
+    here: a transition is an assertion from the same source, so from the transition onwards it hides
+    the monitor's definition properties (service, environment, type). That follows the published fold
+    rule of feature 001 (segments.go), and changing it is a model decision.
 
 **Checkpoint**: a service on any platform — including one no feeder covers — is investigable.
 
