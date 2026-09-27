@@ -410,7 +410,9 @@ them.
 
 **Backend kind** `datadog` · **executed by** `GET /api/v1/monitor/{monitor_id}` · added by feature 005
 
-The monitor's query string exactly as Datadog stores it, plus the monitor id. Never rewritten. The
+The selector is the monitor's query string exactly as Datadog stores it, never rewritten; the
+monitor id is the pointer attribute `datadog.monitor.id`, in decimal, and is what the backend
+executes against. The
 pointer's kind is the kind of what the monitor queries — `METRIC` for a metric monitor, `LOG` for a
 log monitor — and a monitor whose type has no published kind gets a `SOURCE_LINK` only.
 
