@@ -340,3 +340,25 @@ func TestTheReserveBindsMeasuredQuotaNotTheStaticBootstrap(t *testing.T) {
 		t.Errorf("Allow = %v; with 400 measured left against a reserve of 500 the floor must bind", err)
 	}
 }
+
+// A reading that said "nothing left" stands only until its window resets: after it, the budget draws
+// one call from the static allowance, whose response re-derives the share (005 FR-083). Before it,
+// nothing is spent.
+func TestAnExhaustedWindowIsForgottenOnceItResets(t *testing.T) {
+	t.Parallel()
+	reset := time.Date(2026, 9, 27, 14, 6, 30, 0, time.UTC)
+	b := budget(t, 0.5, 20, 30)
+	b.Observe(feeder.Reading{Family: "monitors", Limit: 1000, Remaining: 0, Reset: reset, Source: feeder.QuotaReported})
+
+	b.Expire("monitors", reset.Add(-time.Second))
+	if _, ok := feeder.YieldedForQuota(b.Allow("monitors")); !ok {
+		t.Fatal("a call was allowed inside a window Datadog said was exhausted")
+	}
+	b.Expire("monitors", reset)
+	if err := b.Allow("monitors"); err != nil {
+		t.Fatalf("the window reset and the budget still refused: %v", err)
+	}
+	if left, known := b.Headroom("monitors"); !known || left >= 1 {
+		t.Errorf("headroom %v (%v): the probe should be drawn from the static allowance", left, known)
+	}
+}

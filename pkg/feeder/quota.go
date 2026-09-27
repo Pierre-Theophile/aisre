@@ -399,3 +399,41 @@ func (b *QuotaBudget) Report() UsageReport {
 	}
 	return report
 }
+
+// Expire forgets a family's reading once the window it describes has reset. Without it a reading that
+// said "nothing left" — a 429's — would stand forever: the budget would refuse every call, and no call
+// would ever bring the reading that says the window refilled. The next call is then drawn from the
+// static allowance, as before any reading, and its response re-derives the share.
+func (b *QuotaBudget) Expire(family string, now time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	reading, ok := b.readings[family]
+	if !ok || reading.Reset.IsZero() || now.Before(reading.Reset) {
+		return
+	}
+	delete(b.readings, family)
+	delete(b.allowance, family)
+	delete(b.window, family)
+	b.spent[family] = 0
+}
+
+// Headroom is the share of this window's allowance still unspent for a family, in [0,1], and whether
+// the budget has an allowance for it at all. It is what lets a connector with several areas defer the
+// less urgent ones first (005 FR-082): an area may be asked to leave a fraction of the share for the
+// areas ahead of it in the published order, rather than every area racing for the last call.
+func (b *QuotaBudget) Headroom(family string) (float64, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	allowance, ok := b.allowance[family]
+	if !ok {
+		return 1, false
+	}
+	if allowance <= 0 {
+		return 0, true
+	}
+	left := float64(allowance-b.spent[family]) / float64(allowance)
+	if left < 0 {
+		left = 0
+	}
+	return left, true
+}

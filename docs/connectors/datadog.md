@@ -61,4 +61,60 @@ application key can read its own scopes, and when `--assert-read-only` is theref
 
 ## 4. What it costs
 
-To be written from a recorded run (T088).
+Every number below is a call count from `fixtures/datadog-rate-limited-01`, which is recorded from the
+live poller, the real client and its budget against a twin that answers with rate-limit headers.
+`TestTheBudgetHoldsToTheExactCall` checks that the calls the twin served, the calls the budget counted
+and the calls the recorded usage report states are one number. None of these counts is an estimate.
+
+### Per unit
+
+| Area | When | Calls | Bucket in the recording |
+|---|---|---|---|
+| Monitor poll | every `--poll-interval` (20 s by default) | 1 per page of 100 monitors; a list of exactly 100·n reads one more, empty page | `monitors_list` |
+| Doorbell ring | at most one extra poll per minimum poll interval | as a monitor poll | as above |
+| Discovery | every hour, per watched log source | 12 aggregates: totals, host presence, 7 published conventions, 3 allowlisted tag keys. With `--version-override`, 6: the override replaces the 7 conventions | `logs_analytics` |
+| Rollout lookup | every discovery, per source whose stamp was accepted | 1 aggregate, plus 2 searches per value new to the poller | `logs_analytics`, then the log-search bucket |
+
+A restarted poller lists values it has seen before again. That costs 2 searches per value once, and
+re-derives ids the graph already holds.
+
+### For a stated estate at the default cadence
+
+Take 50 monitors in scope, 10 watched log sources that are all stamped, and 2 deploys per source per
+day.
+
+| Area | Calls per hour |
+|---|---|
+| Monitor poll | 180 (one page, every 20 s) |
+| Discovery | 120 (10 × 12) |
+| Rollout lookup | 10 aggregates, plus about 1.7 searches (40 new values a day × 2 ÷ 24) |
+
+Total: about 312 calls an hour. The monitor list takes 180 of them from its own bucket, and log
+analytics takes 130 from its bucket. The investigation backend's calls come on top of this. Each
+backend builds its own client and budget and reports them separately (FR-084a).
+
+### The budget, and what it gives up first
+
+- **Share and reserve.** `--quota-share` (0.5 by default) is the fraction of what Datadog says is left in
+  a bucket (`X-RateLimit-Name`) that the connector may spend in that window. `--quota-reserve` (20 by
+  default) is the number of calls it never spends, whatever the share works out to. The share is fixed
+  when the window opens. The reserve is checked against Datadog's latest reading, so when the people
+  working an incident drain the bucket, the connector stops at the reserve. In the recording, the 14:05
+  discovery reads until 20 calls are left and stops, typed `quota`.
+- **The deferral order.** Some areas must leave part of the share to the areas ahead of them.
+  - Monitor transitions and definitions (one read) may spend the share to the end.
+  - Discovery stops when a quarter of the share is left.
+  - Rollout lookup stops when half of the share is left.
+
+  Under pressure, the connector stops looking for new versions first, and stops reading alert
+  transitions last. The recording's 14:00 rollout lookup is deferred this way.
+- **429.** A 429 stops the poll as partial, typed `rate_limited`. The connector reads nothing until
+  the reset Datadog stated, and a doorbell ring during the wait reads nothing and says so. The first
+  call after the reset is drawn from the static allowance, and its response re-derives the share.
+- **Stated, never silent.** Every poll marker, and so every checkpoint, carries three things:
+  - the typed stop;
+  - the areas deferred since the last poll;
+  - the usage report: calls per area and bucket, and what is left of each bucket, with its source.
+
+  A partial poll claims no coverage and retracts nothing. What it did not read is unread, not
+  absent.

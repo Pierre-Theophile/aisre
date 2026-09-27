@@ -31,6 +31,13 @@ func failed(err error, query string) (answer, error) {
 		if errors.As(err, &unpublished) {
 			return answer{}, err // a programming error: the connector asked for an operation it did not declare
 		}
+		if datadogx.IsQuotaStop(err) {
+			// The connector's own budget stopped the call before it was sent, leaving the reserve to the
+			// people working the incident (FR-081b): a rate limit, never a timeout or an empty answer.
+			return answer{outcome: engine.QueryFailed{Reason: investigationv1.FailureReason_RATE_LIMITED,
+				Detail: "datadog: not sent, the connector's quota share is spent: " + err.Error()},
+				query: query, vocabulary: feeder.VocabDatadogLogs}, nil
+		}
 		return answer{outcome: engine.QueryFailed{Reason: investigationv1.FailureReason_TIMED_OUT,
 			Detail: "datadog: " + err.Error()}, query: query, vocabulary: feeder.VocabDatadogLogs}, nil
 	}

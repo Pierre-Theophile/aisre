@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package datadog
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+)
+
+// Areas and quota stops (005 T084, T085; contract §5).
+//
+// Every live call is drawn for an area, and the areas are ranked by the published deferral order:
+// transitions and monitor definitions (one read), then discovery, then rollout detection. The client's
+// budget (internal/datadogx/budget.go) makes a lower area leave part of the share for the areas ahead of
+// it, so under pressure the connector stops looking for new versions first and stops reading alert
+// transitions last.
+
+// Area is what a call is for.
+type Area string
+
+// The areas, in the published deferral order (first deferred last).
+const (
+	AreaMonitors      Area = "monitors"
+	AreaDiscovery     Area = "discovery"
+	AreaRollouts      Area = "rollouts"
+	AreaInvestigation Area = "investigation"
+)
+
+// MinHeadroom is the share of the window's allowance an area must leave unspent.
+var MinHeadroom = map[Area]float64{AreaMonitors: 0, AreaInvestigation: 0, AreaDiscovery: 0.25, AreaRollouts: 0.5}
+
+type areaKey struct{}
+
+// WithArea marks every call made with ctx as drawn for area.
+func WithArea(ctx context.Context, area Area) context.Context {
+	return context.WithValue(ctx, areaKey{}, area)
+}
+
+// AreaOf is the area a call is drawn for; an unmarked call is an investigation's.
+func AreaOf(ctx context.Context) Area {
+	if a, ok := ctx.Value(areaKey{}).(Area); ok {
+		return a
+	}
+	return AreaInvestigation
+}
+
+// DeferralError is a lower area yielding so the areas ahead of it keep their share. It is a quota stop,
+// never an absence of findings.
+type DeferralError struct {
+	Area     Area
+	Family   string
+	Headroom float64
+}
+
+func (e *DeferralError) Error() string {
+	return fmt.Sprintf("datadog: %s deferred on bucket %s: %.0f%% of the share is left and this area stops "+
+		"at %.0f%%, leaving the rest to the areas ahead of it in the published order (FR-082)",
+		e.Area, e.Family, e.Headroom*100, MinHeadroom[e.Area]*100)
+}
+
+// The typed stop reasons a poll marker states (FR-083): the connector stopped, and why, which is never
+// the same fact as having looked and found nothing.
+const (
+	StopQuota       = "quota"
+	StopRateLimited = "rate_limited"
+)
+
+// rateLimited is a 429 as the client reports it.
+type rateLimited interface {
+	HTTPStatus() int
+	RetryAfterDuration() time.Duration
+}
+
+// stopOf classifies a failed call: a quota stop, a 429 with its wait, or neither.
+func stopOf(err error) (reason string, wait time.Duration) {
+	var d *DeferralError
+	if errors.As(err, &d) {
+		return StopQuota, 0
+	}
+	if _, ok := feeder.YieldedForQuota(err); ok {
+		return StopQuota, 0
+	}
+	var r rateLimited
+	if errors.As(err, &r) && r.HTTPStatus() == 429 {
+		return StopRateLimited, r.RetryAfterDuration()
+	}
+	return "", 0
+}

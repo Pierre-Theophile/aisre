@@ -301,8 +301,20 @@ the allowlist becomes nothing.
 seeded canary fails the commit.
 
 - [X] T079 [US7] Build the Datadog sanitisation table with `sanitise.NewPolicy` in `internal/sanitise/datadog.go`: people identifiers dropped, infrastructure identifiers keyed-HMAC, monitor message bodies dropped, log lines as masked templates, unassigned fields failing closed (FR-072–FR-075); fixture: unit
-- [ ] T080 [US7] Wire the table into the backend (live redaction too, FR-052) and into a recording tee for the feeder, so no unsanitised byte reaches disk even on an aborted run (FR-076a); fixture: unit
-- [ ] T081 [US7] Assert over every Datadog fixture: canaries absent, the independent scan clean, zero people identifiers in any form (SC-017, SC-018); fixture: datadog-backend-logs-01
+- [X] T080 [US7] Wire the table into the backend (live redaction too, FR-052) and into a recording tee for the feeder, so no unsanitised byte reaches disk even on an aborted run (FR-076a); fixture: unit
+- [X] T081 [US7] Assert over every Datadog fixture: canaries absent, the independent scan clean, zero people identifiers in any form (SC-017, SC-018); fixture: datadog-backend-logs-01
+  - *Done notes (T080, T081):* the backend already refused a live run without its sanitiser and
+    redactor (Phase 3). The feeder's live `--record` goes through `internal/feeders/deployrecord`'s tee
+    with a Datadog pre-pass (`recording.go`): it keeps only the fields the feeder reads — a monitor's
+    creator, options, message, roles and anything Datadog adds later never reach the recording —
+    reduces a monitor's query to its identifier terms (a metric name or a search phrase is free text no
+    pass can vouch for; the pointer executes by id), and rewrites every identifier term in queries,
+    tags, group keys, sources and tag values with the corpus key's pseudonym, so the recording still
+    joins. The `datadog.*` rows in `sanitise.ContractPolicy` decide every field after that, failing
+    closed. The recording's events are derived by a shadow feeder in the recording's vocabulary. Tests:
+    canaries (person, free text; infrastructure where the pre-pass hashes it) never survive, a canary
+    in a field the table would hash ends the run, and every committed Datadog fixture carries no
+    people identifier and no canary token.
 - [ ] T082 [US7] Run the campaign against the organisation per quickstart §8: record, scan, sign, verify, parity — **blocked on a read-only key and a named signatory**; fixture: private corpus
 - [ ] T083 [US7] Commit the signed private corpus and run the same suite in private CI; record the live parity result (SC-009, SC-010) — **blocked on T082**; fixture: private corpus
 
@@ -313,11 +325,17 @@ seeded canary fails the commit.
 **Independent test**: replay a recording with 429s; back-off honoured, usage matches the recording to
 the call, work deferred in the published order.
 
-- [ ] T084 [US8] Implement the budget in `internal/feeders/datadog/budget.go` and the backend's equivalent: share of remaining quota per `X-RateLimit-Name` bucket, the human reserve untouched, window caps per term (FR-081–FR-082a); fixture: datadog-rate-limited-01
-- [ ] T085 [US8] Implement the published deferral order (transitions, definitions, discovery, rollouts) with the typed quota-stop reason, and resume-after-429 (FR-082, FR-083); fixture: datadog-rate-limited-01
-- [ ] T086 [US8] Implement the usage report: calls per area and bucket, share of remaining quota, reserve untouched, feeder and backend separately (FR-084, FR-084a); fixture: datadog-rate-limited-01
-- [ ] T087 [US8] Build `fixtures/datadog-rate-limited-01` with 429s, falling remaining quota during an incident, and a partial poll; assert SC-008 to the exact call; fixture: datadog-rate-limited-01
-- [ ] T088 [P] [US8] Document the cost at the default cadence for a stated estate in `docs/connectors/datadog.md` (FR-087), from the recorded run, not an estimate; fixture: datadog-rate-limited-01
+- [X] T084 [US8] Implement the budget in `internal/feeders/datadog/budget.go` and the backend's equivalent: share of remaining quota per `X-RateLimit-Name` bucket, the human reserve untouched, window caps per term (FR-081–FR-082a); fixture: datadog-rate-limited-01
+- [X] T085 [US8] Implement the published deferral order (transitions, definitions, discovery, rollouts) with the typed quota-stop reason, and resume-after-429 (FR-082, FR-083); fixture: datadog-rate-limited-01
+- [X] T086 [US8] Implement the usage report: calls per area and bucket, share of remaining quota, reserve untouched, feeder and backend separately (FR-084, FR-084a); fixture: datadog-rate-limited-01
+- [X] T087 [US8] Build `fixtures/datadog-rate-limited-01` with 429s, falling remaining quota during an incident, and a partial poll; assert SC-008 to the exact call; fixture: datadog-rate-limited-01
+- [X] T088 [P] [US8] Document the cost at the default cadence for a stated estate in `docs/connectors/datadog.md` (FR-087), from the recorded run, not an estimate; fixture: datadog-rate-limited-01
+  - *T084–T088 notes:* the budget is `internal/datadogx/budget.go` over pkg/feeder's QuotaBudget, keyed by
+    the bucket Datadog names; areas and typed stops are `internal/feeders/datadog/areas.go`. The backend
+    maps a budget stop to RATE_LIMITED, never a timeout. The budget now forgets a reading once its window
+    has reset (`QuotaBudget.Expire`); without it, a 429's "nothing left" would have refused every later
+    call. A partial poll now claims no coverage, so the gap it declares never ends before it starts.
+    SC-008 is asserted by `TestTheBudgetHoldsToTheExactCall`.
 
 ---
 

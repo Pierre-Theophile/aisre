@@ -5,18 +5,21 @@ package cli
 import (
 	"strings"
 	"testing"
+
+	"github.com/Pierre-Theophile/aisre/internal/sanitise"
 )
 
 // The refusals `feed datadog` makes before it reads anything (T058).
 func TestFeedDatadogRefusesBeforeReading(t *testing.T) {
 	t.Setenv("DD_API_KEY", "")
 	t.Setenv("DD_APP_KEY", "")
+	t.Setenv(sanitise.KeyEnv, "")
 	for _, tc := range []struct {
 		name string
 		args []string
 		want string
 	}{
-		{"a live recording", []string{"--org", "twin", "--site", "datadoghq.eu", "--record", t.TempDir()}, "FR-137"},
+		{"a live recording with no corpus key", []string{"--org", "twin", "--site", "datadoghq.eu", "--record", t.TempDir()}, "FR-137"},
 		{"no site", []string{"--org", "twin"}, "--site is required"},
 		{"an unbuilt capability", []string{"--org", "twin", "--capabilities", "logs,changes"}, "not built"},
 		{"a malformed log source", []string{"--org", "twin", "--site", "datadoghq.eu", "--watch", "checkout"}, "<env>/<service>"},
