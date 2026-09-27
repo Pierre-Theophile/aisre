@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder/versionstamp"
 )
 
 // The live poller (T057, T058; contract §3, §3.1).
@@ -28,6 +29,12 @@ type MonitorPager interface {
 	ListMonitorsPage(ctx context.Context, tags string, page, pageSize int) ([]byte, error)
 }
 
+// Measurer measures one log source's presence counts over a window (discovery.go). It is the
+// discovery reads, bounded: one aggregate for the totals, one for hosts, one per candidate.
+type Measurer interface {
+	Measure(ctx context.Context, src LogSource, override string, from, to time.Time) (SourceMeasurement, error)
+}
+
 // DefaultPageSize is the monitor list's page size.
 const DefaultPageSize = 100
 
@@ -42,8 +49,13 @@ type Poller struct {
 	Interval          time.Duration
 	DiscoveryInterval time.Duration
 	LogSources        []LogSource
-	Capabilities      Capabilities
-	Now               func() time.Time
+	// Measurer, when set, measures each source at every discovery tick; VersionOverrides are passed
+	// to it; DiscoveryWindow is the window measured (default versionstamp.DefaultWindow).
+	Measurer         Measurer
+	VersionOverrides map[string]string
+	DiscoveryWindow  time.Duration
+	Capabilities     Capabilities
+	Now              func() time.Time
 	// Push hands a payload to the feeder's source.
 	Push func(ctx context.Context, p feeder.Payload) error
 
@@ -80,6 +92,26 @@ func (p *Poller) Discover(ctx context.Context) error {
 	tick := DiscoveryTick{}
 	for _, src := range p.LogSources {
 		tick.LogSources = append(tick.LogSources, src.Env+"/"+src.Service)
+	}
+	if p.Measurer != nil {
+		window := p.DiscoveryWindow
+		if window <= 0 {
+			window = versionstamp.DefaultWindow
+		}
+		to := p.now().Truncate(time.Minute)
+		tick.Window = &DiscoveryWindow{From: to.Add(-window), To: to}
+		for _, src := range p.LogSources {
+			key := src.Env + "/" + src.Service
+			m, err := p.Measurer.Measure(ctx, src, p.VersionOverrides[key], tick.Window.From, tick.Window.To)
+			if err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				m = SourceMeasurement{Failed: err.Error()}
+			}
+			m.Source = key
+			tick.Measurements = append(tick.Measurements, m)
+		}
 	}
 	raw, err := json.Marshal(tick)
 	if err != nil {

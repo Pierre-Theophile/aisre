@@ -406,6 +406,13 @@ which is when the engine answers `errors_by_version` itself (ADR-0010 item 2). `
 the logs carry one. `workload`, `pod` and `trace` are omitted: the default capabilities cannot express
 them.
 
+**The discovery verdict** travels with the pointer on the node that carries it, because the pointer
+message has no field for it: `sre.version_stamp.attribute` (the accepted candidate's label, absent
+when none), `sre.version_stamp.source` (`discovered` or `operator`), `sre.version_stamp.verdict` (each
+candidate tried and why it was accepted or not — without its shares, which move every window and are
+in the checkpoint instead) and `sre.version_stamp.conventions_version`. They are versioned in valid time
+with the pointer, so an as-of read shows the verdict that held then.
+
 ### `datadog-monitor/v1` — a Datadog monitor's query
 
 **Backend kind** `datadog` · **executed by** `GET /api/v1/monitor/{monitor_id}` · added by feature 005
