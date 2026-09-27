@@ -78,9 +78,32 @@ retrying: *"this organisation has no trace data; the question cannot be checked 
 | trace | `TraceDigest` | `SpanGroup` (operation, error kind, count, latency statistics, join keys, drill-down) |
 | monitor | `MonitorStateDigest` | `MonitorTransition` plus start state, end state, per-group states |
 | onset | `OnsetDigest` | the estimated instant, an uncertainty, the method and its parameters, or `unavailable` with a reason |
-| errors by version | `ErrorsByVersionDigest` | `VersionBreakdown` (version, errors, total, error rate, join keys, drill-down) plus the version attribute |
+| errors by version | `ErrorsByVersionDigest` | `VersionBreakdown` (version, errors, total, error rate, join keys, drill-down, and `deploy_ref` or `deploy_ref_absent_reason`) plus the version attribute |
 | exemplars | `ExemplarDigest` | `Exemplar` (masked text, redaction applied, join keys) plus the cap |
 | knowledge | `KnowledgeDigest` | `KnowledgeItem` (document id, kind, linked entities, link provenance, authored at, age, score, citation, excerpt) plus the scorer version |
+
+### A version group's deploy reference
+
+Each `VersionBreakdown` names the deployed version in the platform-neutral `deploy.*` vocabulary, so
+the group joins to the change a deploy feeder recorded, whichever platform deployed it (005 FR-040d,
+ADR-0010 item 1). `pkg/feeder/versionstamp` normalises the raw value, the same way on every backend:
+
+| raw value | `deploy_ref` |
+|---|---|
+| 40 or 64 hex characters | `deploy.commit_sha`, lower-cased |
+| `image@sha256:…` | `deploy.image`, with the tag dropped |
+| any other value with no whitespace | `deploy.release` (joins by lookup, and never merges through C8) |
+
+When there is no reference, `deploy_ref_absent_reason` says why, and the raw `version` is kept:
+
+- `ABBREVIATED_SHA`: the value looks like a commit, but the full form cannot be recovered.
+- `MUTABLE_TAG`: an image tag two rollouts could share, such as `:latest`.
+- `BARE_DIGEST`: an image digest with no image name.
+- `NOT_A_STABLE_IDENTIFIER`: the value is empty or contains whitespace.
+
+`DEPLOY_REF_ABSENT_REASON_UNSPECIFIED` means the group has a reference, or the backend predates the
+field. It never means "none". How a service gets a stamp at all is
+[docs/connectors/version-stamping.md](../connectors/version-stamping.md).
 
 ### Size and cardinality caps
 

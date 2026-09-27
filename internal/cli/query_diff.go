@@ -273,6 +273,9 @@ func renderDiff(cmd *cobra.Command, global *globalOptions, req *graphv1.DiffRequ
 	if err := renderEdgeDeltas(p, names, resp); err != nil {
 		return err
 	}
+	if err := renderTargetPointers(p, resp.GetChangeTargets()); err != nil {
+		return err
+	}
 
 	if formula := resp.GetRankingFormula(); formula != "" {
 		if err := p.writeLine("\nranking   %s", formula); err != nil {
@@ -361,6 +364,27 @@ func renderNodeDeltas(p *printer, resp *graphv1.DiffResponse) error {
 		}
 	}
 	return p.writeTable([]string{"NODE", "KEY", "OLD", "NEW"}, rows)
+}
+
+// renderTargetPointers prints the pointers of the entities the changes landed on: where to look next,
+// executable against their backends, in the same answer (005 SC-016).
+func renderTargetPointers(p *printer, targets []*graphv1.NodeVersion) error {
+	var rows [][]string
+	for _, target := range targets {
+		name := nodeLabel(target)
+		for _, pointer := range target.GetPointers() {
+			rows = append(rows, []string{name, pointer.GetKind().String(), pointer.GetBackendKind(),
+				pointer.GetVocabulary(), pointer.GetSelector()})
+			name = ""
+		}
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	if err := p.writeLine("\npointers on the changed entities"); err != nil {
+		return err
+	}
+	return p.writeTable([]string{"TARGET", "KIND", "BACKEND", "VOCABULARY", "SELECTOR"}, rows)
 }
 
 // renderEdgeDeltas prints the relationships that appeared, vanished or moved.

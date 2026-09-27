@@ -3,9 +3,9 @@
 **Date**: 2026-09-27 · **Plan**: [plan.md](./plan.md) · **Data model**: [data-model.md](./data-model.md)
 
 Runnable validation, in the order a reviewer should run it. Every step is a command and what it must
-print. **Nothing here has been executed yet** — the code does not exist — and features 003 and 004
-each found doc drift on their first run, so this file is re-run end to end, and the run recorded,
-before the feature is called done. §7 and §8 need a credential and say so.
+print. §0–§6 were run end to end on a clean worktree on 2026-09-27, and the drift that run exposed is
+fixed here: [quickstart-run-2026-09-27.md](./quickstart-run-2026-09-27.md). §7 and §8 need a
+credential and say so.
 
 ## 0. Prerequisites
 
@@ -20,7 +20,7 @@ bin/aisre migrate --db "$PG_DSN"
 ```bash
 buf lint && buf breaking --against '.git#branch=main'     # VersionBreakdown.deploy_ref is additive
 go test ./pkg/feeder/ -run 'ReadOnly|NamedQuery'           # POST only as a named, listed operation
-go test ./pkg/feeder/ -run 'Quota.*Datadog'                # relative reset, X-RateLimit-Name buckets
+go test ./pkg/feeder/ -run 'Datadog|Bucket'                # relative reset, X-RateLimit-Name buckets
 go test ./pkg/feeder/ -run 'Vocab'                          # datadog-logs/v1, datadog-monitor/v1 registered
 go test ./internal/resolution/ -run 'C9'                    # merges on name + environment only
 go test ./internal/investigation/backend/ -run 'Unstamped'  # engine answers NO_DATA, no backend call
@@ -33,14 +33,16 @@ go test ./internal/investigation/backend/ -run 'Unstamped'  # engine answers NO_
 ```bash
 go test ./pkg/feeder/versionstamp/...
 bin/aisre fixture verify fixtures/datadog-errors-by-version-01 --db "$PG_DSN"
-bin/aisre fixture verify fixtures/datadog-unstamped-01 --db "$PG_DSN"
+bin/aisre fixture verify fixtures/datadog-log-source-01 --db "$PG_DSN"
+go test ./internal/investigation/backend/ -run 'Unstamped' -v
 ```
 
 **Expected**: in `datadog-errors-by-version-01` each group names its `deploy.commit_sha` ref, and a
-group of abbreviated shas carries `ABBREVIATED_SHA` and no ref. In `datadog-unstamped-01` — the
-audit's shape, an SDK `@version` on start-up lines only — the pointer carries no version join key,
-and `errors_by_version` answers `NO_DATA` listing each convention with its line and error-line
-shares. The GCP backend's `errors_by_version` fills `deploy_ref` too, proving the rule is not
+group of abbreviated shas carries `ABBREVIATED_SHA` and no ref. In `datadog-log-source-01`, `search`
+has the audit's shape (an SDK `@version` on start-up lines only): its pointer carries no version join
+key, and on that pointer `errors_by_version` answers `NO_DATA`, listing each convention with its line
+and error-line shares (`TestTheUnstampedPointerIsAnsweredByTheEngine`). No separate
+`datadog-unstamped-01` was built (T050). The GCP backend's `errors_by_version` fills `deploy_ref` too, proving the rule is not
 Datadog's.
 
 ## 3. The backend answers all eight terms without tracing
@@ -81,6 +83,14 @@ bin/aisre fixture verify fixtures/datadog-log-rollout-merge-01 --db "$PG_DSN"
 - `datadog-log-rollout-merge-01`: the same commit deployed by Cloud Run appears **once** in the ranked
   change list, merged by C8, carrying the stated instant as its rollout instant (research §5 O3).
 
+And the pieces that came after the first draft of this file:
+
+```bash
+bin/aisre fixture verify fixtures/datadog-tags-01 --db "$PG_DSN"              # owners and identity claims from tags
+bin/aisre fixture verify fixtures/datadog-monitor-to-owner-01 --db "$PG_DSN"  # SC-016's corpus
+go test ./internal/cli/ -run 'SC016FromADatadogMonitorIDAlone'                 # monitor id → alert, watched, changes, owner, pointers
+```
+
 ```bash
 bin/aisre fixture verify --report --report-json report.jsonl fixtures/*/ --db "$PG_DSN"
 ./scripts/check-report.sh report.jsonl
@@ -92,12 +102,24 @@ bin/aisre fixture verify --report --report-json report.jsonl fixtures/*/ --db "$
 ## 6. Nothing writes, nothing leaks
 
 ```bash
-go test ./internal/feeders/datadog/ ./internal/backends/datadog/ -run 'ReadOnly|Published'
+go test ./internal/feeders/datadog/ ./internal/backends/datadog/ -run 'Published|Surface|NeverDeclared|NoSelector|Canary|Clean'
 ./scripts/check-no-secrets.sh
 ```
 
 **Expected**: every issuable request is on [the operation list](./contracts/read-only-operations.md);
-no telemetry payload in any event; no credential or site host in any pointer.
+no canary seeded into a recording survives into any fixture; no credential or site host in any
+pointer.
+
+## 6b. The budget holds to the exact call
+
+```bash
+bin/aisre fixture verify fixtures/datadog-rate-limited-01 --db "$PG_DSN"
+go test ./internal/feeders/datadog/ -run 'TheBudgetHoldsToTheExactCall'
+```
+
+**Expected**: under a falling remaining quota and a 429, discovery stops at the reserve (typed
+`quota`), the poll is partial (typed `rate_limited`) and resumes at the stated reset, and the calls
+served, counted and reported are one number.
 
 ## 7. Live — **needs a credential**
 
@@ -127,6 +149,6 @@ named human signatory (FR-076); no automation supplies one.
 
 | section | runnable once built | why not |
 |---|---|---|
-| §0–§6 | ✅ | fixtures and unit tests only |
+| §0–§6b | ✅ run 2026-09-27 | fixtures and unit tests only |
 | §7 | ❌ | a read-only Datadog key |
 | §8 | ❌ | the above, plus a named signatory |
