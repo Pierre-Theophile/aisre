@@ -80,9 +80,17 @@ func (b *Base) Call(ctx context.Context, req worker.Request) (worker.Response, e
 		return worker.Response{}, err
 	}
 
-	resp, err := b.Backend.Execute(ctx, req.Algebra)
+	// An errors_by_version on a pointer with no version stamp is the engine's to answer, identically
+	// for every backend and in both modes (engine.AnswerUnstamped; 005 FR-040b).
+	resp, answered, err := engine.AnswerUnstamped(req.Algebra, req.Mode.String())
 	if err != nil {
 		return worker.Response{}, err
+	}
+	if !answered {
+		resp, err = b.Backend.Execute(ctx, req.Algebra)
+		if err != nil {
+			return worker.Response{}, err
+		}
 	}
 	if b.After != nil {
 		if err := b.After(ctx, req, resp); err != nil {

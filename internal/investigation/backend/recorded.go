@@ -122,6 +122,10 @@ func (r *Recorded) Execute(ctx context.Context, req *Request) (*Response, error)
 			BackendVersion: r.version,
 		})
 	}
+	if resp, ok, err := AnswerUnstamped(req, string(ModeRecorded)); err != nil || ok {
+		// Answered from the pointer alone, so it is neither served from the world nor a miss.
+		return resp, err
+	}
 	if err := Validate(term); err != nil {
 		r.countRefusal()
 		return NewResponse(ResponseInput{

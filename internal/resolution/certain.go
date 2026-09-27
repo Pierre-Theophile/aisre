@@ -91,6 +91,10 @@ var sharedPropertyNamespaces = []string{
 	NamespaceDeployImage,
 	NamespaceDeployRelease,
 	NamespaceGitHubRepo,
+	// A Datadog log service name is the same string in two organisations, or two environments, that
+	// mean different services (005 FR-062). C1 would merge them on the value alone; C9 merges only
+	// with an environment-agreeing OpenTelemetry service.
+	NamespaceDatadogLogService,
 }
 
 // IdentifyingNamespace reports whether equality of a value in ns is by itself evidence that two

@@ -34,6 +34,9 @@ import (
 const (
 	// NamespaceOTelService is the OpenTelemetry `service.name` of a service.
 	NamespaceOTelService = "otel.service.name"
+	// NamespaceDatadogLogService is a Datadog log source's service name, with the environment as a
+	// supporting attribute (005 FR-058). Not identifying on its own; C9 reads it.
+	NamespaceDatadogLogService = "datadog.log_service"
 	// NamespaceK8sDeployment is a Kubernetes Deployment as `<namespace>/<name>`.
 	NamespaceK8sDeployment = "k8s.deployment"
 )
@@ -43,6 +46,8 @@ const (
 const (
 	// AttrK8sNamespace is the Kubernetes namespace a workload lives in.
 	AttrK8sNamespace = "k8s.namespace.name"
+	// AttrK8sCluster is the Kubernetes cluster, where a claim states one (C9).
+	AttrK8sCluster = "k8s.cluster.name"
 	// AttrK8sDeployment is the Kubernetes Deployment name carried on OTel resource attributes.
 	AttrK8sDeployment = "k8s.deployment.name"
 	// AttrServiceNamespace is the OpenTelemetry `service.namespace`.
@@ -221,6 +226,14 @@ type Rule struct {
 	// EvalCorrelation returns the matches this rule finds for a newly stored correlation key
 	// (004 T148).
 	EvalCorrelation func(ctx context.Context, store ClaimStore, correlation Correlation) ([]Match, error)
+	// CrossKind declares a rule that pairs an identity claim with a correlation key, and so must run
+	// from both: when the claim is stored and when the correlation is (005 C9). It is the one case in
+	// which both evaluators are set, and it does not reintroduce the double decision the refusal
+	// above exists for, because each evaluator matches only the OTHER kind — the claim side looks up
+	// correlations and the correlation side looks up claims — so a pair is found once, by whichever of
+	// its two events is stored second. Without it such a rule fires in one arrival order only, which
+	// is a graph that depends on delivery order.
+	CrossKind bool
 }
 
 var registry = []Rule{certainRuleC1, certainRuleC2, certainRuleC3}
@@ -242,9 +255,12 @@ func Register(rules ...Rule) {
 		case rule.Eval == nil && rule.EvalCorrelation == nil:
 			panic(fmt.Sprintf("resolution: rule %s has no evaluator, so it would be published and "+
 				"never fire", rule.ID))
-		case rule.Eval != nil && rule.EvalCorrelation != nil:
+		case rule.Eval != nil && rule.EvalCorrelation != nil && !rule.CrossKind:
 			panic(fmt.Sprintf("resolution: rule %s has both evaluators; a rule triggered by a claim "+
 				"and by a correlation would record two decisions for one reason", rule.ID))
+		case rule.CrossKind && (rule.Eval == nil || rule.EvalCorrelation == nil):
+			panic(fmt.Sprintf("resolution: rule %s is declared cross-kind with one evaluator; it would "+
+				"fire in one arrival order only", rule.ID))
 		}
 		registry = append(registry, rule)
 	}

@@ -49,10 +49,10 @@ the same phase, so the rule is proved on two backends before the first Datadog c
 **Purpose**: the package skeletons, the decision record, and the published operation list, so nothing
 can issue an unpublished request.
 
-- [ ] T001 [P] Create `internal/feeders/datadog/doc.go` stating the feeder half's scope per capability, its read-only posture, and that it never reads the graph to decide what to emit (FR-001, FR-040f); fixture: unit
-- [ ] T002 [P] Create `internal/backends/datadog/doc.go` stating the backend half's scope: all eight terms, digests only, nothing written to the graph (FR-001, FR-051); fixture: unit
-- [ ] T003 [P] Write `docs/decisions/ADR-0010-shared-contract-additions-for-005.md` recording Gaps G1–G4 of [plan.md](./plan.md) — the version group's deploy ref, the engine-side `NO_DATA`, named query operations, C9 — each with context, decision and the alternatives rejected in [research.md §1.2](./research.md); fixture: unit
-- [ ] T004 Write `docs/connectors/datadog.md`: capabilities and their scopes, and the operation table of [contracts/read-only-operations.md](./contracts/read-only-operations.md) §2 verbatim, marked **not yet enforced** until T008; fixture: unit
+- [X] T001 [P] Create `internal/feeders/datadog/doc.go` stating the feeder half's scope per capability, its read-only posture, and that it never reads the graph to decide what to emit (FR-001, FR-040f); fixture: unit
+- [X] T002 [P] Create `internal/backends/datadog/doc.go` stating the backend half's scope: all eight terms, digests only, nothing written to the graph (FR-001, FR-051); fixture: unit
+- [X] T003 [P] Write `docs/decisions/ADR-0010-shared-contract-additions-for-005.md` recording Gaps G1–G4 of [plan.md](./plan.md) — the version group's deploy ref, the engine-side `NO_DATA`, named query operations, C9 — each with context, decision and the alternatives rejected in [research.md §1.2](./research.md); fixture: unit
+- [X] T004 Write `docs/connectors/datadog.md`: capabilities and their scopes, and the operation table of [contracts/read-only-operations.md](./contracts/read-only-operations.md) §2 verbatim, marked **not yet enforced** until T008; fixture: unit
 
 **Checkpoint**: the decision record exists before any schema moves.
 
@@ -65,31 +65,31 @@ can issue an unpublished request.
 
 ### 2A — Named query operations on the read-only surface (G3)
 
-- [ ] T005 Extend `pkg/feeder/readonly.go` with named query operations: a `POST` is admissible only as an individual `ReadOperationSpec` carrying a non-empty published justification; any other non-GET/HEAD still panics at init ([contracts/read-only-operations.md](./contracts/read-only-operations.md) §1); fixture: unit
-- [ ] T006 Assert a planted unnamed `POST`, a `PUT`, a `PATCH` and a `DELETE` each panic at init, and a named query without a justification is refused; fixture: unit
-- [ ] T007 Write `internal/feeders/datadog/requestlog.go`: the Datadog operation table per capability, with only enabled capabilities' operations declared (FR-008b); fixture: unit
-- [ ] T008 Assert `docs/connectors/datadog.md` and the enforced table are the same list in both directions, and that the never-declared list of [read-only-operations.md](./contracts/read-only-operations.md) §2 is refused (FR-004, SC-015); fixture: unit
+- [X] T005 Extend `pkg/feeder/readonly.go` with named query operations: a `POST` is admissible only as an individual `ReadOperationSpec` carrying a non-empty published justification; any other non-GET/HEAD still panics at init ([contracts/read-only-operations.md](./contracts/read-only-operations.md) §1); fixture: unit
+- [X] T006 Assert a planted unnamed `POST`, a `PUT`, a `PATCH` and a `DELETE` each panic at init, and a named query without a justification is refused; fixture: unit
+- [X] T007 Write `internal/feeders/datadog/requestlog.go`: the Datadog operation table per capability, with only enabled capabilities' operations declared (FR-008b); fixture: unit
+- [X] T008 Assert `docs/connectors/datadog.md` and the enforced table are the same list in both directions, and that the never-declared list of [read-only-operations.md](./contracts/read-only-operations.md) §2 is refused (FR-004, SC-015); fixture: unit
 
 ### 2B — The deploy ref on a version group (G1)
 
-- [ ] T009 Add `deploy_ref` (`sreagent.graph.v1.Ref`) and `deploy_ref_absent_reason` (enum `ABBREVIATED_SHA`, `MUTABLE_TAG`, `BARE_DIGEST`, `NOT_A_STABLE_IDENTIFIER`) to `VersionBreakdown` in `api/sreagent/investigation/v1/investigation.proto`; regenerate with `make gen` ([data-model.md §7.1](./data-model.md)); fixture: unit
-- [ ] T010 Run `buf lint` and `buf breaking --against '.git#branch=main'`, and confirm every existing golden is byte-identical because both fields are absent when unset; fixture: unit
+- [X] T009 Add `deploy_ref` (`sreagent.graph.v1.Ref`) and `deploy_ref_absent_reason` (enum `ABBREVIATED_SHA`, `MUTABLE_TAG`, `BARE_DIGEST`, `NOT_A_STABLE_IDENTIFIER`) to `VersionBreakdown` in `api/sreagent/investigation/v1/investigation.proto`; regenerate with `make gen` ([data-model.md §7.1](./data-model.md)); fixture: unit
+- [X] T010 Run `buf lint` and `buf breaking --against '.git#branch=main'`, and confirm every existing golden is byte-identical because both fields are absent when unset; fixture: unit
 
 ### 2C — `NO_DATA` for an unstamped pointer, answered by the engine (G2)
 
-- [ ] T011 In `internal/investigation/backend/algebra.go`, replace the `OUTSIDE_ALGEBRA` refusal of an `errors_by_version` term with no `version_attribute` by an engine answer: `NO_DATA`, coverage absent source "no version stamp on this pointer", listing the pointer's discovery-verdict candidates with their shares; no backend call ([contracts/version-stamping.md](./contracts/version-stamping.md) §5); fixture: unit
-- [ ] T012 Assert the answer is identical in live and recorded mode, needs no world entry, leaves every existing world's miss rate unchanged, and is the same whichever backend owns the pointer; fixture: unit
-- [ ] T013 Update [`specs/002-investigation-engine/contracts/telemetry-backend.md`](../002-investigation-engine/contracts/telemetry-backend.md) §1's `errors_by_version` row to state the engine-side answer, citing ADR-0010; fixture: unit
+- [X] T011 In `internal/investigation/backend/algebra.go`, replace the `OUTSIDE_ALGEBRA` refusal of an `errors_by_version` term with no `version_attribute` by an engine answer: `NO_DATA`, coverage absent source "no version stamp on this pointer", listing the pointer's discovery-verdict candidates with their shares; no backend call ([contracts/version-stamping.md](./contracts/version-stamping.md) §5); fixture: unit
+- [X] T012 Assert the answer is identical in live and recorded mode, needs no world entry, leaves every existing world's miss rate unchanged, and is the same whichever backend owns the pointer; fixture: unit
+- [X] T013 Update [`specs/002-investigation-engine/contracts/telemetry-backend.md`](../002-investigation-engine/contracts/telemetry-backend.md) §1's `errors_by_version` row to state the engine-side answer, citing ADR-0010; fixture: unit
 
 ### 2D — C9: a Datadog log service is an OpenTelemetry service, in the same environment (G4)
 
-- [ ] T014 Declare the local namespaces `datadog.service`, `datadog.log_service`, `datadog.monitor`, `datadog.change` in `internal/feeders/datadog/refs.go`, with `datadog.log_service` carrying `deployment.environment.name` as a supporting attribute (FR-058); fixture: unit
-- [ ] T015 Write `internal/resolution/datadog.go` declaring **C9** per [data-model.md §4](./data-model.md): `datadog.log_service` = `otel.service.name` after normalisation, both environments stated and equal, agreeing Kubernetes namespace/cluster where both state one; certain; specificity above C1 (FR-059); fixture: datadog-log-service-merge-01
-- [ ] T016 Assert an unstated environment on either side never fires, two claims from one source never merge, and a Cloud Run **declared** OTel name counts as the OTel side; fixture: unit
-- [ ] T017 Build `fixtures/datadog-log-service-merge-01`: a Datadog log service and a Cloud Run service with one OTel name in `production` (merge), and the same name in `staging` (must stay apart), with `ground_truth.cross_source_pairs` and `distinct_pairs`; fixture: datadog-log-service-merge-01
-- [ ] T018 Re-evaluate C9 when a claim's entity merges or a late claim arrives, as C8 does (`internal/projector/retrigger.go`), and assert the fixture's shuffle across six seeds; fixture: datadog-log-service-merge-01
-- [ ] T019 Probe T015–T016 by reverting each and confirm the fixture's goldens or shuffle fail; extend `scripts/check-report.sh` so `auto_merge/C9` is counted; fixture: datadog-log-service-merge-01
-- [ ] T020 [P] Add C9 to `docs/schema/resolution.md` with its condition table, and record the **pre-existing** C1 environment hazard (C1 merges `otel.service.name` across environments) as a known limit for its own change; fixture: datadog-log-service-merge-01
+- [X] T014 Declare the local namespaces `datadog.service`, `datadog.log_service`, `datadog.monitor`, `datadog.change` in `internal/feeders/datadog/refs.go`, with `datadog.log_service` carrying `deployment.environment.name` as a supporting attribute (FR-058); fixture: unit
+- [X] T015 Write `internal/resolution/datadog.go` declaring **C9** per [data-model.md §4](./data-model.md): `datadog.log_service` = `otel.service.name` after normalisation, both environments stated and equal, agreeing Kubernetes namespace/cluster where both state one; certain; specificity above C1 (FR-059); fixture: datadog-log-service-merge-01
+- [X] T016 Assert an unstated environment on either side never fires, two claims from one source never merge, and a Cloud Run **declared** OTel name counts as the OTel side; fixture: unit
+- [X] T017 Build `fixtures/datadog-log-service-merge-01`: a Datadog log service and a Cloud Run service with one OTel name in `production` (merge), and the same name in `staging` (must stay apart), with `ground_truth.cross_source_pairs` and `distinct_pairs`; fixture: datadog-log-service-merge-01
+- [X] T018 Re-evaluate C9 when a claim's entity merges or a late claim arrives, as C8 does (`internal/projector/retrigger.go`), and assert the fixture's shuffle across six seeds; fixture: datadog-log-service-merge-01 **Done 2026-09-27, differently from written.** Building the fixture found that the Datadog side must be a correlation key (one source states one name for its production and staging nodes, and as an identity claim the name landed on whichever was processed first — the shuffle caught it). C9 therefore pairs a correlation with a claim, and the fix for arrival order is not a re-trigger but running from both: `Rule.CrossKind`, the one case allowed both evaluators, each looking up only the other kind. The fixture gives each arm a pair of its own (`voice-agent` watched before the Cloud Run poll, `billing` after), since the two sources arrive further apart than the shuffle window; deleting either arm fails its golden, and deleting the environment check fails all four.
+- [X] T019 Probe T015–T016 by reverting each and confirm the fixture's goldens or shuffle fail; extend `scripts/check-report.sh` so `auto_merge/C9` is counted; fixture: datadog-log-service-merge-01
+- [X] T020 [P] Add C9 to `docs/schema/resolution.md` with its condition table, and record the **pre-existing** C1 environment hazard (C1 merges `otel.service.name` across environments) as a known limit for its own change; fixture: datadog-log-service-merge-01
 
 ### 2E — The Datadog quota reader (G5)
 

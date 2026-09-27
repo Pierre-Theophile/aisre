@@ -17,7 +17,7 @@ One per configured log source: a Datadog `service` in one `env` of one organisat
 | field | source | rule |
 |---|---|---|
 | ref | `datadog.service` = `<env>/<service>` | local namespace, as `gcp.*` are; asserted for **every** watched source, never conditional on graph state |
-| claim `datadog.log_service` | the log `service` value, with `deployment.environment.name` from the log `env` | the claim C9 reads (§4). Not `otel.service.name`: C1 would merge across environments on it |
+| correlation key `datadog.log_service` | the log `service` value, with `deployment.environment.name` from the log `env` | what C9 reads (§4). A correlation, not an identity claim: this source states the same name for its production and staging nodes. Not `otel.service.name`: C1 would merge across environments on it |
 | other claims | identifiers the logs state on most lines — e.g. the platform's own agent or workload id | each on the tag allowlist (FR-066); none invented |
 | type | `SERVICE` | |
 | valid start | unknown, unless Datadog states a first-seen instant | FR-017 |
@@ -74,9 +74,10 @@ lines, all start-up lines of an SDK — is rejected with its share stated.
 
 | side A | side B | fires when | certain |
 |---|---|---|---|
-| `datadog.log_service` = *n*, attr `deployment.environment.name` = *e* | `otel.service.name` = *n*, attr `deployment.environment.name` = *e* (observed or declared) | names equal after the published normalisation **and** both environments stated and equal; where both sides state a Kubernetes namespace or cluster, those agree too | yes |
+| correlation `datadog.log_service` = *n*, attr `deployment.environment.name` = *e* | `otel.service.name` = *n*, attr `deployment.environment.name` = *e* (observed or declared) | names equal after the published normalisation **and** both environments stated and equal; where both sides state a Kubernetes namespace or cluster, those agree too | yes |
 
-It never fires on an unstated environment. The pair with equal names and different environments is
+It runs from both sides — when the correlation is stored and when the claim is — because it pairs two
+kinds of event (`Rule.CrossKind`). It never fires on an unstated environment. The pair with equal names and different environments is
 a fixture of its own and must stay apart. `resolve why` names C9, the two claims and the
 environment.
 

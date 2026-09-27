@@ -1,0 +1,72 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-log-service-merge-01
+family: datadog-cross-source
+description: 'One service seen by two connectors: Cloud Run runs `voice-agent` declaring the OpenTelemetry service name `voice-agent` in production, and the Datadog connector watches `voice-agent`''s logs in production and in staging. C9 merges the production log service with the Cloud Run service on the name and the agreeing environment; the staging log service carries the same name and must stay a separate entity, because a certain rule may not merge staging into production. A second service, `billing`, is watched in Datadog only after the Cloud Run poll, so C9''s other arm — the one run when the correlation arrives — has a pair of its own. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+    - source_id: gcp:twin
+      kind: gcp
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:30:00Z
+
+
+queries:
+  # C9's merge: the production log service IS the Cloud Run service, and the audit names C9.
+  - name: why-the-production-log-service-is-the-cloud-run-service
+    kind: audit
+    ref_a: datadog.service=production/voice-agent
+    ref_b: gcp.cloudrun.service=twin-production/europe-west1/voice-agent
+    observed_at: 2026-09-21T20:00:00Z
+  # The pair that must stay apart: same name, staging.
+  - name: why-the-staging-log-service-is-not-the-cloud-run-service
+    kind: audit
+    ref_a: datadog.service=staging/voice-agent
+    ref_b: gcp.cloudrun.service=twin-production/europe-west1/voice-agent
+    observed_at: 2026-09-21T20:00:00Z
+  # C9's other arm: billing's Datadog key arrives after the Cloud Run claim.
+  - name: why-the-late-log-service-is-the-cloud-run-service
+    kind: audit
+    ref_a: datadog.service=production/billing
+    ref_b: gcp.cloudrun.service=twin-production/europe-west1/billing
+    observed_at: 2026-09-21T20:00:00Z
+  # And the two Datadog log services are not one either.
+  - name: why-staging-is-not-production
+    kind: audit
+    ref_a: datadog.service=staging/voice-agent
+    ref_b: datadog.service=production/voice-agent
+    observed_at: 2026-09-21T20:00:00Z
+
+ground_truth:
+  cross_source_pairs:
+    - pair:
+        - datadog.service=production/voice-agent
+        - gcp.cloudrun.service=twin-production/europe-west1/voice-agent
+      same: true
+      rule: C9
+    - pair:
+        - datadog.service=production/billing
+        - gcp.cloudrun.service=twin-production/europe-west1/billing
+      same: true
+      rule: C9
+  distinct_pairs:
+    - pair:
+        - datadog.service=staging/voice-agent
+        - gcp.cloudrun.service=twin-production/europe-west1/voice-agent
+      same: false
+    - pair:
+        - datadog.service=staging/voice-agent
+        - datadog.service=production/voice-agent
+      same: false

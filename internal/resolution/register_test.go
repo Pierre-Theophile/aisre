@@ -103,3 +103,17 @@ func TestARefusedRuleIsNotRegistered(t *testing.T) {
 		t.Errorf("C8 appears %d times in the registry, want once", c8)
 	}
 }
+
+// A cross-kind rule (005 C9) is the one case with both evaluators, declared as such; declared cross-kind
+// with only one, it would fire in one arrival order only, and the registry refuses it.
+func TestRegisterRequiresBothEvaluatorsOnACrossKindRule(t *testing.T) {
+	got := registerPanics(t, resolution.Rule{
+		ID: "ZZ-crosskind-half", Certain: true, Score: 1.0, CrossKind: true,
+		Eval: func(context.Context, resolution.ClaimStore, resolution.Claim) ([]resolution.Match, error) {
+			return nil, nil
+		},
+	})
+	if !strings.Contains(got, "one arrival order") {
+		t.Errorf("the panic was %q; it should say the rule would fire in one arrival order only", got)
+	}
+}

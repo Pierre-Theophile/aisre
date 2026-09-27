@@ -36,7 +36,7 @@ refusal is recorded.
 | `onset` | pointer, search window, method | the estimated instant the symptom began, with an uncertainty — computed **backend-side**, because the series may not cross this boundary |
 | `new_log_patterns` | pointer, window, baseline window | mined templates with counts, which are new in the window |
 | `error_spans` | edge (src, dst, type), window | counts and latency statistics by operation and error kind on that edge |
-| `errors_by_version` | pointer, window, version attribute | error rate split by the deployed version tag named by `Pointer.join_keys["version"]` (D4) |
+| `errors_by_version` | pointer, window, version attribute | error rate split by the deployed version tag named by `Pointer.join_keys["version"]` (D4), each group naming its `deploy.*` reference where the version has one. A pointer with **no** version join key is answered by the engine, never a backend: `NO_DATA`, absent source "version stamp on this service's logs", naming every published stamp convention searched (005 FR-040b, ADR-0010 item 2) |
 | `monitor_state` | pointer, window | transitions, start and end state, per-group states |
 | `exemplars` | handle, limit | bounded, sanitised exemplars — **only on explicit request** |
 | `drill_down` | handle | the narrower answer behind a handle a previous digest minted |
