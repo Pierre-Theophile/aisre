@@ -52,6 +52,15 @@ type SourceMeasurement struct {
 	HostLines  int64  `json:"host_lines"`
 	// Candidates are the conventions measured, by label, in the published order.
 	Candidates []CandidateCount `json:"candidates,omitempty"`
+	// Values are the stamp's values first seen in this interval, with the instant of their first indexed
+	// line (rollouts.go). Only values new to the poller are listed; a restarted poller lists them again,
+	// and they re-derive the ids already sent.
+	Values []ValueSighting `json:"values,omitempty"`
+	// Tags are the allowlisted tag values on the source's lines (tags.go).
+	Tags []TagCount `json:"tags,omitempty"`
+	// ValuesFailed says the values could not be listed and why: this interval's rollouts are then
+	// missing, and the checkpoint says so. The next interval looks again.
+	ValuesFailed string `json:"values_failed,omitempty"`
 	// Failed says the measurement could not be completed and why; the source is then asserted without
 	// a pointer change, and the checkpoint says so.
 	Failed string `json:"failed,omitempty"`
@@ -62,6 +71,15 @@ type CandidateCount struct {
 	Label      string `json:"label"`
 	Lines      int64  `json:"lines"`
 	ErrorLines int64  `json:"error_lines"`
+}
+
+// ValueSighting is one stamp value and its first indexed line.
+type ValueSighting struct {
+	Value     string    `json:"value"`
+	FirstSeen time.Time `json:"first_seen"`
+	// BeyondHorizon says the value has lines older than the first-seen horizon: it was deployed before
+	// the connector could see it, and no change is inferred (contract §4).
+	BeyondHorizon bool `json:"beyond_horizon,omitempty"`
 }
 
 // DiscoveryWindow is the window the measurements were taken over.
@@ -95,8 +113,8 @@ func CandidatesFor(override string) ([]versionstamp.Candidate, error) {
 	return []versionstamp.Candidate{c}, nil
 }
 
-// facetOf spells a candidate as the selector grammar and the backend's group-by spell it.
-func facetOf(c versionstamp.Candidate) string {
+// FacetOf spells a candidate as the selector grammar and the backend's group-by spell it.
+func FacetOf(c versionstamp.Candidate) string {
 	switch c.Form {
 	case versionstamp.FormTag:
 		return c.Name
@@ -110,10 +128,10 @@ func facetOf(c versionstamp.Candidate) string {
 	}
 }
 
-// verdictOf decides a source's verdict from its measurement.
-func (f *Feeder) verdictOf(src LogSource, m SourceMeasurement, window time.Duration) (versionstamp.Verdict, error) {
+// DecideVerdict decides a source's verdict from its measurement: the rule the feeder asserts and the
+// live poller uses to know which field's values to look for.
+func DecideVerdict(m SourceMeasurement, override string, th versionstamp.Thresholds, window time.Duration) (versionstamp.Verdict, error) {
 	source := versionstamp.SourceDiscovered
-	override := f.opts.VersionOverrides[src.Env+"/"+src.Service]
 	if override != "" {
 		source = versionstamp.SourceOperator
 	}
@@ -130,8 +148,15 @@ func (f *Feeder) verdictOf(src LogSource, m SourceMeasurement, window time.Durat
 		n := counted[c.Label()]
 		measured = append(measured, versionstamp.Measurement{Candidate: c, Lines: n.Lines, ErrorLines: n.ErrorLines})
 	}
-	return versionstamp.Decide(measured, versionstamp.Totals{Lines: m.Lines, ErrorLines: m.ErrorLines},
-		f.opts.Thresholds, window, source), nil
+	if th == (versionstamp.Thresholds{}) {
+		th = versionstamp.DefaultThresholds()
+	}
+	return versionstamp.Decide(measured, versionstamp.Totals{Lines: m.Lines, ErrorLines: m.ErrorLines}, th, window, source), nil
+}
+
+// verdictOf decides a source's verdict with this feeder's overrides and thresholds.
+func (f *Feeder) verdictOf(src LogSource, m SourceMeasurement, window time.Duration) (versionstamp.Verdict, error) {
+	return DecideVerdict(m, f.opts.VersionOverrides[src.Env+"/"+src.Service], f.opts.Thresholds, window)
 }
 
 // verdictClass is the verdict without its shares: what the node carries.
@@ -167,7 +192,7 @@ func logPointer(src LogSource, v versionstamp.Verdict, hosts bool) *graphv1.Poin
 	p.Vocabulary = feeder.VocabDatadogLogs
 	keys := map[string]string{}
 	if v.Stamped() {
-		keys["version"] = facetOf(v.Accepted)
+		keys["version"] = FacetOf(v.Accepted)
 	}
 	if hosts {
 		keys["host"] = "host"
@@ -223,7 +248,15 @@ func (f *Feeder) emitMeasuredSource(ctx context.Context, em feeder.Emitter, src 
 		fact.ValidAt = at
 	}
 	id := feeder.NewID(f.desc.SourceID, "service", key+"@"+digest)
-	return emit(ctx, em, feeder.UpsertNode(f.desc, id, fact))
+	if err := emit(ctx, em, feeder.UpsertNode(f.desc, id, fact)); err != nil {
+		return err
+	}
+	if f.opts.Capabilities.Enabled(CapTags) {
+		if err := f.emitTags(ctx, em, src, m, at); err != nil {
+			return err
+		}
+	}
+	return f.emitRollouts(ctx, em, src, v, m, at)
 }
 
 // sourceMeasurements indexes a tick's measurements by source.

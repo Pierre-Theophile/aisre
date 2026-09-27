@@ -1,0 +1,35 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-tags-01
+family: datadog-tags
+description: 'Tags on a watched log source''s lines become owners and identity claims, and nothing else. `team:payments` and `owner:payments-team` are on every line — two keys naming one owner differently — and both become OWNER nodes with owned-by edges, left for the resolution layer to decide about in the open; `kube_namespace:shop` with `kube_deployment:checkout` is claimed as the Kubernetes deployment shop/checkout. `cost_center` is off the allowlist and `team:42` measures something, so both become nothing; `team:search` is on a third of the lines and is not checkout''s owner. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T13:59:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # The log source, its two owners, and no property from a tag off the allowlist or a number.
+  - name: checkout-owners
+    kind: subgraph
+    focus: datadog.service=production/checkout
+    valid_at: 2026-09-21T15:00:00Z
+    observed_at: 2026-09-21T15:00:00Z
+    hops: 1
+    direction: both
+  # The two owners are two entities: nothing says payments and payments-team are one team.
+  - name: why-the-two-owner-spellings-are-apart
+    kind: audit
+    ref_a: owner.team=payments
+    ref_b: owner.team=payments-team
+    observed_at: 2026-09-21T15:00:00Z

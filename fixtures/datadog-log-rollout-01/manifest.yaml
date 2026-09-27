@@ -1,0 +1,31 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-log-rollout-01
+family: datadog-rollouts
+description: 'Rollouts seen only in a service''s own logs. `worker` runs on virtual machines no feeder covers and stamps the deployed commit with the `version` tag. Its long-running commit was first seen before the seven-day horizon and infers nothing; a new commit first seen at 14:37:12 is one ROLLOUT, dated from that line and marked sre.change.valid_from_is_a_bound; a release label and an abbreviated sha seen in the same interval name no commit or image and are counted, not inferred; a canary''s two commits, first seen two minutes apart, are two rollouts with the overlap stated. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T13:59:00Z
+    end: 2026-09-21T17:00:00Z
+
+queries:
+  # What changed on worker between 14:00 and 17:00: three rollouts, each at its first log line.
+  - name: what-changed-on-worker
+    kind: diff
+    focus: datadog.service=production/worker
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T17:00:00Z
+    reference_at: 2026-09-21T16:00:00Z
+    observed_at: 2026-09-21T17:00:00Z
+    hops: 1
+    direction: both

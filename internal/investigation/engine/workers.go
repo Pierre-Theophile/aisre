@@ -393,6 +393,7 @@ func (e *Engine) record(answer *Answer) error {
 	if graphText := renderGraph(answer.Graph, e.catalogue); graphText != "" {
 		extra += graphText
 	}
+	extra += renderVersionChanges(answer.Response.GetDigest().GetErrorsByVersion(), e.catalogue)
 	text, err := ToolResult(answer.Response, extra)
 	if err != nil {
 		return err
@@ -535,6 +536,7 @@ func (e *Engine) note(answer *Answer) {
 		}
 		for _, change := range graph.GetChanges() {
 			e.catalogue.NoteNode(change.GetChange())
+			e.catalogue.NoteChangeKeys(change)
 		}
 		// The targets the changes landed on, which are usually unchanged and so in no delta above:
 		// without them the first wave tests a change on a dependency against the subject (T156).

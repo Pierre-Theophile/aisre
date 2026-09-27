@@ -53,8 +53,8 @@ func TestTheMeasurerCountsPresencePerCandidate(t *testing.T) {
 	if got := m.Candidates[2]; got.Label != "version (attribute)" || got.Lines != 3 {
 		t.Errorf("version (attribute): %+v", got)
 	}
-	if *calls != 9 {
-		t.Errorf("%d calls, want 2 + 7 candidates", *calls)
+	if *calls != 12 {
+		t.Errorf("%d calls, want 2 + 7 candidates + 3 tag keys", *calls)
 	}
 	for _, q := range queries {
 		if !strings.HasPrefix(q, "service:checkout env:production") {
