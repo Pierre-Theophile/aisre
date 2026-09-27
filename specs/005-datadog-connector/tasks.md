@@ -366,10 +366,10 @@ applicable and SC-024 is asserted instead.
 
 ## Phase 12: Polish & cross-cutting concerns
 
-- [ ] T093 Write `docs/connectors/version-stamping.md` per [contracts/version-stamping.md](./contracts/version-stamping.md) §7: one recipe per deployment type, the two warnings, and how to read the connector's verdict (FR-040e); fixture: unit
+- [X] T093 Write `docs/connectors/version-stamping.md` per [contracts/version-stamping.md](./contracts/version-stamping.md) §7: one recipe per deployment type, the two warnings, and how to read the connector's verdict (FR-040e); fixture: unit
 - [ ] T094 Close research §5 O4: check the organisation's voice-agent platform's own documentation for a runtime commit variable, and add it to the guide's vendor-hosted section if it exists, else keep the build-time recipe; fixture: unit
-- [ ] T095 [P] Complete `docs/connectors/datadog.md`: capabilities, the gate and what it cannot prove (O2), the operation list (now enforced), cost; fixture: unit
-- [ ] T096 [P] Update `docs/schema/digests.md` (or the page that documents `VersionBreakdown`) for `deploy_ref`; fixture: unit
+- [X] T095 [P] Complete `docs/connectors/datadog.md`: capabilities, the gate and what it cannot prove (O2), the operation list (now enforced), cost; fixture: unit
+- [X] T096 [P] Update `docs/schema/digests.md` (or the page that documents `VersionBreakdown`) for `deploy_ref`; fixture: unit
 - [ ] T097 Run the full local gate: `make gen build test lint verify`, `go test -race ./...`, `buf lint`, `buf breaking`, `check-no-secrets.sh` and self-test, `check-specs.sh`, `check-migrations.sh`, `fixture verify --report fixtures/*/` and `check-report.sh`; fixture: every datadog-* fixture
 - [ ] T098 Reproduce [quickstart.md](./quickstart.md) §0–§6 on a clean worktree and record the run as `quickstart-run-<date>.md`, fixing every doc and code drift it exposes; fixture: datadog-backend-logs-01
 - [ ] T099 With a read-only key: run quickstart §7 (`--dry-run`, then `--once` against the organisation), record the startup gate's verdict (O2) and the first live version-stamp verdict — **blocked on the key**; fixture: private corpus

@@ -2,11 +2,11 @@
 
 # The Datadog connector
 
-> **Status: partial (005 T004–T008).** The operation table in §2 is enforced: it is
+> **Status.** The operation table in §2 is enforced: it is
 > `internal/feeders/datadog/requestlog.go`'s default surface, and a test compares the two in both
-> directions. Nothing on this page has run against a live organisation yet; the startup gate's
-> behaviour with a narrowly scoped key (research §5 O2) and the cost figures (T088) are filled in from
-> recorded runs, never estimated.
+> directions. The cost figures in §4 come from a recorded run (`fixtures/datadog-rate-limited-01`).
+> Nothing on this page has run against a live organisation yet. The gate's behaviour with a narrowly
+> scoped key (research §5 O2) is added from the first run with a read-only key (T099).
 
 What this connector reads, what it costs, and the proof it can only read.
 
@@ -56,8 +56,39 @@ pipelines, archives, metrics or restriction queries.
 
 ## 3. The credential, and what the startup gate can prove
 
-To be written with T058 and the first `--dry-run` (research §5 O2): whether a narrowly scoped
-application key can read its own scopes, and when `--assert-read-only` is therefore required.
+The keys come from the environment: `DD_API_KEY`, `DD_APP_KEY`, and `DD_APP_KEY_ID` so the gate can read
+the application key's own scopes. There is no flag for a key: a key on a command line ends up in
+every shell history and every process listing.
+
+Nothing is read or emitted before the gate passes (`internal/feeders/datadog/gate.go`). It proves two
+things, and names whatever it could not prove:
+
+1. **The keys work.** `validate_keys` answers. If not, the start is refused, naming the key.
+2. **The application key can only read.** The gate reads the key's own scopes. Any scope outside the
+   read set of the enabled capabilities refuses the start, and each such scope is named.
+
+| capability | read scopes it needs |
+|---|---|
+| `logs` | `logs_read_data`, `logs_read_index_data` |
+| `monitors` | `monitors_read` |
+| `tags` | none: tags ride on the log reads |
+| `apm_topology` | `apm_read`, `apm_service_catalog_read` |
+| `changes` | `events_read` |
+
+**What the gate cannot prove.** In three cases Datadog does not tell the gate what a key can do:
+
+- the key lacks the permission to read its own scopes;
+- no `DD_APP_KEY_ID` was given;
+- the key is unscoped, which gives it every permission its user has.
+
+The gate names the case, and the connector does not start without `--assert-read-only "<name>"`. A
+named person then asserts the key is read-only, and every checkpoint records it as
+`operator_asserted by <name> at <instant>`.
+
+`feed datadog --dry-run` runs the gate and nothing else: no monitor read, no event, no connection to
+the graph. Whether a narrowly scoped key in a real organisation can read its own scopes (research §5
+O2) is recorded here from the first run with the organisation's read-only key (T099). Until then,
+plan for the assertion.
 
 ## 4. What it costs
 
@@ -118,3 +149,10 @@ backend builds its own client and budget and reports them separately (FR-084a).
 
   A partial poll claims no coverage and retracts nothing. What it did not read is unread, not
   absent.
+
+## 5. Where to read next
+
+- [version-stamping.md](version-stamping.md): making each log line name the version that wrote it,
+  on every deployment type, and reading the connector's verdict.
+- [quickstart](../../specs/005-datadog-connector/quickstart.md): replaying the recorded corpus, then a
+  live `--dry-run` and `--once`.
