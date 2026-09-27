@@ -325,3 +325,39 @@ func TestPlanRetractIsOrderIndependent(t *testing.T) {
 		}
 	})
 }
+
+// A placeholder minted for an edge endpoint must not leave a boundary behind once real assertions
+// cover it (003 T184 a).
+//
+// markPlaceholder writes a segment with no node assertion — its evidence is the edge event, which the
+// planner sees only as a boundary — flagged unknown when the edge's start was unknown. An assertion
+// from earlier that later reaches over it used to take the segment over and keep the flag, and
+// coalesce never merges across an unknown start. So an entity whose edge happened to arrive first kept
+// a version boundary at the edge's instant that the same facts in any other order do not have:
+// gcp-lb-dns-01's service, split at the load balancer's 14:00 when the edge beat the service.
+func TestAPlaceholderLeavesNoBoundaryOnceRealAssertionsCoverIt(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2026, 8, 22, 14, 0, 0, 0, time.UTC)  // the service's creation
+	t1 := time.Date(2026, 9, 21, 14, 0, 0, 0, time.UTC)  // the edge's unknown start
+	t2 := time.Date(2026, 9, 21, 14, 18, 0, 0, time.UTC) // a later state, same values
+	asserted := map[string]time.Time{"exist": t0, "state": t2}
+	assertedAt := func(id string) time.Time { return asserted[id] }
+	// "exist" and "state" say the same thing, as a restatement does.
+	sameValues := func(a, b segment) bool { return len(a.assertions) > 0 && len(b.assertions) > 0 }
+
+	plan := func(segments []segment, order ...string) []segment {
+		for _, id := range order {
+			segments = planUpsert(segments, "gcp", id, asserted[id], false, assertedAt, sameValues)
+		}
+		return segments
+	}
+	placeholder := []segment{{start: t1, fromUnknown: true, assertions: map[string]string{}, boundary: []string{"edge"}}}
+
+	want := render(plan(nil, "exist", "state"))
+	for _, order := range [][]string{{"exist", "state"}, {"state", "exist"}} {
+		if got := render(plan(placeholder, order...)); got != want {
+			t.Errorf("with the edge's placeholder first and then %v:\n%swant the same partition as without it:\n%s",
+				order, got, want)
+		}
+	}
+}

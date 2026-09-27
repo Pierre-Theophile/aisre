@@ -592,6 +592,12 @@ type Identity struct {
 	// LastSeen is when the feeder last observed this uid. It is the bound a recreation retracts the
 	// predecessor at, so it is carried here rather than recomputed: see Recreation.RetractOldAt.
 	LastSeen time.Time
+	// StateFrom is the latest valid start the feeder asserted for this uid: its `updateTime`, where
+	// that is after creation. A recreation's retraction must end after it — see DetectRecreation.
+	StateFrom time.Time
+	// Digest is a digest of the last state the feeder asserted for this uid (stateDigest). Where the
+	// platform states no later update instant, it is how an unchanged re-poll is told from a change.
+	Digest string
 }
 
 // Recreation is a service deleted and recreated under one name (T062).
@@ -647,6 +653,15 @@ func DetectRecreation(svc Service, previous, current Identity) (*Recreation, boo
 	if retractAt.IsZero() {
 		// Nothing observed the predecessor after its creation, so that is the only bound there is.
 		retractAt = previous.CreateTime
+	}
+	if !previous.StateFrom.IsZero() && !retractAt.After(previous.StateFrom) {
+		// The predecessor's last asserted state began at or after its last sighting — its
+		// updateTime and the poll that read it can coincide. A retraction ending there would end
+		// before a state the feeder itself asserted, and the planner reads an assertion at or after
+		// a retraction as the entity coming back: the old service would reappear in the gap before
+		// its successor (003 T184). The entity was there when that state began, so the retraction
+		// ends just after it, the tightest bound that does not contradict the feeder's own assertion.
+		retractAt = previous.StateFrom.Add(time.Microsecond)
 	}
 	return &Recreation{
 		Service:      svc,

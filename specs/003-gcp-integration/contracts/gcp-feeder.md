@@ -156,9 +156,18 @@ and erase its history.
 
 And **each state of a service is named by the platform's version stamp**, the uid plus `updateTime`.
 That is what lets the successor be asserted at all, since a name-only event id made its assertion a
-duplicate of the predecessor's, and it is what lets any later state reach the node. The first state a
-run sees of a uid is valid from `createTime`; a later one from `updateTime` (T066; a restart limit is
-recorded as T184).
+duplicate of the predecessor's, and it is what lets any later state reach the node. A uid's first
+poll asserts the service's existence from `createTime`, and every poll where `updateTime` is later
+asserts its current state from `updateTime`, each under an id carrying that instant. A restarted
+feeder therefore re-sends ids already sent and re-dates nothing, and a change made while it was down
+is dated where the platform dates it (T066, T184). A later poll with no stated update instant asserts
+a state only if what it saw differs from the last one asserted, from the observation and marked
+unknown (FR-011).
+
+The predecessor's last state can begin at its last sighting, so a recreation's retraction never ends
+at or before the start of the last state asserted for the old uid: it is moved to one microsecond
+after it. A retraction ending at that start would leave the state standing, and the old service would
+reappear in the gap between the deletion and the successor (T184).
 
 *Corrected 2026-09-26 (003 T066).* This section used to say the retraction and the re-assertion
 "do not commute", so a conformance shuffle could never pass on a recreation. That was wrong. The
