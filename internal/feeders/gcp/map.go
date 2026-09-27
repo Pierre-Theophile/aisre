@@ -81,6 +81,9 @@ func (f *Feeder) emitService(ctx context.Context, desc feeder.Description, em fe
 	f.splits[obs.Service.Value()] = obs.Split
 	f.mu.Unlock()
 
+	// Whether this poll is the first assertion of this uid. A recreated service is a new uid under
+	// the old name, so its first poll is a first assertion exactly as a never-seen service's is.
+	firstOfUID := !seen || previous.UID != current.UID
 	if seen {
 		if rec, recreated := DetectRecreation(obs.Service, previous, current); recreated {
 			if err := f.emitRecreation(ctx, desc, em, *rec); err != nil {
@@ -106,11 +109,24 @@ func (f *Feeder) emitService(ctx context.Context, desc feeder.Description, em fe
 		props.Fields[PropTracePointerAbsent] = structpb.NewStringValue(TracePointerAbsence)
 	}
 
+	// One assertion per state of the service, named by the platform's version stamp (serviceEventID).
+	// The first state this run sees of a uid is dated from `createTime`, as it always was; a later
+	// one from `updateTime`, the instant the platform says the resource took that form. An unchanged
+	// re-poll repeats the id and is a no-op.
+	//
+	// Known limit, stated rather than hidden: the feeder remembers uids per run, so after a restart
+	// its first poll dates the current state from `createTime`. If the service changed while the
+	// feeder was down, that assertion loses to the previous run's later state for instants after it,
+	// and the change made during the outage is not on the node until the next one. Emitting an
+	// existence assertion and a state assertion on every first poll would close that, and was tried:
+	// two same-content assertions from one poll exposed arrival-order dependences in the projector's
+	// placeholder and merge planning, which are a separate fix (003 tasks.md, T066's note).
 	node := obs.NodeFact()
-	node.Props = props
-	node.Pointers = pointers
-	node.SourceObservedAt = at
-	if err := emit(ctx, em, feeder.UpsertNode(desc, feeder.NewID(desc.SourceID, "service", obs.Service.Value()), node)); err != nil {
+	if !firstOfUID {
+		node = obs.LaterStateFact()
+	}
+	node.Props, node.Pointers, node.SourceObservedAt = props, pointers, at
+	if err := emit(ctx, em, feeder.UpsertNode(desc, serviceEventID(desc.SourceID, obs, current.UID), node)); err != nil {
 		return err
 	}
 
@@ -377,8 +393,16 @@ func (f *Feeder) emitOwner(ctx context.Context, desc feeder.Description, em feed
 	})); err != nil {
 		return err
 	}
+	// The edge's id carries the instant it is asserted from, which is the subject's createTime. A
+	// service recreated under its name has its owner edge closed by the retraction's cascade, and
+	// the successor's edge — same subject, same owner — was the same id, so it was dropped as a
+	// duplicate and the recreated service had no owner (003 T066). The createTime is what differs.
+	stamp := "unstamped"
+	if !createTime.IsZero() {
+		stamp = createTime.UTC().Format(time.RFC3339Nano)
+	}
 	return emit(ctx, em, feeder.UpsertEdge(desc,
-		feeder.NewID(desc.SourceID, "edge", "owned-by", subject.GetValue(), labels.Owner),
+		feeder.NewID(desc.SourceID, "edge", "owned-by", subject.GetValue(), labels.Owner, stamp),
 		feeder.EdgeFact{
 			Meta:    feeder.Meta{SourceObservedAt: at},
 			Src:     subject,
@@ -386,6 +410,27 @@ func (f *Feeder) emitOwner(ctx context.Context, desc feeder.Description, em feed
 			Type:    graphv1.EdgeType_OWNED_BY,
 			ValidAt: createTime,
 		}))
+}
+
+// serviceEventID names one state of a service, not the service.
+//
+// It carries the uid and `updateTime`, which together act as Cloud Run's version stamp for the
+// resource, as `resourceVersion` does for Kubernetes (internal/feeders/k8s names its events
+// `<kind>:<key>@rv<n>` for the same reason). It used to be the ref alone, and an event id is an
+// idempotency key: every poll after the first re-sent the same id, the graph answered each with
+// DUPLICATE_NOOP, and a service's node was frozen at its first observation. A traffic split that
+// moved was never seen on the node — gcp-rollback-01's golden had it serving the old revision at
+// 14:30 and at the end — and a service deleted and recreated under its name was retracted and never
+// asserted again, which is what kept gcp-service-recreated-01 out of the corpus (003 T066).
+//
+// With the stamp in the id, an unchanged re-poll repeats the id and stays a no-op, a change gets a
+// new id, a change back gets a third (updateTime moved again), and a recreation gets the new uid.
+func serviceEventID(sourceID string, obs ServiceObservation, uid string) string {
+	stamp := "unstamped"
+	if !obs.UpdateTime.IsZero() {
+		stamp = obs.UpdateTime.UTC().Format(time.RFC3339Nano)
+	}
+	return feeder.NewID(sourceID, "service", obs.Service.Value()+"@"+uid+"@"+stamp)
 }
 
 // emitRecreation retracts the old service and records the link as claims, never as a merge (FR-025).

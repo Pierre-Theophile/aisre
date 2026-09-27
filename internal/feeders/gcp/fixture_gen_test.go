@@ -43,39 +43,23 @@ import (
 // The output is byte-for-byte reproducible: every instant and every identifier is a literal below,
 // and nothing reads a clock.
 //
-// # gcp-service-recreated-01 is generated on demand rather than committed
+// # gcp-service-recreated-01 was held out, and was not a property of the model
 //
-// Five of the six fixtures pass `fixture verify` in full — replay from empty, double delivery, the
-// shuffle, and the golden comparison — and are committed. `gcp-service-recreated-01` passes every step
-// but the shuffle, and the reason is a property of the model rather than a defect anything here can
-// fix.
+// It failed the shuffle, and for a while that was recorded as unavoidable: "a retraction and a
+// re-assertion on one identifier do not commute". They do — the projector's segment planner makes an
+// assertion made at or after a retraction resurrect the entity, in any order (projector/segments.go).
+// What was actually wrong were two defects the fixture could see and nothing else did (003 T066):
 //
-// A recreation is one identifier with two valid intervals and a hole between them: the predecessor is
-// retracted at the last instant its uid was observed, and the successor is asserted from its own
-// `createTime`. Both facts come from the *same* poll — the uid change is how the recreation is
-// recognised at all — so they are delivered inside one reordering window, and **a retraction and a
-// re-assertion on one identifier do not commute**. Closing an interval and opening it are order
-// dependent by construction, and the shuffle exists to find exactly that.
+//   - the service's event id was its ref alone, so the recreated service's assertion was a DUPLICATE
+//     of the first one and never reached the graph. The service was retracted and simply gone. The
+//     same id froze every service at its first poll: a traffic split that moved was never seen on the
+//     node. serviceEventID (map.go) now names each state by the uid and `updateTime`.
+//   - a `changed_by` edge is written from an `observe_change`, so no edge assertion produced it, and a
+//     node retraction's cascade dropped it as though it had been asserted before the retraction —
+//     when the retraction happened to be applied after the change (projector/retract_node.go,
+//     laterUnassertedVersion).
 //
-// Neither way out is worth taking. Withholding the successor until the next poll would separate them,
-// and would leave the graph without the service for a poll interval to make a test tidy. Putting the
-// uid in the ref would make them two entities, and would change a service's identifier on every
-// recreation — breaking resolution against every other source that knows it by name (data-model.md §2
-// fixes the ref as `<project>/<region>/<service>` for that reason).
-//
-// So the fixture is generated on demand, the behaviour it covers is asserted end to end by
-// TestARecreatedServiceIsRetractedAndExplainedInTheCheckpoint in map_test.go instead, and the
-// non-commuting pair is recorded in contracts/gcp-feeder.md §3.4. It is not committed failing, because
-// CI verifies `fixtures/*/` by glob.
-//
-// It is written by TestGenerateServiceRecreatedFixture and NOT by TestGenerateFixtures, which is a
-// correction 004 T148's regeneration earned. It was in the main set, so regenerating the corpus wrote
-// a fixture the glob then failed on, and the only thing standing between that and a red build was the
-// committer remembering to delete a directory — which is exactly the shape of thing nobody remembers.
-// The GitHub corpus separates its two held-out fixtures for the same reason.
-//
-// genFixturesEnv arms the generator. Regenerating a corpus is a deliberate act: the corpus is the
-// test.
+// Both are fixed and the fixture is committed with the rest of the corpus.
 const genFixturesEnv = "SRE_AGENT_GEN_FIXTURES"
 
 // The fixture clock. One deploy: a revision created at 14:18, given all the traffic at 14:20, rolled
@@ -195,17 +179,6 @@ func (fx fixtureSpec) omitted() []string {
 	return []string{"cloud_dns", "load_balancers"}
 }
 
-// TestGenerateServiceRecreatedFixture writes the one fixture that is not committed. Separate from
-// TestGenerateFixtures so that regenerating the corpus does not leave behind a fixture that
-// `fixture verify fixtures/*/` then fails on.
-func TestGenerateServiceRecreatedFixture(t *testing.T) {
-	if os.Getenv(genFixturesEnv) == "" {
-		t.Skipf("set %s=1 to generate the service-recreated fixture (not committed; see the file "+
-			"comment)", genFixturesEnv)
-	}
-	writeFixture(t, serviceRecreatedFixture(t))
-}
-
 func fixtureSet(t *testing.T) []fixtureSpec {
 	t.Helper()
 	return []fixtureSpec{
@@ -227,6 +200,8 @@ func fixtureSet(t *testing.T) []fixtureSpec {
 		quotaExhaustedFixture(t),
 		lbDNSFixture(t),
 		lbDNSOmittedFixture(t),
+		// T066, committed since the two defects recorded in the file comment were fixed.
+		serviceRecreatedFixture(t),
 	}
 }
 

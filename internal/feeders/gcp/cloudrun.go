@@ -530,6 +530,34 @@ func (o ServiceObservation) NodeFact() feeder.NodeFact {
 	return fact
 }
 
+// LaterStateFact renders a later state of a service the feeder has already asserted under this uid.
+//
+// NodeFact dates the FIRST assertion of a uid from `createTime`: that is when the entity began, and
+// the state first seen is asserted from then, as it always was. A later state did not hold from
+// creation, and dating it there would be a correction — "we were wrong about what it was all along"
+// (docs/schema/temporal-model.md) — when what happened is that production moved. So a later state is
+// dated from `updateTime`, the instant the platform states the resource took its current form.
+//
+// That is not the "never a change instant" use contract §3.2 forbids. `updateTime` moves for any
+// modification, so it cannot say WHICH change happened or date a rollout — the change events keep
+// their own dating from the audit log. What it can say is since when the resource has been in the
+// state this poll read, and that is exactly a node version's valid start. Where it is absent, or not
+// after `createTime`, nothing stated dates the new state, so the start is marked unknown and begins
+// at the observation rather than being guessed (FR-011).
+func (o ServiceObservation) LaterStateFact() feeder.NodeFact {
+	fact := feeder.NodeFact{
+		Ref:         o.Service.Ref(),
+		Type:        graphv1.NodeType_SERVICE,
+		DisplayName: o.Service.Name,
+	}
+	if o.UpdateTime.IsZero() || !o.UpdateTime.After(o.CreateTime) {
+		fact.ValidFromUnknown = true
+	} else {
+		fact.ValidAt = o.UpdateTime
+	}
+	return fact
+}
+
 // NodeFact renders the revision as a graph node assertion. A revision always has a documented
 // `createTime`, so `ValidFromUnknown` is not used here — and if one ever arrives without it, that is
 // an error rather than an unknown start (contract §3.3).
