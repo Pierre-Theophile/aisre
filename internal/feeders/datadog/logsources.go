@@ -21,10 +21,12 @@ import (
 // in the same environment only; where nothing else reports it — a service on a vendor-hosted runtime, a
 // VM, a platform no feeder covers — this node is the one an investigation starts from.
 
-// LogSource is one watched log source: a Datadog service in one environment.
+// LogSource is one watched log source: a Datadog service, in one environment when its lines carry one.
 type LogSource struct {
-	// Env is the Datadog `env` the source's lines carry. Required: a service name is unique only
-	// within one environment, and C9 requires it.
+	// Env is the Datadog `env` the source's lines carry. Empty when they carry none (005): many
+	// organisations ship logs without unified service tagging's `env`, and an agent installed there must
+	// still measure them. Such a source is stated as environment-less everywhere it appears, and it is
+	// never merged by C9, which needs the environment: a service name is unique only within one.
 	Env string
 	// Service is the Datadog `service` the source's lines carry. Required.
 	Service string
@@ -38,9 +40,6 @@ type LogSource struct {
 // Validate refuses a source that could not be addressed or merged correctly.
 func (s LogSource) Validate() error {
 	switch {
-	case strings.TrimSpace(s.Env) == "":
-		return fmt.Errorf("datadog: log source %q states no environment; a service name is unique only "+
-			"within one, and the rule that merges it (C9) never fires without one", s.Service)
 	case strings.TrimSpace(s.Service) == "":
 		return fmt.Errorf("datadog: a log source in %q names no service", s.Env)
 	case strings.Contains(s.Env, "/") || strings.Contains(s.Service, "/"):
@@ -50,15 +49,43 @@ func (s LogSource) Validate() error {
 	return nil
 }
 
-// Ref addresses the source's service node: `datadog.service=<env>/<service>`.
-func (s LogSource) Ref() *graphv1.Ref { return feeder.Ref(NSService, s.Env+"/"+s.Service) }
+// Key is the source's spelling: `<env>/<service>`, or `<service>` for an environment-less source.
+func (s LogSource) Key() string {
+	if s.Env == "" {
+		return s.Service
+	}
+	return s.Env + "/" + s.Service
+}
 
-// ParseLogSource reads `<env>/<service>`, the spelling of `--watch`.
+// Ref addresses the source's service node: `datadog.service=<env>/<service>`, or
+// `datadog.service=<service>` when its lines carry no environment.
+func (s LogSource) Ref() *graphv1.Ref { return feeder.Ref(NSService, s.Key()) }
+
+// Query is the source's Datadog search: its service, and its environment when it has one.
+func (s LogSource) Query() string {
+	if s.Env == "" {
+		return "service:" + s.Service
+	}
+	return "service:" + s.Service + " env:" + s.Env
+}
+
+// MissingEnvWarning is what the connector says, wherever a source is configured or measured, about a
+// service whose logs carry no environment.
+func MissingEnvWarning(service string) string {
+	return fmt.Sprintf("missing env to match service %q: its logs carry no `env` tag, so it cannot be matched "+
+		"to the same service on other platforms (C9 needs the environment). Please add the environment to "+
+		"these logs: DD_ENV=<env> on the service, the tags.datadoghq.com/env label on Kubernetes, or an "+
+		"`env:<env>` tag on the log pipeline (docs/connectors/version-stamping.md)", service)
+}
+
+// ParseLogSource reads the spelling of `--watch`: `<env>/<service>`, or `<service>` for a service
+// whose logs carry no environment.
 func ParseLogSource(spec string) (LogSource, error) {
-	env, service, ok := strings.Cut(strings.TrimSpace(spec), "/")
+	spec = strings.TrimSpace(spec)
+	env, service, ok := strings.Cut(spec, "/")
 	src := LogSource{Env: env, Service: service}
 	if !ok {
-		return src, fmt.Errorf("datadog: log source %q is not `<env>/<service>`", spec)
+		src = LogSource{Service: spec}
 	}
 	return src, src.Validate()
 }
@@ -75,10 +102,11 @@ func LogSourceEvents(desc feeder.Description, src LogSource, at time.Time) ([]*g
 		return nil, err
 	}
 	subject := src.Ref()
-	props, err := feeder.NewProps().
-		Str(feeder.AttrServiceName, src.Service).
-		Str(feeder.AttrDeploymentEnvironment, src.Env).
-		Build()
+	builder := feeder.NewProps().Str(feeder.AttrServiceName, src.Service)
+	if src.Env != "" {
+		builder.Str(feeder.AttrDeploymentEnvironment, src.Env)
+	}
+	props, err := builder.Build()
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +125,11 @@ func LogSourceEvents(desc feeder.Description, src LogSource, at time.Time) ([]*g
 	// node the projector processed first. datadog-log-service-merge-01's shuffle step caught exactly
 	// that, as feature 004 found for deploy.* (pkg/feeder/claim.go). C9 reads the key, and corroborates
 	// it with the environment below: a correlation alone never merges anything.
+	if src.Env == "" {
+		// No environment, no C9 claim: the name alone would merge this organisation's services across
+		// every environment they run in. The node stands on its own, and the checkpoint says why.
+		return []*graphv1.EventEnvelope{node}, nil
+	}
 	attrs, err := feeder.NewProps().Str(AttrEnvironment, src.Env).Build()
 	if err != nil {
 		return nil, err

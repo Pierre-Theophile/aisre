@@ -1,0 +1,27 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-log-source-no-env-01
+family: datadog-log-sources
+description: 'Logs that carry no environment. `checkout` is watched without one: it is measured on `service:checkout` alone, its `version` tag is accepted, and its pointer is `service:checkout`; it carries no C9 claim, since a name alone would merge a service across every environment, and the checkpoint says `missing env to match service` with how to add one. `production/billing` is watched in an environment no line carries while 3000 of the service''s lines carry none, and the checkpoint says so rather than letting it read as a silent service. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T12:59:00Z
+    end: 2026-09-21T15:30:00Z
+
+queries:
+  # The environment-less source's pointer: service alone, with its version join key.
+  - name: checkout-pointer-without-an-environment
+    kind: pointers
+    focus: datadog.service=checkout
+    valid_at: 2026-09-21T15:10:00Z
+    observed_at: 2026-09-21T15:30:00Z

@@ -63,7 +63,7 @@ func failed(err error, query string) (answer, error) {
 // stated as undetermined unless a term measured it, never guessed (FR-048a).
 func (b *Backend) coverageOf(sel selector, window *engine.Window, volume int64, sampling, truncation string, resp *datadogx.Response) (*investigationv1.Coverage, error) {
 	in := engine.CoverageInput{
-		SearchedEntities:         []string{sel.Service + "@" + sel.Env},
+		SearchedEntities:         []string{sel.entity()},
 		DataSource:               "datadog_logs:" + strings.Join(orDefault(sel.indexes(b.indexes)), ","),
 		WindowCovered:            window,
 		VolumeConsidered:         volume,

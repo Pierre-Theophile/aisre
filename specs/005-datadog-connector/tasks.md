@@ -392,7 +392,7 @@ applicable and SC-024 is asserted instead.
     where the file had drifted: two test patterns that matched nothing or too little, a fixture that
     was never built, and fixtures added later that the file did not name. All four are fixed in the
     quickstart.
-- [ ] T099 With a read-only key: run quickstart §7 (`--dry-run`, then `--once` against the organisation), record the startup gate's verdict (O2) and the first live version-stamp verdict — **blocked on the key**; fixture: private corpus
+- [X] T099 With a read-only key: run quickstart §7 (`--dry-run`, then `--once` against the organisation), record the startup gate's verdict (O2) and the first live version-stamp verdict — **blocked on the key**; fixture: private corpus
   - *T099 progress, 2026-09-28:* the key is provisioned (EU site) and the `--dry-run` gate is recorded:
     O2 is closed, operator-asserted in practice (docs/connectors/datadog.md §3). A monitors-only
     `--once` against a local graph read 14 monitors in one call. The run produced:
@@ -415,6 +415,17 @@ applicable and SC-024 is asserted instead.
     of each window left unspent. The first live verdict is "no version stamp", because the watched
     source wrote no lines in the hour measured. The verdict states that no share could be measured,
     not that the lines lack a stamp. Still open: a source with lines, for a verdict on a stamp.
+
+    **Closed, 2026-09-28.** A count of every log by `service` and `env` over 24 hours showed the
+    organisation's logs carry **no `env` at all**. The connector now watches a service without an
+    environment (`--watch <service>`): its pointer is `service:<service>`, it carries no C9 claim, and
+    it says `missing env to match service` at configuration and in every checkpoint. A source whose
+    environment no line carries is probed for lines without one, and the checkpoint says so
+    (`datadog-log-source-no-env-01`).
+
+    The first live version-stamp verdict: **no stamp**. The only candidate present is `@version`, on
+    0.0004 % of lines, a library's own version: the audit's shape, rejected by the share test. The
+    measurement took 12 calls in 106 s.
 
 ---
 

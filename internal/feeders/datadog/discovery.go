@@ -61,6 +61,10 @@ type SourceMeasurement struct {
 	// ValuesFailed says the values could not be listed and why: this interval's rollouts are then
 	// missing, and the checkpoint says so. The next interval looks again.
 	ValuesFailed string `json:"values_failed,omitempty"`
+	// LinesWithoutEnv counts the service's lines that carry no `env` tag, measured only when the source
+	// names an environment and none of its lines carry it: the configuration to fix is then that
+	// the logs have no environment, not that the service is silent.
+	LinesWithoutEnv int64 `json:"lines_without_env,omitempty"`
 	// Failed says the measurement could not be completed and why; the source is then asserted without
 	// a pointer change, and the checkpoint says so.
 	Failed string `json:"failed,omitempty"`
@@ -156,7 +160,7 @@ func DecideVerdict(m SourceMeasurement, override string, th versionstamp.Thresho
 
 // verdictOf decides a source's verdict with this feeder's overrides and thresholds.
 func (f *Feeder) verdictOf(src LogSource, m SourceMeasurement, window time.Duration) (versionstamp.Verdict, error) {
-	return DecideVerdict(m, f.opts.VersionOverrides[src.Env+"/"+src.Service], f.opts.Thresholds, window)
+	return DecideVerdict(m, f.opts.VersionOverrides[src.Key()], f.opts.Thresholds, window)
 }
 
 // verdictClass is the verdict without its shares: what the node carries.
@@ -182,13 +186,15 @@ func verdictClass(v versionstamp.Verdict) string {
 
 // logPointer mints the source's pointer (data-model.md §5).
 func logPointer(src LogSource, v versionstamp.Verdict, hosts bool) *graphv1.Pointer {
-	selector := "service:" + src.Service + " env:" + src.Env
+	selector := src.Query()
 	if src.Index != "" {
 		selector += " index:" + src.Index
 	}
-	p := feeder.LogPointer(Kind, selector, map[string]string{
-		feeder.AttrServiceName: src.Service, feeder.AttrDeploymentEnvironment: src.Env,
-	})
+	attrs := map[string]string{feeder.AttrServiceName: src.Service}
+	if src.Env != "" {
+		attrs[feeder.AttrDeploymentEnvironment] = src.Env
+	}
+	p := feeder.LogPointer(Kind, selector, attrs)
 	p.Vocabulary = feeder.VocabDatadogLogs
 	keys := map[string]string{}
 	if v.Stamped() {
@@ -212,9 +218,11 @@ func (f *Feeder) emitMeasuredSource(ctx context.Context, em feeder.Emitter, src 
 		return err
 	}
 	hosts := m.Lines > 0 && float64(m.HostLines)/float64(m.Lines) >= f.opts.Thresholds.LineShare
-	props := feeder.NewProps().
-		Str(feeder.AttrServiceName, src.Service).
-		Str(feeder.AttrDeploymentEnvironment, src.Env).
+	props := feeder.NewProps().Str(feeder.AttrServiceName, src.Service)
+	if src.Env != "" {
+		props.Str(feeder.AttrDeploymentEnvironment, src.Env)
+	}
+	props.
 		Str(PropVersionSource, string(v.Source)).
 		Str(PropVersionVerdict, verdictClass(v)).
 		Str(PropVersionConventions, v.ConventionsVersion)

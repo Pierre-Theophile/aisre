@@ -43,8 +43,8 @@ const BoundFirstSeenInLogs = "first_seen_in_logs"
 
 func (f *Feeder) emitRollouts(ctx context.Context, em feeder.Emitter, src LogSource, v versionstamp.Verdict, m SourceMeasurement, at time.Time) error {
 	if m.ValuesFailed != "" {
-		f.noteDiscovery(fmt.Sprintf("%s/%s: the stamp's values could not be listed (%s); rollouts first seen in "+
-			"this interval are missing until the next one", src.Env, src.Service, m.ValuesFailed))
+		f.noteDiscovery(fmt.Sprintf("%s: the stamp's values could not be listed (%s); rollouts first seen in "+
+			"this interval are missing until the next one", src.Key(), m.ValuesFailed))
 	}
 	if !v.Stamped() || len(m.Values) == 0 {
 		return nil
@@ -56,7 +56,7 @@ func (f *Feeder) emitRollouts(ctx context.Context, em feeder.Emitter, src LogSou
 		}
 		return sightings[i].Value < sightings[j].Value
 	})
-	key := src.Env + "/" + src.Service
+	key := src.Key()
 	var emitted []string
 	for _, s := range sightings {
 		ref, reason := versionstamp.Normalise(s.Value)
@@ -88,25 +88,37 @@ func (f *Feeder) emitRollouts(ctx context.Context, em feeder.Emitter, src LogSou
 
 func (f *Feeder) emitRollout(ctx context.Context, em feeder.Emitter, src LogSource, s ValueSighting, deploy *graphv1.Ref, at time.Time) error {
 	first := s.FirstSeen.UTC()
-	value := src.Env + "/" + src.Service + "@" + s.Value + "@" + first.Format(time.RFC3339Nano)
+	value := src.Key() + "@" + s.Value + "@" + first.Format(time.RFC3339Nano)
 	ref := feeder.Ref(NSChange, value)
-	props, err := feeder.NewProps().
+	builder := feeder.NewProps().
 		Str(feeder.PropChangeValidFromIsABound, BoundFirstSeenInLogs).
-		Str(feeder.AttrDeploymentEnvironment, src.Env).
-		Str(PropChangeVersionValue, s.Value).
-		Build()
+		Str(PropChangeVersionValue, s.Value)
+	if src.Env != "" {
+		builder.Str(feeder.AttrDeploymentEnvironment, src.Env)
+	}
+	props, err := builder.Build()
 	if err != nil {
 		return err
 	}
+	where := src.Env
+	if where == "" {
+		where = "no environment"
+	}
 	change := feeder.ObserveChange(f.desc, feeder.NewID(f.desc.SourceID, "change", value), feeder.ChangeFact{
 		Meta: feeder.Meta{SourceObservedAt: at}, Ref: ref, Kind: graphv1.ChangeKind_ROLLOUT,
-		Summary: fmt.Sprintf("version %s first seen in %s's logs (%s)", s.Value, src.Service, src.Env),
+		Summary: fmt.Sprintf("version %s first seen in %s's logs (%s)", s.Value, src.Service, where),
 		Targets: []*graphv1.Ref{src.Ref()}, ValidAt: first, Props: props,
 	})
 	if err := emit(ctx, em, change); err != nil {
 		return err
 	}
-	attrs, err := feeder.NewProps().Str(feeder.AttrDeploymentEnvironment, src.Env).Build()
+	// Without an environment the key still correlates, for a lookup; C8 compares environments and
+	// does not merge on a side that states none.
+	attrBuilder := feeder.NewProps()
+	if src.Env != "" {
+		attrBuilder.Str(feeder.AttrDeploymentEnvironment, src.Env)
+	}
+	attrs, err := attrBuilder.Build()
 	if err != nil {
 		return err
 	}

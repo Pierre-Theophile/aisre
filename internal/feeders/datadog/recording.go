@@ -74,7 +74,8 @@ func recordedQuery(san *sanitise.Sanitiser, query string) (string, error) {
 func pseudonymousSource(san *sanitise.Sanitiser, spec string) (string, error) {
 	env, service, ok := strings.Cut(spec, "/")
 	if !ok {
-		return "", fmt.Errorf("datadog: log source %q is not <env>/<service>", spec)
+		// An environment-less source: its service alone.
+		return san.Identifier(sanitise.KindService, spec)
 	}
 	e, err := san.Identifier(sanitise.KindEnvironment, env)
 	if err != nil {
@@ -212,7 +213,7 @@ func PseudonymousOptions(san *sanitise.Sanitiser, opts Options) (Options, error)
 	}
 	out.LogSources = nil
 	for _, src := range opts.LogSources {
-		spec, err := pseudonymousSource(san, src.Env+"/"+src.Service)
+		spec, err := pseudonymousSource(san, src.Key())
 		if err != nil {
 			return Options{}, err
 		}

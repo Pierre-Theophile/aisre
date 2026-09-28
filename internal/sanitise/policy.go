@@ -520,6 +520,7 @@ func ContractPolicy() *Policy {
 	keep("datadog.discovery.measurements[].tags[].key", "an allowlisted tag key")
 	keep("datadog.discovery.measurements[].tags[].value", "pseudonymised by the pre-pass")
 	keep("datadog.discovery.measurements[].tags[].lines", "a count")
+	keep("datadog.discovery.measurements[].lines_without_env", "a count of lines with no env tag")
 	keep("datadog.discovery.measurements[].failed", "a fixed sentence; the vendor's reason is withheld by the pre-pass")
 	keep("datadog.discovery.measurements[].values_failed", "a fixed sentence; the vendor's reason is withheld by the pre-pass")
 	keep("datadog.poll.outcome", "`complete` or `partial`")

@@ -98,7 +98,7 @@ func (m Measurer) search(ctx context.Context, window string, req SearchRequest) 
 
 // Measure measures one source.
 func (m Measurer) Measure(ctx context.Context, src ddfeeder.LogSource, override string, from, to time.Time) (ddfeeder.SourceMeasurement, error) {
-	base := "service:" + src.Service + " env:" + src.Env
+	base := src.Query()
 	indexes := m.Indexes
 	if src.Index != "" {
 		indexes = []string{src.Index}
@@ -129,6 +129,15 @@ func (m Measurer) Measure(ctx context.Context, src ddfeeder.LogSource, override 
 	var err error
 	if out.Lines, out.ErrorLines, err = count(""); err != nil {
 		return out, err
+	}
+	if out.Lines == 0 && src.Env != "" {
+		// Nothing carries this environment. One more count says whether the service logs without any
+		// `env` tag, which is a configuration to fix rather than a silent service.
+		n, _, err := m.countWithout(ctx, src, from, to, indexes)
+		if err != nil {
+			return out, err
+		}
+		out.LinesWithoutEnv = n
 	}
 	if out.HostLines, _, err = count("host:*"); err != nil {
 		return out, err
@@ -209,7 +218,7 @@ func (m Measurer) Sightings(ctx context.Context, src ddfeeder.LogSource, facet s
 	if horizon <= 0 {
 		horizon = DefaultFirstSeenHorizon
 	}
-	base := "service:" + src.Service + " env:" + src.Env
+	base := src.Query()
 	indexes := m.Indexes
 	if src.Index != "" {
 		indexes = []string{src.Index}
@@ -261,4 +270,25 @@ func facetClause(facet, value string) string {
 		value = `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
 	}
 	return facet + ":" + value
+}
+
+// countWithout counts a source's service lines that carry no `env` tag at all.
+func (m Measurer) countWithout(ctx context.Context, src ddfeeder.LogSource, from, to time.Time, indexes []string) (int64, int64, error) {
+	out, err := m.aggregate(ctx, AggregateRequest{
+		Compute: []Compute{{Aggregation: "count", Type: "total"}},
+		Filter:  NewLogFilter("service:"+src.Service+" -env:*", from, to, indexes),
+		GroupBy: []GroupBy{{Facet: "status", Limit: 20, Missing: "__no_status__"}},
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	var lines, errorLines int64
+	for _, b := range out.Data.Buckets {
+		n, _ := b.Count(0)
+		lines += n
+		if b.Key("status") == "error" {
+			errorLines += n
+		}
+	}
+	return lines, errorLines, nil
 }

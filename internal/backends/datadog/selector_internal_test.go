@@ -17,8 +17,16 @@ func TestTheSelectorSubset(t *testing.T) {
 	if got := s.indexes([]string{"default"}); len(got) != 1 || got[0] != "main" {
 		t.Errorf("indexes %v", got)
 	}
+	// A service alone is the feeder's pointer for logs that carry no environment (005): it is executed
+	// as minted, with no env term.
+	noEnv, err := parseSelector("service:voice-agent")
+	if err != nil {
+		t.Fatalf("an environment-less pointer was refused: %v", err)
+	}
+	if got := noEnv.query("status:error"); got != "service:voice-agent status:error" || noEnv.entity() != "voice-agent" {
+		t.Errorf("query %q, entity %q", got, noEnv.entity())
+	}
 	for _, bad := range []string{
-		"service:voice-agent",                  // no env
 		"env:production",                       // no service
 		"service:* env:production",             // wildcard
 		"service:a env:b timeout",              // free text

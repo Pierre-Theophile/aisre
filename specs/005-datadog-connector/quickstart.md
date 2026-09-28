@@ -126,6 +126,8 @@ served, counted and reported are one number.
 ```bash
 bin/aisre feed datadog --site datadoghq.eu --dry-run
 bin/aisre feed datadog --site datadoghq.eu --watch production/<service> --once
+# or, for a service whose logs carry no `env` (the connector warns: missing env to match service):
+bin/aisre feed datadog --site datadoghq.eu --watch <service> --once
 ```
 
 **Expected on `--dry-run`**: the capabilities in force and the operations each declares; the startup

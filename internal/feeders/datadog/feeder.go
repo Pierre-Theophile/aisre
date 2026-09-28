@@ -152,6 +152,9 @@ type Feeder struct {
 	// verdicts is the digest of the last assertion of each measured log source.
 	verdicts       map[string]string
 	discoveryNotes []string
+	// warnedEnv are the environment warnings already logged: each is logged once per run, and stated in
+	// every checkpoint it applies to.
+	warnedEnv map[string]bool
 }
 
 // New returns a feeder over opts.
@@ -298,7 +301,8 @@ func (f *Feeder) applyDiscovery(ctx context.Context, em feeder.Emitter, tick Dis
 		if err != nil {
 			return err
 		}
-		m, ok := measured[src.Env+"/"+src.Service]
+		m, ok := measured[src.Key()]
+		f.warnEnv(ctx, src, m, ok)
 		for _, ev := range batch {
 			if ok && m.Failed == "" && tick.Window != nil && ev.GetUpsertNode() != nil {
 				continue // the measured assertion below replaces the plain one
@@ -314,8 +318,8 @@ func (f *Feeder) applyDiscovery(ctx context.Context, em feeder.Emitter, tick Dis
 			}
 		case ok:
 			f.mu.Lock()
-			f.discoveryNotes = append(f.discoveryNotes, fmt.Sprintf("%s/%s: not measured (%s); its pointer and "+
-				"verdict stand as last asserted", src.Env, src.Service, orUnset(m.Failed)))
+			f.discoveryNotes = append(f.discoveryNotes, fmt.Sprintf("%s: not measured (%s); its pointer and "+
+				"verdict stand as last asserted", src.Key(), orUnset(m.Failed)))
 			f.mu.Unlock()
 		}
 	}
@@ -496,4 +500,33 @@ func emit(ctx context.Context, em feeder.Emitter, ev *graphv1.EventEnvelope) err
 			ev.GetEventId(), result.GetReasonCode(), result.GetReasonDetail())
 	}
 	return nil
+}
+
+// warnEnv says, in the checkpoint and in the log, what a source's environment keeps it from doing: a
+// source configured without one is never matched to the same service elsewhere, and a source whose
+// environment no line carries is measuring the wrong thing when the service logs with none (005,
+// the first live run: a whole organisation's logs carried no env tag).
+func (f *Feeder) warnEnv(ctx context.Context, src LogSource, m SourceMeasurement, measured bool) {
+	var warning string
+	switch {
+	case src.Env == "":
+		warning = src.Key() + ": " + MissingEnvWarning(src.Service)
+	case measured && m.Lines == 0 && m.LinesWithoutEnv > 0:
+		warning = fmt.Sprintf("%s: no line carries env:%s, but %d line(s) of service %s carry no env at all. %s; "+
+			"or watch the service without an environment: --watch %s", src.Key(), src.Env, m.LinesWithoutEnv,
+			src.Service, MissingEnvWarning(src.Service), src.Service)
+	default:
+		return
+	}
+	f.noteDiscovery(warning)
+	f.mu.Lock()
+	if f.warnedEnv == nil {
+		f.warnedEnv = map[string]bool{}
+	}
+	first := !f.warnedEnv[warning]
+	f.warnedEnv[warning] = true
+	f.mu.Unlock()
+	if first {
+		f.log.WarnContext(ctx, warning)
+	}
 }

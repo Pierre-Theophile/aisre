@@ -114,7 +114,7 @@ func (p *Poller) Discover(ctx context.Context) error {
 	}
 	tick := DiscoveryTick{}
 	for _, src := range p.LogSources {
-		tick.LogSources = append(tick.LogSources, src.Env+"/"+src.Service)
+		tick.LogSources = append(tick.LogSources, src.Key())
 	}
 	if p.Measurer != nil {
 		if p.pendingWindow != nil {
@@ -128,7 +128,7 @@ func (p *Poller) Discover(ctx context.Context) error {
 			tick.Window = &DiscoveryWindow{From: to.Add(-window), To: to}
 		}
 		for _, src := range p.LogSources {
-			key := src.Env + "/" + src.Service
+			key := src.Key()
 			var m SourceMeasurement
 			if p.waiting() {
 				m = SourceMeasurement{Failed: StopRateLimited}
