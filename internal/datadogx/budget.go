@@ -36,6 +36,7 @@ const (
 	AreaDiscovery     = ddfeeder.AreaDiscovery
 	AreaRollouts      = ddfeeder.AreaRollouts
 	AreaInvestigation = ddfeeder.AreaInvestigation
+	AreaStartup       = ddfeeder.AreaStartup
 )
 
 // WithArea marks every call made with ctx as drawn for area.

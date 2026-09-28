@@ -24,6 +24,9 @@ type Area string
 
 // The areas, in the published deferral order (first deferred last).
 const (
+	// AreaStartup is the startup gate's reads: they happen once, before any area runs, and are never
+	// deferred.
+	AreaStartup       Area = "startup"
 	AreaMonitors      Area = "monitors"
 	AreaDiscovery     Area = "discovery"
 	AreaRollouts      Area = "rollouts"
