@@ -612,6 +612,32 @@ func buildProps(sources []string, propsOf func(sourceID string) (map[string]*str
 	return out
 }
 
+// keepLatestPerSource leaves one record per source for each property. Two records from one source
+// come from its two lanes (a definition and an alert transition, alert_transition.go) naming the
+// same key, and they are not a disagreement between sources: the later assertion is what the
+// source says now. Ties go to the greater event id, so the result does not depend on arrival order.
+func (ps propSet) keepLatestPerSource(assertedAt func(eventID string) time.Time) {
+	for key, records := range ps {
+		kept := records[:0]
+		for _, record := range records {
+			replaced := false
+			for i, other := range kept {
+				if other.SourceID != record.SourceID {
+					continue
+				}
+				replaced = true
+				if c := assertedAt(record.EventID).Compare(assertedAt(other.EventID)); c > 0 || (c == 0 && record.EventID > other.EventID) {
+					kept[i] = record
+				}
+			}
+			if !replaced {
+				kept = append(kept, record)
+			}
+		}
+		ps[key] = kept
+	}
+}
+
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

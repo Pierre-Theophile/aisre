@@ -46,7 +46,9 @@ import (
 // small indexed lookup and buys an important property: a segment is fully described by the set
 // of events that produced it, so the projection is always recomputable from the log.
 type nodeAssertion struct {
-	eventID     string
+	eventID string
+	// sourceID is the fold key: the source id, or its alert lane for an alert transition
+	// (alert_transition.go). laneSource recovers the source.
 	sourceID    string
 	assertedAt  time.Time
 	fromUnknown bool
@@ -129,6 +131,12 @@ func sameJSON(a, b []byte) bool {
 
 // applyUpsertNode projects one upsert_node event.
 func (p *Projector) applyUpsertNode(ctx context.Context, tx pgx.Tx, env *graphv1.EventEnvelope, body *graphv1.UpsertNode, observedAt time.Time) error {
+	return p.applyNodeAssertion(ctx, tx, env, body, observedAt, env.GetSourceId())
+}
+
+// applyNodeAssertion projects one node assertion folded under lane: the source id, or the source's
+// alert lane for an alert transition (alert_transition.go).
+func (p *Projector) applyNodeAssertion(ctx context.Context, tx pgx.Tx, env *graphv1.EventEnvelope, body *graphv1.UpsertNode, observedAt time.Time, lane string) error {
 	ref := graph.RefFromProto(body.GetRef())
 	nodeType := graph.NodeTypeFromProto(body.GetType())
 
@@ -161,7 +169,7 @@ func (p *Projector) applyUpsertNode(ctx context.Context, tx pgx.Tx, env *graphv1
 	}
 	assertions[env.GetEventId()] = nodeAssertion{
 		eventID:     env.GetEventId(),
-		sourceID:    env.GetSourceId(),
+		sourceID:    lane,
 		assertedAt:  validAt,
 		fromUnknown: body.GetValidFromUnknown(),
 		displayName: body.GetDisplayName(),
@@ -170,7 +178,7 @@ func (p *Projector) applyUpsertNode(ctx context.Context, tx pgx.Tx, env *graphv1
 		nodeType:    nodeType,
 	}
 
-	planned := planUpsert(segmentsOf(existing, assertions), env.GetSourceId(), env.GetEventId(), validAt,
+	planned := planUpsert(segmentsOf(existing, assertions), lane, env.GetEventId(), validAt,
 		body.GetValidFromUnknown(), assertedAtFunc(assertions), nodeContentEqual(assertions, entity.facets))
 
 	return p.writeNodeSegments(ctx, tx, entityID, existing, planned, assertions, entity.facets, env.GetEventId(), observedAt)
@@ -400,6 +408,7 @@ func (p *Projector) nodeAssertions(ctx context.Context, tx pgx.Tx, eventIDs []st
 				return nil, fmt.Errorf("projector: decode alert transition %s: %w", assertion.eventID, err)
 			}
 			body = AlertNodeAssertion(transition)
+			assertion.sourceID = alertLane(assertion.sourceID)
 		} else if err := protojson.Unmarshal(payload, body); err != nil {
 			return nil, fmt.Errorf("projector: decode node assertion %s: %w", assertion.eventID, err)
 		}
@@ -453,8 +462,9 @@ func materializeNode(seg segment, assertions map[string]nodeAssertion, facets []
 	sources := sortedKeys(seg.assertions)
 	props := buildProps(sources, func(sourceID string) (map[string]*structpb.Value, string, string) {
 		assertion := assertions[seg.assertions[sourceID]]
-		return assertion.props, sourceID, assertion.eventID
+		return assertion.props, laneSource(sourceID), assertion.eventID
 	})
+	props.keepLatestPerSource(func(eventID string) time.Time { return assertions[eventID].assertedAt })
 	content := nodeContent{
 		props:     props,
 		conflicts: props.conflicts(),
