@@ -6,7 +6,7 @@
 > `internal/feeders/datadog/requestlog.go`'s default surface, and a test compares the two in both
 > directions. The cost figures in §4 come from a recorded run (`fixtures/datadog-rate-limited-01`).
 > Nothing on this page has run against a live organisation yet. The gate's behaviour with a narrowly
-> scoped key (research §5 O2) is added from the first run with a read-only key (T099).
+> scoped key (research §5 O2) is recorded in §3 from the first live run (2026-09-28).
 
 What this connector reads, what it costs, and the proof it can only read.
 
@@ -86,9 +86,23 @@ named person then asserts the key is read-only, and every checkpoint records it 
 `operator_asserted by <name> at <instant>`.
 
 `feed datadog --dry-run` runs the gate and nothing else: no monitor read, no event, no connection to
-the graph. Whether a narrowly scoped key in a real organisation can read its own scopes (research §5
-O2) is recorded here from the first run with the organisation's read-only key (T099). Until then,
-plan for the assertion.
+the graph.
+
+**What the first live run found (2026-09-28, research §5 O2).** A read-only key cannot prove it is
+read-only. Plan for the assertion.
+
+| the application key | what the gate says |
+|---|---|
+| no `DD_APP_KEY_ID` given | refused: the scopes cannot be read |
+| unscoped | refused: it carries every permission of its user, writes included |
+| scoped to `monitors_read`, `logs_read_data`, `logs_read_index_data` | refused: Datadog will not state the scopes of a key that lacks `user_app_keys` |
+| the same, plus `user_app_keys` | refused: `user_app_keys` lets the key manage application keys, and so mint an unscoped one; it is outside the read set |
+| scoped to the three read scopes, with `--assert-read-only "<name>"` | **passes**, `operator_asserted by <name>` in every checkpoint |
+
+A key that can only read therefore cannot read its own scopes. `--assert-read-only` is not a
+fallback for a misconfigured key: it is how a correctly scoped key starts. Scope the key to the
+three read scopes, give `DD_APP_KEY_ID` so an unscoped or over-scoped key is still caught and
+refused, and name the person who scoped it.
 
 ## 4. What it costs
 

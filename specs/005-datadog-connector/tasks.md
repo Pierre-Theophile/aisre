@@ -393,6 +393,17 @@ applicable and SC-024 is asserted instead.
     was never built, and fixtures added later that the file did not name. All four are fixed in the
     quickstart.
 - [ ] T099 With a read-only key: run quickstart §7 (`--dry-run`, then `--once` against the organisation), record the startup gate's verdict (O2) and the first live version-stamp verdict — **blocked on the key**; fixture: private corpus
+  - *T099 progress, 2026-09-28:* the key is provisioned (EU site) and the `--dry-run` gate is recorded:
+    O2 is closed, operator-asserted in practice (docs/connectors/datadog.md §3). A monitors-only
+    `--once` against a local graph read 14 monitors in one call. The run produced:
+    - 14 ALERT nodes, each dated by its stated `created` or `modified`;
+    - 4 transitions at Datadog's instants, and 2 alerts firing;
+    - a complete poll, with the assertion in its checkpoint;
+    - on a second poll, only a new checkpoint.
+
+    Two monitors' groups name no service and are stated as unresolved. That run found the gate's
+    calls counted as `investigation`: they now draw from a `startup` area. Still open: a `--once`
+    with a watched log source, for the first live version-stamp verdict.
 
 ---
 

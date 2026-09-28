@@ -62,3 +62,31 @@ func TestTheStartupGate(t *testing.T) {
 		})
 	}
 }
+
+// areaReader records the area each gate read is drawn for.
+type areaReader struct{ areas *[]ddfeeder.Area }
+
+func (r areaReader) ValidateKeys(ctx context.Context) error {
+	*r.areas = append(*r.areas, ddfeeder.AreaOf(ctx))
+	return nil
+}
+
+func (r areaReader) OwnAppKeyScopes(ctx context.Context, _ string) ([]string, bool, error) {
+	*r.areas = append(*r.areas, ddfeeder.AreaOf(ctx))
+	return []string{"monitors_read"}, true, nil
+}
+
+// The gate's reads are the connector starting: the usage report counts them under `startup`, never
+// as an investigation's (found on the first live run).
+func TestTheGatesReadsAreStartupCalls(t *testing.T) {
+	t.Parallel()
+	var areas []ddfeeder.Area
+	if _, err := ddfeeder.Gate(context.Background(), areaReader{&areas}, ddfeeder.GateOptions{
+		Capabilities: ddfeeder.DefaultCapabilities(), AppKeyID: "key-id",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(areas) != 2 || areas[0] != ddfeeder.AreaStartup || areas[1] != ddfeeder.AreaStartup {
+		t.Errorf("the gate's reads were drawn for %v, want startup twice", areas)
+	}
+}

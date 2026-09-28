@@ -95,6 +95,8 @@ func (v GateVerdict) String() string {
 
 // Gate runs the startup gate.
 func Gate(ctx context.Context, r GateReader, opts GateOptions) (GateVerdict, error) {
+	// The gate's reads are the connector starting, not an investigation: the usage report says so.
+	ctx = WithArea(ctx, AreaStartup)
 	if err := r.ValidateKeys(ctx); err != nil {
 		return GateVerdict{}, fmt.Errorf("datadog: validate_keys refused the keys, so nothing will start: %w", err)
 	}
@@ -111,8 +113,8 @@ func Gate(ctx context.Context, r GateReader, opts GateOptions) (GateVerdict, err
 		case err != nil:
 			return GateVerdict{}, fmt.Errorf("datadog: reading the application key's scopes: %w", err)
 		case !scoped:
-			v.Unverified = append(v.Unverified, "the application key is unscoped, so it carries every permission of "+
-				"its user, writes included; scope it to "+strings.Join(AllowedScopes(opts.Capabilities), ", "))
+			v.Unverified = append(v.Unverified, "the application key's scopes: the key is unscoped, so it carries every "+
+				"permission of its user, writes included; scope it to "+strings.Join(AllowedScopes(opts.Capabilities), ", "))
 		default:
 			sort.Strings(scopes)
 			v.Scopes = scopes
