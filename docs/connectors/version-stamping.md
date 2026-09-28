@@ -168,9 +168,18 @@ none. Such a source cannot be matched to the same service on another platform, b
 environment. So the connector says `missing env to match service` twice: when the source is
 configured, and in every discovery checkpoint.
 
-If you watch `<env>/<service>` and no line carries that environment, the connector counts the
-service's lines that carry no `env` at all. When there are some, it tells you so, rather than
-reporting a service that wrote nothing.
+JSON logs often carry the environment as a field, such as `{"env": "production", ...}`. That field is
+the `@env` **attribute**, not the `env` tag, and Datadog's `env:` search reads only the tag. You can
+either:
+- remap it in a Datadog log pipeline (a Remapper from `@env` to the `env` tag), which fixes it for
+  every tool; or
+- tell the connector where to read it with `--env-field @env`. The source is then measured and
+  pointed at on `service:<service> @env:<env>`, and it keeps its environment, so C9 still merges
+  it.
+
+If you watch `<env>/<service>` and no line carries that environment tag, the connector first counts
+the service's lines with `@env:<env>`, then the lines that carry no `env` at all. When it finds
+either, it tells you which fix applies, rather than reporting a service that wrote nothing.
 
 To add the environment, use one of:
 - `DD_ENV=<env>` on the service;

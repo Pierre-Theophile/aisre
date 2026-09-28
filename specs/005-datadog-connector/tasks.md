@@ -427,6 +427,17 @@ applicable and SC-024 is asserted instead.
     0.0004 % of lines, a library's own version: the audit's shape, rejected by the share test. The
     measurement took 12 calls in 106 s.
 
+    The owner then pointed out that the logs do carry an environment, but as the JSON attribute
+    `@env` (`production` on almost every line in the hour) rather than the `env` tag, which is all
+    that `env:` searches. So:
+    - `--env-field @env` reads the environment from that attribute, and the source keeps it, C9
+      included;
+    - a source watched on the tag that finds no line probes `@env:<env>` first, and says to remap
+      it or to use the flag.
+
+    Re-run live on `production/cloud.livekit.io` with `--env-field @env`: measured on the attribute,
+    with no missing-env warning. The verdict is unchanged: no stamp.
+
 ---
 
 ## Dependencies & execution order

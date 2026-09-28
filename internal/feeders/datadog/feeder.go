@@ -292,7 +292,7 @@ func (f *Feeder) applyDiscovery(ctx context.Context, em feeder.Emitter, tick Dis
 			if err != nil {
 				return err
 			}
-			sources = append(sources, src)
+			sources = append(sources, f.configured(src))
 		}
 	}
 	measured := f.sourceMeasurements(tick)
@@ -511,6 +511,8 @@ func (f *Feeder) warnEnv(ctx context.Context, src LogSource, m SourceMeasurement
 	switch {
 	case src.Env == "":
 		warning = src.Key() + ": " + MissingEnvWarning(src.Service)
+	case measured && m.Lines == 0 && m.LinesWithEnvAttribute > 0:
+		warning = EnvAttributeWarning(src, EnvAttribute, m.LinesWithEnvAttribute)
 	case measured && m.Lines == 0 && m.LinesWithoutEnv > 0:
 		warning = fmt.Sprintf("%s: no line carries env:%s, but %d line(s) of service %s carry no env at all. %s; "+
 			"or watch the service without an environment: --watch %s", src.Key(), src.Env, m.LinesWithoutEnv,
@@ -529,4 +531,18 @@ func (f *Feeder) warnEnv(ctx context.Context, src LogSource, m SourceMeasurement
 	if first {
 		f.log.WarnContext(ctx, warning)
 	}
+}
+
+// EnvAttribute is the attribute probed for an environment the `env` tag does not carry.
+const EnvAttribute = "@env"
+
+// configured returns a tick's source with what only the configuration states — its index, its
+// environment field, its version override — so a recorded tick replays against the same selector.
+func (f *Feeder) configured(src LogSource) LogSource {
+	for _, c := range f.opts.LogSources {
+		if c.Key() == src.Key() {
+			return c
+		}
+	}
+	return src
 }

@@ -18,6 +18,9 @@ func TestTheArtifactScanDoesNotFireOnThisProjectsOwnEntityKeys(t *testing.T) {
 		`{"author": "alice@shop.example"}`,
 		`{"reviewer": "bob@example.com"}`,
 		`{"notify": "@channel"}`,
+		// A log attribute a connector writes into a selector or a join key names a field (005).
+		`{"selector": "service:search @env:production"}`,
+		`{"joinKeys": {"version": "@version"}}`,
 		`{"service": "px_svc_abcdefghijkl", "region": "europe-west1"}`,
 	} {
 		if class := sanitise.PeopleInArtifact([]byte(clean)); class != "" {
@@ -30,6 +33,9 @@ func TestTheArtifactScanDoesNotFireOnThisProjectsOwnEntityKeys(t *testing.T) {
 func TestTheArtifactScanFiresOnARealAddressOrHandle(t *testing.T) {
 	if class := sanitise.PeopleInArtifact([]byte(`{"author": "jane.doe@acme-corp.io"}`)); class != "an email address" {
 		t.Errorf("the scan reported %q for a real address", class)
+	}
+	if class := sanitise.PeopleInArtifact([]byte(`{"note": "ask @envoy-team about it"}`)); class != "an @handle" {
+		t.Errorf("a handle that merely starts like a log attribute passed: %q", class)
 	}
 	if class := sanitise.PeopleInArtifact([]byte(`{"note": "ask @jane-doe about it"}`)); class != "an @handle" {
 		t.Errorf("the scan reported %q for a handle", class)

@@ -69,6 +69,7 @@ func TestTheMeasurerCountsPresencePerCandidate(t *testing.T) {
 func TestAnEmptyEnvironmentIsProbedForLogsWithoutOne(t *testing.T) {
 	t.Parallel()
 	var queries []string
+	attribute := false
 	c, calls := newClient(t, func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Filter struct{ Query string } `json:"filter"`
@@ -80,6 +81,9 @@ func TestAnEmptyEnvironmentIsProbedForLogsWithoutOne(t *testing.T) {
 		if strings.Contains(req.Filter.Query, "-env:*") {
 			n = 3000
 		}
+		if strings.Contains(req.Filter.Query, "@env:") && attribute {
+			n = 2000
+		}
 		_, _ = fmt.Fprintf(w, `{"data":{"buckets":[{"by":{"status":"info"},"computes":{"c0":%d}}]},"meta":{"status":"done"}}`, n)
 	})
 	m, err := datadogx.Measurer{Client: c}.Measure(context.Background(),
@@ -90,8 +94,34 @@ func TestAnEmptyEnvironmentIsProbedForLogsWithoutOne(t *testing.T) {
 	if m.Lines != 0 || m.LinesWithoutEnv != 3000 {
 		t.Errorf("measurement %+v, want 0 lines in production and 3000 without an env", m)
 	}
-	if *calls != 13 || queries[1] != "service:billing -env:*" {
-		t.Errorf("%d calls, second query %q; want the 12 aggregates plus one probe right after the empty total", *calls, queries[1])
+	if *calls != 14 || queries[1] != "service:billing @env:production" || queries[2] != "service:billing -env:*" {
+		t.Errorf("%d calls, queries %q; want the 12 aggregates plus the attribute probe and the env-less probe", *calls, queries[:3])
+	}
+
+	// JSON logs that carry the environment as the `@env` attribute: that probe finds them, and the second
+	// is not paid for.
+	attribute = true
+	queries = nil
+	*calls = 0
+	m, err = datadogx.Measurer{Client: c}.Measure(context.Background(),
+		ddfeeder.LogSource{Env: "production", Service: "billing"}, "", clientNow.Add(-3600e9), clientNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.LinesWithEnvAttribute != 2000 || m.LinesWithoutEnv != 0 || *calls != 13 {
+		t.Errorf("measurement %+v after %d calls; want 2000 lines with @env and one probe", m, *calls)
+	}
+
+	// Watched with --env-field @env, the source is measured on the attribute and never probed.
+	attribute = false
+	queries = nil
+	*calls = 0
+	if _, err = (datadogx.Measurer{Client: c}).Measure(context.Background(),
+		ddfeeder.LogSource{Env: "production", Service: "billing", EnvField: "@env"}, "", clientNow.Add(-3600e9), clientNow); err != nil {
+		t.Fatal(err)
+	}
+	if *calls != 12 || queries[0] != "service:billing @env:production" {
+		t.Errorf("%d calls, first query %q; want the source measured on its @env attribute", *calls, queries[0])
 	}
 
 	// An environment-less source is measured on its service alone, and is never probed.

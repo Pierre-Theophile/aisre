@@ -25,3 +25,9 @@ queries:
     focus: datadog.service=checkout
     valid_at: 2026-09-21T15:10:00Z
     observed_at: 2026-09-21T15:30:00Z
+  # The environment read from the @env attribute: the pointer searches it, and the environment is kept.
+  - name: search-pointer-on-the-env-attribute
+    kind: pointers
+    focus: datadog.service=production/search
+    valid_at: 2026-09-21T15:10:00Z
+    observed_at: 2026-09-21T15:30:00Z

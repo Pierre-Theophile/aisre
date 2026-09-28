@@ -19,7 +19,10 @@ import (
 // selector is a parsed log selector.
 type selector struct {
 	Service, Env string
-	Index        string
+	// EnvKey is the field the environment was pinned with: `env` (the tag) or an attribute such as
+	// `@env`, for logs that carry the environment as a JSON field (005).
+	EnvKey string
+	Index  string
 	// Terms are the remaining exact `key:value` terms, sorted, spelled as the grammar spells them.
 	Terms []string
 }
@@ -43,8 +46,8 @@ func parseSelector(raw string) (selector, error) {
 		switch key {
 		case "service":
 			s.Service = value
-		case "env":
-			s.Env = value
+		case "env", "@env":
+			s.Env, s.EnvKey = value, key
 		case "index":
 			s.Index = value
 		default:
@@ -66,7 +69,7 @@ func parseSelector(raw string) (selector, error) {
 func (s selector) query(extra ...string) string {
 	parts := []string{"service:" + s.Service}
 	if s.Env != "" {
-		parts = append(parts, "env:"+s.Env)
+		parts = append(parts, s.EnvKey+":"+s.Env)
 	}
 	parts = append(parts, s.Terms...)
 	parts = append(parts, extra...)
