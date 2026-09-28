@@ -402,8 +402,19 @@ applicable and SC-024 is asserted instead.
     - on a second poll, only a new checkpoint.
 
     Two monitors' groups name no service and are stated as unresolved. That run found the gate's
-    calls counted as `investigation`: they now draw from a `startup` area. Still open: a `--once`
-    with a watched log source, for the first live version-stamp verdict.
+    calls counted as `investigation`: they now draw from a `startup` area.
+
+    The first `--once` with a watched log source met a logs aggregate bucket of 2 calls per window.
+    Discovery made one call and stopped, typed `quota`: against a reserve of 20 the connector's
+    allowance was zero in every window. Two fixes followed:
+    - the reserve of a small bucket is now half its limit;
+    - a stopped measurement is suspended until the stated reset and resumes over the same window,
+      from a cache (`datadog-small-bucket-01`).
+
+    Re-run live, the measurement completed: 12 calls in 108 s, one per window, with the other call
+    of each window left unspent. The first live verdict is "no version stamp", because the watched
+    source wrote no lines in the hour measured. The verdict states that no share could be measured,
+    not that the lines lack a stamp. Still open: a source with lines, for a verdict on a stamp.
 
 ---
 

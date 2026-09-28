@@ -146,6 +146,19 @@ backend builds its own client and budget and reports them separately (FR-084a).
   when the window opens. The reserve is checked against Datadog's latest reading, so when the people
   working an incident drain the bucket, the connector stops at the reserve. In the recording, the 14:05
   discovery reads until 20 calls are left and stops, typed `quota`.
+- **Small buckets.** A bucket smaller than twice the reserve is held to half its limit instead. The
+  first live run met a logs aggregate bucket of 2 calls per window: against a reserve of 20 the
+  connector could spend nothing, ever. Now one call per window is the connector's and the other
+  stays unspent. `fixtures/datadog-small-bucket-01` records this.
+- **A stopped measurement resumes.** When the budget stops a source's measurement, the connector
+  waits for the reset Datadog stated. It then resumes over the same window, and a cache answers
+  what it had already read. The tick is pushed once, complete, not half-measured.
+  - At 2 calls per window, the 12 aggregates of one measurement take 12 windows.
+  - The long-running poller resumes on a timer, so monitor polls never wait on discovery.
+  - It gives up only when the reset falls after the next discovery would start anyway. It then
+    states the source unmeasured, typed `quota`, as before.
+  - A stopped rollout lookup is not suspended. The tick goes out with its values marked `quota`,
+    and the next interval looks again.
 - **The deferral order.** Some areas must leave part of the share to the areas ahead of them.
   - Monitor transitions and definitions (one read) may spend the share to the end.
   - Discovery stops when a quarter of the share is left.

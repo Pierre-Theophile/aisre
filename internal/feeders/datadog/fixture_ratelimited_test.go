@@ -35,11 +35,12 @@ import (
 //   - 14:00 — discovery measures `checkout` (12 aggregates) and the rollout lookup, which must leave half
 //     the allowance to the areas ahead of it, is deferred; the monitor poll is complete;
 //   - 14:05 — the incident: people working it spend the bucket down to 24. Discovery reads until the
-//     reserve is all that is left and stops, typed `quota`; the monitor list answers 429 with a 90 s
+//     reserve is all that is left and is suspended, typed `quota`, until the bucket's stated reset at
+//     15:00: its tick is not pushed half-measured; the monitor list answers 429 with a 90 s
 //     reset, and the poll is partial, typed `rate_limited`, resuming 90 s after the 429 at 14:06:40;
 //   - 14:06 — a doorbell ring inside the wait reads nothing and says so;
-//   - 14:10 — discovery is still deferred and costs no call; the monitor window has reset, and the poll
-//     is complete again.
+//   - 14:10 — discovery is still suspended and costs no call; the monitor window has reset, and the
+//     poll is complete again.
 //
 // SC-008 is asserted to the exact call: the calls the twin served, the calls the budget counted and the
 // calls the recorded usage report states are one number, and no call was served out of the reserve.
@@ -198,9 +199,10 @@ func TestGenerateDatadogRateLimitedFixture(t *testing.T) {
 			"budget against a twin that answers with rate-limit headers. At 14:00 discovery measures `checkout` "+
 			"and the rollout lookup is deferred to leave half the share to the areas ahead of it; at 14:05 the "+
 			"people working an incident spend the log bucket down, discovery stops at the reserve (typed "+
-			"`quota`), and the monitor list answers 429, so the poll is partial (typed `rate_limited`) and "+
+			"`quota`) and is suspended until the bucket's stated reset rather than pushed half-measured, and "+
+			"the monitor list answers 429, so the poll is partial (typed `rate_limited`) and "+
 			"resumes at the stated reset; a doorbell ring inside the wait reads nothing; at 14:10 the poll is "+
-			"complete again and discovery is still deferred. No monitor is retracted by a partial poll.",
+			"complete again and discovery is still suspended. No monitor is retracted by a partial poll.",
 		opts, payloads, hm(13, 59), hm(14, 30), `
 queries:
   # A partial poll retracts nothing: the monitor is still an alert after the 429 and the unread ring.

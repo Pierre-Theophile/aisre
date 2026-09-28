@@ -4,7 +4,9 @@ package datadogx
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+	"sync"
 	"time"
 
 	ddfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/datadog"
@@ -20,6 +22,78 @@ import (
 type Measurer struct {
 	Client  *Client
 	Indexes []string
+	// Cache, when set, keeps the answers of the current discovery window, so a discovery the budget
+	// stopped resumes where it stopped instead of spending again what it already read (005: a bucket
+	// of 2 calls per window cannot afford a measurement that starts over).
+	Cache *MeasureCache
+}
+
+// MeasureCache holds one discovery window's answers, keyed by request. A request for another window
+// empties it: answers are never reused across windows.
+type MeasureCache struct {
+	mu     sync.Mutex
+	window string
+	agg    map[string]*AggregateResponse
+	search map[string]*SearchResponse
+}
+
+// NewMeasureCache returns an empty cache.
+func NewMeasureCache() *MeasureCache { return &MeasureCache{} }
+
+func (c *MeasureCache) key(window string, req any) string {
+	raw, _ := json.Marshal(req)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.window != window {
+		c.window, c.agg, c.search = window, map[string]*AggregateResponse{}, map[string]*SearchResponse{}
+	}
+	return string(raw)
+}
+
+func windowKey(f LogFilter) string { return f.From + "/" + f.To }
+
+func (m Measurer) aggregate(ctx context.Context, req AggregateRequest) (*AggregateResponse, error) {
+	if m.Cache == nil {
+		out, _, err := m.Client.AggregateLogs(ctx, req)
+		return out, err
+	}
+	key := m.Cache.key(windowKey(req.Filter), req)
+	m.Cache.mu.Lock()
+	hit, ok := m.Cache.agg[key]
+	m.Cache.mu.Unlock()
+	if ok {
+		return hit, nil
+	}
+	out, _, err := m.Client.AggregateLogs(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	m.Cache.mu.Lock()
+	m.Cache.agg[key] = out
+	m.Cache.mu.Unlock()
+	return out, nil
+}
+
+func (m Measurer) search(ctx context.Context, window string, req SearchRequest) (*SearchResponse, error) {
+	if m.Cache == nil {
+		out, _, err := m.Client.SearchLogs(ctx, req)
+		return out, err
+	}
+	key := m.Cache.key(window, req)
+	m.Cache.mu.Lock()
+	hit, ok := m.Cache.search[key]
+	m.Cache.mu.Unlock()
+	if ok {
+		return hit, nil
+	}
+	out, _, err := m.Client.SearchLogs(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	m.Cache.mu.Lock()
+	m.Cache.search[key] = out
+	m.Cache.mu.Unlock()
+	return out, nil
 }
 
 // Measure measures one source.
@@ -34,7 +108,7 @@ func (m Measurer) Measure(ctx context.Context, src ddfeeder.LogSource, override 
 		if extra != "" {
 			query += " " + extra
 		}
-		out, _, err := m.Client.AggregateLogs(ctx, AggregateRequest{
+		out, err := m.aggregate(ctx, AggregateRequest{
 			Compute: []Compute{{Aggregation: "count", Type: "total"}},
 			Filter:  NewLogFilter(query, from, to, indexes),
 			GroupBy: []GroupBy{{Facet: "status", Limit: 20, Missing: "__no_status__"}},
@@ -88,7 +162,7 @@ func (m Measurer) tags(ctx context.Context, base string, from, to time.Time, ind
 		for _, f := range facets {
 			group = append(group, GroupBy{Facet: f, Limit: 10})
 		}
-		res, _, err := m.Client.AggregateLogs(ctx, AggregateRequest{
+		res, err := m.aggregate(ctx, AggregateRequest{
 			Compute: []Compute{{Aggregation: "count", Type: "total"}},
 			Filter:  NewLogFilter(base, from, to, indexes),
 			GroupBy: group,
@@ -140,7 +214,7 @@ func (m Measurer) Sightings(ctx context.Context, src ddfeeder.LogSource, facet s
 	if src.Index != "" {
 		indexes = []string{src.Index}
 	}
-	out, _, err := m.Client.AggregateLogs(ctx, AggregateRequest{
+	out, err := m.aggregate(ctx, AggregateRequest{
 		Compute: []Compute{{Aggregation: "count", Type: "total"}},
 		Filter:  NewLogFilter(base, from, to, indexes),
 		GroupBy: []GroupBy{{Facet: facet, Limit: 50}},
@@ -149,7 +223,8 @@ func (m Measurer) Sightings(ctx context.Context, src ddfeeder.LogSource, facet s
 		return nil, err
 	}
 	first := func(clause string, a, b time.Time) (time.Time, bool, error) {
-		page, _, err := m.Client.SearchLogs(ctx, SearchRequest{
+		// Keyed on the discovery window, not the search's own: the horizon searches look further back.
+		page, err := m.search(ctx, windowKey(NewLogFilter(base, from, to, indexes)), SearchRequest{
 			Filter: NewLogFilter(base+" "+clause, a, b, indexes), Sort: "timestamp", Page: SearchPage{Limit: 1},
 		})
 		if err != nil || len(page.Data) == 0 {

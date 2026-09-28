@@ -1,0 +1,27 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-small-bucket-01
+family: datadog-budget
+description: 'Discovery against a logs aggregate bucket of 2 calls per 10-second window, the shape the first live run met. The reserve a small bucket is held to is half its limit, so one call per window is the connector''s and the other stays unspent; a measurement the budget stops is suspended until the stated reset and resumes over the same window, its answers cached. The twelve aggregates of `checkout`''s measurement take twelve windows, one each, and the tick is pushed once, complete: the `version` tag is accepted and the pointer carries its join key. The rollout lookup that follows finds the window''s call spent and says so, typed `quota`; it looks again next interval. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T13:59:00Z
+    end: 2026-09-21T14:05:00Z
+
+queries:
+  # The measurement completed over twelve windows: the pointer carries the version join key.
+  - name: checkout-pointer-after-a-paced-discovery
+    kind: pointers
+    focus: datadog.service=production/checkout
+    valid_at: 2026-09-21T14:04:00Z
+    observed_at: 2026-09-21T14:05:00Z

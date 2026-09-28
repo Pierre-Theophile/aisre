@@ -362,3 +362,33 @@ func TestAnExhaustedWindowIsForgottenOnceItResets(t *testing.T) {
 		t.Errorf("headroom %v (%v): the probe should be drawn from the static allowance", left, known)
 	}
 }
+
+// A bucket smaller than twice the reserve keeps half for people and gives the connector the rest,
+// instead of nothing ever (005, the first live Datadog run: a logs aggregate bucket of 2 per window
+// against a reserve of 20).
+func TestASmallBucketKeepsHalfForPeopleAndNotAll(t *testing.T) {
+	t.Parallel()
+	reset := time.Date(2026, 9, 28, 14, 48, 0, 0, time.UTC)
+	b := budget(t, 0.5, 20, 30)
+	b.Observe(feeder.Reading{Family: "logs_aggregate", Limit: 2, Remaining: 2, Reset: reset, Source: feeder.QuotaReported})
+	if err := b.Allow("logs_aggregate"); err != nil {
+		t.Fatalf("a fresh window of 2 allowed nothing: %v", err)
+	}
+	b.Observe(feeder.Reading{Family: "logs_aggregate", Limit: 2, Remaining: 1, Reset: reset, Source: feeder.QuotaReported})
+	yield, ok := feeder.YieldedForQuota(b.Allow("logs_aggregate"))
+	if !ok {
+		t.Fatal("the second call of a window of 2 was allowed; half the bucket is people's")
+	}
+	if yield.Reserve != 1 || !yield.RetryAt.Equal(reset) {
+		t.Errorf("yield %+v, want a reserve of 1 (half the limit) and the window's reset", yield)
+	}
+	if at, ok := b.ResetOf("logs_aggregate"); !ok || !at.Equal(reset) {
+		t.Errorf("ResetOf = %v, %v", at, ok)
+	}
+	// A large bucket keeps the published reserve.
+	big := budget(t, 0.5, 20, 30)
+	big.Observe(feeder.Reading{Family: "core", Limit: 5000, Remaining: 20, Reset: reset, Source: feeder.QuotaReported})
+	if y, ok := feeder.YieldedForQuota(big.Allow("core")); !ok || y.Reserve != 20 {
+		t.Errorf("a bucket of 5000 at 20 left must yield against the published reserve of 20: %+v", y)
+	}
+}

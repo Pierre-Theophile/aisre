@@ -74,7 +74,8 @@ func (b *Budget) allow(area Area, op feeder.ReadOperation, now time.Time) error 
 		b.mu.Lock()
 		b.deferred[area]++
 		b.mu.Unlock()
-		return &ddfeeder.DeferralError{Area: area, Family: family, Headroom: left}
+		retryAt, _ := b.quota.ResetOf(family)
+		return &ddfeeder.DeferralError{Area: area, Family: family, Headroom: left, RetryAt: retryAt}
 	}
 	if err := b.quota.Allow(family); err != nil {
 		b.mu.Lock()

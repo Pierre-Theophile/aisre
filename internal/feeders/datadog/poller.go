@@ -71,6 +71,13 @@ type Poller struct {
 	pollNow chan struct{}
 	// resumeAt is when Datadog said to read again after a 429; nothing is read before it.
 	resumeAt time.Time
+	// pendingWindow is a discovery the budget stopped, kept so that it resumes over the same window
+	// (and the measurer's cache answers what was already read) at retryAt, the reset Datadog stated.
+	pendingWindow *DiscoveryWindow
+	retryAt       time.Time
+
+	// Sleep waits for d or until ctx ends. Nil uses a timer; tests replace it with the twin's clock.
+	Sleep func(ctx context.Context, d time.Duration) error
 	// deferred are the areas that yielded to the budget since the last poll marker.
 	deferred map[Area]bool
 	// known are the stamp values already listed, per source. It only saves calls: a restarted poller
@@ -110,12 +117,16 @@ func (p *Poller) Discover(ctx context.Context) error {
 		tick.LogSources = append(tick.LogSources, src.Env+"/"+src.Service)
 	}
 	if p.Measurer != nil {
-		window := p.DiscoveryWindow
-		if window <= 0 {
-			window = versionstamp.DefaultWindow
+		if p.pendingWindow != nil {
+			tick.Window = p.pendingWindow
+		} else {
+			window := p.DiscoveryWindow
+			if window <= 0 {
+				window = versionstamp.DefaultWindow
+			}
+			to := p.now().Truncate(time.Minute)
+			tick.Window = &DiscoveryWindow{From: to.Add(-window), To: to}
 		}
-		to := p.now().Truncate(time.Minute)
-		tick.Window = &DiscoveryWindow{From: to.Add(-window), To: to}
 		for _, src := range p.LogSources {
 			key := src.Env + "/" + src.Service
 			var m SourceMeasurement
@@ -128,6 +139,9 @@ func (p *Poller) Discover(ctx context.Context) error {
 					if ctx.Err() != nil {
 						return ctx.Err()
 					}
+					if p.suspend(AreaDiscovery, err, *tick.Window) {
+						return nil
+					}
 					m = SourceMeasurement{Failed: p.failure(AreaDiscovery, err)}
 				}
 			}
@@ -137,6 +151,7 @@ func (p *Poller) Discover(ctx context.Context) error {
 			}
 			tick.Measurements = append(tick.Measurements, m)
 		}
+		p.pendingWindow, p.retryAt = nil, time.Time{}
 	}
 	raw, err := json.Marshal(tick)
 	if err != nil {
@@ -212,7 +227,7 @@ func (p *Poller) waiting() bool {
 // failure classifies a failed read for area: a quota stop defers the area, a 429 starts the wait
 // Datadog asked for. It returns what the payload states: the typed stop, or the error itself.
 func (p *Poller) failure(area Area, err error) string {
-	reason, wait := stopOf(err)
+	reason, wait, _ := stopOf(err)
 	switch reason {
 	case StopQuota:
 		if p.deferred == nil {
@@ -250,13 +265,19 @@ func (p *Poller) Run(ctx context.Context) error {
 	if interval <= 0 {
 		interval = DefaultPollInterval
 	}
-	discovery := p.DiscoveryInterval
-	if discovery <= 0 {
-		discovery = DefaultDiscoveryInterval
-	}
+	discovery := p.discoveryInterval()
 	if err := p.Discover(ctx); err != nil {
 		return err
 	}
+	// A discovery the budget suspended resumes on its own timer, so monitor polls never wait on it.
+	var resume <-chan time.Time
+	arm := func() {
+		resume = nil
+		if at, ok := p.DiscoveryPending(); ok {
+			resume = time.After(max(at.Sub(p.now()), 0))
+		}
+	}
+	arm()
 	if err := p.PollOnce(ctx); err != nil {
 		return err
 	}
@@ -275,6 +296,10 @@ func (p *Poller) Run(ctx context.Context) error {
 			err = p.PollOnce(ctx)
 		case <-discover.C:
 			err = p.Discover(ctx)
+			arm()
+		case <-resume:
+			err = p.Discover(ctx)
+			arm()
 		}
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -304,6 +329,8 @@ func (p *Poller) sight(ctx context.Context, src LogSource, key string, m *Source
 	}
 	sightings, err := p.Measurer.Sightings(WithArea(ctx, AreaRollouts), src, FacetOf(v.Accepted), w.From, w.To, p.FirstSeenHorizon, p.known[key])
 	if err != nil {
+		// Not suspended: a rollout lookup the budget stopped must not hold back the source's verdict
+		// and pointer. The values are looked for again next interval (the poller's known set).
 		m.ValuesFailed = p.failure(AreaRollouts, err)
 		return
 	}
@@ -311,4 +338,69 @@ func (p *Poller) sight(ctx context.Context, src LogSource, key string, m *Source
 		p.known[key][s.Value] = true
 	}
 	m.Values = sightings
+}
+
+// suspend decides whether a measurement the budget stopped resumes rather than stating the source
+// unmeasured (005, found on the first live run: a logs bucket of 2 calls per window). It resumes
+// when Datadog stated when the window resets and that is before the next discovery would start
+// anyway: the window is kept, the measurer's cache answers what was already read, and the tick is
+// pushed once, complete. Otherwise the stop is stated as before, and nothing is waited for.
+func (p *Poller) suspend(area Area, err error, w DiscoveryWindow) bool {
+	reason, _, retryAt := stopOf(err)
+	if reason != StopQuota || retryAt.IsZero() || !retryAt.Before(w.To.Add(p.discoveryInterval())) {
+		return false
+	}
+	p.failure(area, err) // the area is deferred for now, and the next poll marker says so
+	p.pendingWindow, p.retryAt = &w, retryAt
+	return true
+}
+
+// DiscoveryPending reports a discovery the budget suspended, and when it may resume.
+func (p *Poller) DiscoveryPending() (time.Time, bool) {
+	if p.pendingWindow == nil {
+		return time.Time{}, false
+	}
+	return p.retryAt, true
+}
+
+// DiscoverAndWait runs a discovery to completion: when the budget suspends it, it waits for the
+// reset Datadog stated and resumes, until the tick is pushed or ctx ends. It is what a one-shot run
+// uses; the long-running loop resumes on a timer instead, so monitor polls never wait on discovery.
+func (p *Poller) DiscoverAndWait(ctx context.Context) error {
+	for {
+		if err := p.Discover(ctx); err != nil {
+			return err
+		}
+		at, ok := p.DiscoveryPending()
+		if !ok {
+			return nil
+		}
+		if err := p.sleep(ctx, at.Sub(p.now())); err != nil {
+			return err
+		}
+	}
+}
+
+func (p *Poller) sleep(ctx context.Context, d time.Duration) error {
+	if p.Sleep != nil {
+		return p.Sleep(ctx, d)
+	}
+	if d <= 0 {
+		return ctx.Err()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+func (p *Poller) discoveryInterval() time.Duration {
+	if p.DiscoveryInterval > 0 {
+		return p.DiscoveryInterval
+	}
+	return DefaultDiscoveryInterval
 }
