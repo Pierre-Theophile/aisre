@@ -42,7 +42,8 @@ used a local PostgreSQL through `PG_DSN`, and `buf` and the protoc plugins insta
   the ALERT node's `service.name`, `deployment.environment.name` and `sre.datadog.monitor.type` read
   as absent. The transition is an assertion from the same source, and feature 001's fold rule
   (`internal/projector/segments.go`) takes one source's latest assertion whole. The answer to SC-016
-  is unaffected: what the alert watches is its WATCHES edge. Changing the fold is a model decision
-  for the owner.
+  is unaffected: what the alert watches is its WATCHES edge. Changing the fold was a model decision for
+  the owner; decided 2026-09-28, and the projector now folds a transition in its own lane beside the
+  definition (`internal/projector/alert_transition.go`).
 - `fixtures/datadog-log-service-merge-01` names a service `voice-agent`. It is a generic noun, not a
   vendor or an organisation's name, so it was left as it is.

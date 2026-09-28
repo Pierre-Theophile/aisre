@@ -81,7 +81,7 @@ func alertPropsAt(t *testing.T, p *projector.Projector, when string) map[string]
 
 func TestATransitionKeepsTheMonitorsDefinition(t *testing.T) {
 	for name, order := range map[string][]string{
-		"definition first": {"def", "fire", "recover"},
+		"definition first":  {"def", "fire", "recover"},
 		"transitions first": {"recover", "fire", "def"},
 	} {
 		t.Run(name, func(t *testing.T) {

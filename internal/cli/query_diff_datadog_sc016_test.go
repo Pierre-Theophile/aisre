@@ -35,11 +35,16 @@ func TestSC016FromADatadogMonitorIDAlone(t *testing.T) {
 		"what changed before it fired": "2b3c4d5e6f708192a3b4c5d6e7f80918a2b3c4d5",
 		"who owns it":                  "payments",
 		"the log pointer":              "datadog-logs/v1  service:checkout env:production",
-		"the alert's state":            "sre.alert.transition_at      -           2026-09-21T14:40:00Z",
+		"the alert's state":            "sre.alert.state",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("%s: the answer does not contain %q:\n%s", what, want, stdout)
 		}
+	}
+	// The transition does not hide what the monitor is (the alert lane, internal/projector): no
+	// definition property reads as removed.
+	if row := lineContaining(stdout, "service.name"); row != "" {
+		t.Errorf("the monitor's definition changed across its transition: %q\n%s", row, stdout)
 	}
 	// The long-running commit predates the horizon: it is not a change.
 	if strings.Contains(stdout, "1a2b3c4d5e6f708192a3b4c5d6e7f80918a2b3c4") {
