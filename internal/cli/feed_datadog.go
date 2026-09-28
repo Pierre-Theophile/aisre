@@ -64,6 +64,7 @@ type feedDatadogOptions struct {
 	overrides      []string
 	quotaShare     float64
 	quotaReserve   int
+	envField       string
 }
 
 func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
@@ -110,6 +111,9 @@ func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
 	flags.StringSliceVar(&opts.overrides, "version-override", nil,
 		"a service's version field as <env>/<service>=<name> (a tag) or =@<name> (an attribute); it is the "+
 			"only candidate for that service, recorded as the operator's, and still subject to the share test")
+	flags.StringVar(&opts.envField, "env-field", "",
+		"where the watched sources' environment is carried: the env tag (default), or an attribute such as "+
+			"@env when JSON logs carry it as a field")
 	flags.Float64Var(&opts.quotaShare, "quota-share", 0.5,
 		"the fraction of what Datadog says is left in a rate-limit bucket this connector may spend (FR-081)")
 	flags.IntVar(&opts.quotaReserve, "quota-reserve", 20,
@@ -125,6 +129,10 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 	var sources []ddfeeder.LogSource
 	for _, spec := range opts.watch {
 		src, err := ddfeeder.ParseLogSource(spec)
+		if err == nil && opts.envField != "" && opts.envField != "env" {
+			src.EnvField = opts.envField
+			err = src.Validate()
+		}
 		if err != nil {
 			return exitErrorf(ExitUsage, "feed datadog: --watch: %v", err)
 		}

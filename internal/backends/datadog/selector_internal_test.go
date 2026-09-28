@@ -26,6 +26,11 @@ func TestTheSelectorSubset(t *testing.T) {
 	if got := noEnv.query("status:error"); got != "service:voice-agent status:error" || noEnv.entity() != "voice-agent" {
 		t.Errorf("query %q, entity %q", got, noEnv.entity())
 	}
+	// The environment pinned as the `@env` attribute, for JSON logs (005): executed as minted.
+	attr, err := parseSelector("service:search @env:production")
+	if err != nil || attr.query() != "service:search @env:production" || attr.entity() != "search@production" {
+		t.Errorf("an @env pointer: %q, %q, %v", attr.query(), attr.entity(), err)
+	}
 	for _, bad := range []string{
 		"env:production",                       // no service
 		"service:* env:production",             // wildcard

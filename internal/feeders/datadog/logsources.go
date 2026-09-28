@@ -28,6 +28,10 @@ type LogSource struct {
 	// still measure them. Such a source is stated as environment-less everywhere it appears, and it is
 	// never merged by C9, which needs the environment: a service name is unique only within one.
 	Env string
+	// EnvField is the field the environment is read from: the `env` tag when empty (unified service
+	// tagging), or an attribute spelled `@name` (005: the first live organisation's JSON logs carry
+	// `env` as an attribute, and Datadog's `env:` searches only the tag).
+	EnvField string
 	// Service is the Datadog `service` the source's lines carry. Required.
 	Service string
 	// Index is the log index to search, where one is configured. Empty searches the default.
@@ -42,6 +46,8 @@ func (s LogSource) Validate() error {
 	switch {
 	case strings.TrimSpace(s.Service) == "":
 		return fmt.Errorf("datadog: a log source in %q names no service", s.Env)
+	case s.EnvField != "" && s.EnvField != "env" && !validAttribute(s.EnvField):
+		return fmt.Errorf("datadog: environment field %q is neither the `env` tag nor an `@attribute`", s.EnvField)
 	case strings.Contains(s.Env, "/") || strings.Contains(s.Service, "/"):
 		return fmt.Errorf("datadog: log source %s/%s contains a `/`, which the ref value uses as its "+
 			"separator", s.Env, s.Service)
@@ -61,12 +67,36 @@ func (s LogSource) Key() string {
 // `datadog.service=<service>` when its lines carry no environment.
 func (s LogSource) Ref() *graphv1.Ref { return feeder.Ref(NSService, s.Key()) }
 
-// Query is the source's Datadog search: its service, and its environment when it has one.
+// Query is the source's Datadog search: its service, and its environment when it has one, in the field
+// the environment is carried in.
 func (s LogSource) Query() string {
 	if s.Env == "" {
 		return "service:" + s.Service
 	}
-	return "service:" + s.Service + " env:" + s.Env
+	return "service:" + s.Service + " " + s.EnvTerm()
+}
+
+// EnvTerm is the environment as a search term: `env:<env>`, or `@name:<env>` for an attribute.
+func (s LogSource) EnvTerm() string {
+	field := s.EnvField
+	if field == "" {
+		field = "env"
+	}
+	return field + ":" + s.Env
+}
+
+func validAttribute(field string) bool {
+	name := strings.TrimPrefix(field, "@")
+	return strings.HasPrefix(field, "@") && name != "" && !strings.ContainsAny(name, " :*\"/")
+}
+
+// EnvAttributeWarning is what the connector says when a source's environment is carried as an
+// attribute and the source was configured to read the `env` tag.
+func EnvAttributeWarning(src LogSource, attribute string, lines int64) string {
+	return fmt.Sprintf("%s: no line carries the env tag env:%s, but %d line(s) carry the attribute %s:%s. "+
+		"Datadog's env tag is what unified service tagging, monitors and other tools read: remap %s to the env "+
+		"tag in a Datadog log pipeline (a Remapper), or watch with --env-field %s",
+		src.Key(), src.Env, lines, attribute, src.Env, attribute, attribute)
 }
 
 // MissingEnvWarning is what the connector says, wherever a source is configured or measured, about a

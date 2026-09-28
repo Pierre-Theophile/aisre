@@ -65,6 +65,10 @@ type SourceMeasurement struct {
 	// names an environment and none of its lines carry it: the configuration to fix is then that
 	// the logs have no environment, not that the service is silent.
 	LinesWithoutEnv int64 `json:"lines_without_env,omitempty"`
+	// LinesWithEnvAttribute counts, in the same case, the service's lines that carry the environment as
+	// the `@env` attribute instead of the tag. Measured first: when it is non-zero the fix is a
+	// remapper or --env-field, not adding an environment.
+	LinesWithEnvAttribute int64 `json:"lines_with_env_attribute,omitempty"`
 	// Failed says the measurement could not be completed and why; the source is then asserted without
 	// a pointer change, and the checkpoint says so.
 	Failed string `json:"failed,omitempty"`

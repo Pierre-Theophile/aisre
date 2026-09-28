@@ -130,14 +130,21 @@ func (m Measurer) Measure(ctx context.Context, src ddfeeder.LogSource, override 
 	if out.Lines, out.ErrorLines, err = count(""); err != nil {
 		return out, err
 	}
-	if out.Lines == 0 && src.Env != "" {
-		// Nothing carries this environment. One more count says whether the service logs without any
-		// `env` tag, which is a configuration to fix rather than a silent service.
-		n, _, err := m.countWithout(ctx, src, from, to, indexes)
+	if out.Lines == 0 && src.Env != "" && src.EnvField == "" {
+		// Nothing carries this environment as the `env` tag. First, whether the service carries it as
+		// the `@env` attribute (JSON logs often do); else whether it logs with no `env` at all. Either is
+		// a configuration to fix rather than a silent service, and each costs one count.
+		n, err := m.countQuery(ctx, "service:"+src.Service+" "+ddfeeder.EnvAttribute+":"+src.Env, from, to, indexes)
 		if err != nil {
 			return out, err
 		}
-		out.LinesWithoutEnv = n
+		out.LinesWithEnvAttribute = n
+		if n == 0 {
+			if n, err = m.countQuery(ctx, "service:"+src.Service+" -env:*", from, to, indexes); err != nil {
+				return out, err
+			}
+			out.LinesWithoutEnv = n
+		}
 	}
 	if out.HostLines, _, err = count("host:*"); err != nil {
 		return out, err
@@ -272,23 +279,20 @@ func facetClause(facet, value string) string {
 	return facet + ":" + value
 }
 
-// countWithout counts a source's service lines that carry no `env` tag at all.
-func (m Measurer) countWithout(ctx context.Context, src ddfeeder.LogSource, from, to time.Time, indexes []string) (int64, int64, error) {
+// countQuery counts the lines one query matches over the window.
+func (m Measurer) countQuery(ctx context.Context, query string, from, to time.Time, indexes []string) (int64, error) {
 	out, err := m.aggregate(ctx, AggregateRequest{
 		Compute: []Compute{{Aggregation: "count", Type: "total"}},
-		Filter:  NewLogFilter("service:"+src.Service+" -env:*", from, to, indexes),
+		Filter:  NewLogFilter(query, from, to, indexes),
 		GroupBy: []GroupBy{{Facet: "status", Limit: 20, Missing: "__no_status__"}},
 	})
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	var lines, errorLines int64
+	var lines int64
 	for _, b := range out.Data.Buckets {
 		n, _ := b.Count(0)
 		lines += n
-		if b.Key("status") == "error" {
-			errorLines += n
-		}
 	}
-	return lines, errorLines, nil
+	return lines, nil
 }
