@@ -57,6 +57,8 @@ type DeferralError struct {
 	Area     Area
 	Family   string
 	Headroom float64
+	// RetryAt is when the bucket's window resets, when Datadog said: the area may try again then.
+	RetryAt time.Time
 }
 
 func (e *DeferralError) Error() string {
@@ -78,18 +80,19 @@ type rateLimited interface {
 	RetryAfterDuration() time.Duration
 }
 
-// stopOf classifies a failed call: a quota stop, a 429 with its wait, or neither.
-func stopOf(err error) (reason string, wait time.Duration) {
+// stopOf classifies a failed call: a quota stop with the instant its window resets (zero when
+// unstated), a 429 with its wait, or neither.
+func stopOf(err error) (reason string, wait time.Duration, retryAt time.Time) {
 	var d *DeferralError
 	if errors.As(err, &d) {
-		return StopQuota, 0
+		return StopQuota, 0, d.RetryAt
 	}
-	if _, ok := feeder.YieldedForQuota(err); ok {
-		return StopQuota, 0
+	if y, ok := feeder.YieldedForQuota(err); ok {
+		return StopQuota, 0, y.RetryAt
 	}
 	var r rateLimited
 	if errors.As(err, &r) && r.HTTPStatus() == 429 {
-		return StopRateLimited, r.RetryAfterDuration()
+		return StopRateLimited, r.RetryAfterDuration(), time.Time{}
 	}
-	return "", 0
+	return "", 0, time.Time{}
 }

@@ -290,13 +290,37 @@ func (b *QuotaBudget) Observe(reading Reading) {
 // each believe they were inside it.
 func (b *QuotaBudget) allowanceFor(reading Reading) int {
 	share := int(float64(reading.Remaining) * b.policy.Share)
-	if headroom := reading.Remaining - b.policy.Reserve; share > headroom {
+	if headroom := reading.Remaining - b.reserveFor(reading); share > headroom {
 		share = headroom
 	}
 	if share < 0 {
 		return 0
 	}
 	return share
+}
+
+// reserveFor is the reserve a reading is held to: the published one, or half the bucket's limit when
+// the bucket is smaller than twice the reserve (005, found on the first live Datadog run). A bucket of
+// 2 calls per window against a reserve of 20 left the connector nothing, ever: every window opened
+// below the floor. Half of a small bucket stays for people, the other half is the connector's, so the
+// reserve still means "never all of it" without meaning "none of it". A reading that states no limit
+// keeps the published reserve.
+func (b *QuotaBudget) reserveFor(reading Reading) int {
+	if reading.Limit > 0 && reading.Limit/2 < b.policy.Reserve {
+		return reading.Limit / 2
+	}
+	return b.policy.Reserve
+}
+
+// ResetOf is when a family's current window resets, when the platform said.
+func (b *QuotaBudget) ResetOf(family string) (time.Time, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	reading, ok := b.readings[family]
+	if !ok || reading.Reset.IsZero() {
+		return time.Time{}, false
+	}
+	return reading.Reset, true
 }
 
 // Allow decides whether one more call may be made against a family.
@@ -334,16 +358,20 @@ func (b *QuotaBudget) Allow(family string) error {
 	// platform remainder for the reserve to protect, and applying it would turn any static allowance
 	// smaller than the reserve into zero: a connector that can never make the one read that would tell it
 	// the real numbers (004 T157 found exactly that).
+	reserve := b.policy.Reserve
+	if reading.Source != QuotaStatic {
+		reserve = b.reserveFor(reading)
+	}
 	switch {
-	case reading.Source != QuotaStatic && reading.Remaining <= b.policy.Reserve:
+	case reading.Source != QuotaStatic && reading.Remaining <= reserve:
 		return &QuotaYieldError{
 			Platform: b.platform, Family: family, Remaining: reading.Remaining,
-			Reserve: b.policy.Reserve, RetryAt: reading.Reset, Source: reading.Source,
+			Reserve: reserve, RetryAt: reading.Reset, Source: reading.Source,
 		}
 	case b.spent[family] >= b.allowance[family]:
 		return &QuotaYieldError{
 			Platform: b.platform, Family: family, Remaining: reading.Remaining,
-			Reserve: b.policy.Reserve, RetryAt: reading.Reset, Source: reading.Source,
+			Reserve: reserve, RetryAt: reading.Reset, Source: reading.Source,
 		}
 	}
 	b.spent[family]++

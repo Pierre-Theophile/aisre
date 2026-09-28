@@ -205,7 +205,7 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 		poller = &ddfeeder.Poller{
 			Pager: client, Tags: opts.monitorTags, Interval: opts.pollInterval, LogSources: sources,
 			Capabilities: caps, Push: chanSource.Push,
-			Measurer: datadogx.Measurer{Client: client}, VersionOverrides: overrides, Usage: usage,
+			Measurer: datadogx.Measurer{Client: client, Cache: datadogx.NewMeasureCache()}, VersionOverrides: overrides, Usage: usage,
 		}
 		if opts.doorbellListen != "" {
 			if bell, err = startDatadogDoorbell(ctx, opts, poller, logger); err != nil {
@@ -224,7 +224,9 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 			defer chanSource.Close()
 			var err error
 			if opts.once {
-				if err = poller.Discover(ctx); err == nil {
+				// A one-shot run waits for the resets Datadog states rather than leave a source
+				// unmeasured because its bucket allows a call or two per window.
+				if err = poller.DiscoverAndWait(ctx); err == nil {
 					err = poller.PollOnce(ctx)
 				}
 			} else {
