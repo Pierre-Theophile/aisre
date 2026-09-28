@@ -442,5 +442,14 @@ func RolloutDeployKeys(obs RevisionObservation) []feeder.CorrelationKey {
 			Why: "the commit this rollout shipped, declared by the label " + obs.Labels.CommitSource,
 		})
 	}
+	// The revision name is the one identifier every Cloud Run rollout has, and what the GCP backend's
+	// errors_by_version groups and a log stamped `DD_VERSION=$K_REVISION` both name (005 T100). A
+	// release is a lookup join only: C8 never merges on it.
+	if release, ok := feeder.Release(obs.Revision.Revision); ok {
+		keys = append(keys, feeder.CorrelationKey{
+			Namespace: feeder.NSDeployRelease, Value: release,
+			Why: "the Cloud Run revision this rollout created, as K_REVISION names it",
+		})
+	}
 	return keys
 }

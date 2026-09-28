@@ -8,6 +8,7 @@ import (
 
 	gcpfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/gcp"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder/versionstamp"
 )
 
 // The cross-source deploy correlation keys on a Cloud Run rollout (004 T135, T148; FR-041, FR-045,
@@ -163,5 +164,27 @@ func TestTheDeployNamespacesAreDeclared(t *testing.T) {
 			t.Errorf("%q is minted on a rollout but is not in the feeder's declared namespaces; a ref "+
 				"in an undeclared namespace fails testkit", ns)
 		}
+	}
+}
+
+// 005 T100: every rollout carries its revision name as deploy.release, the same value the GCP
+// backend's errors_by_version group and a log stamped `DD_VERSION=$K_REVISION` normalise to, so both
+// resolve to the rollout. No revision name, no key.
+func TestARolloutCorrelatesOnItsRevisionNameAsARelease(t *testing.T) {
+	t.Parallel()
+
+	obs := revisionObservation("", "", "")
+	obs.Revision.Revision = "checkout-00042-bbb"
+	keys := gcpfeeder.RolloutDeployKeys(obs)
+	release, ok := keyValue(t, keys, feeder.NSDeployRelease)
+	if !ok || release != "checkout-00042-bbb" {
+		t.Fatalf("deploy.release = %q (%v), want the revision name", release, ok)
+	}
+	ref, _ := versionstamp.Normalise("checkout-00042-bbb")
+	if ref.GetNamespace() != feeder.NSDeployRelease || ref.GetValue() != release {
+		t.Errorf("the backend's group normalises to %v, the rollout carries %s=%s; they would not join", ref, feeder.NSDeployRelease, release)
+	}
+	if _, ok := keyValue(t, gcpfeeder.RolloutDeployKeys(revisionObservation("", "", "")), feeder.NSDeployRelease); ok {
+		t.Error("a rollout with no revision name minted a release key")
 	}
 }
