@@ -4,6 +4,7 @@ package projector
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -60,6 +61,25 @@ const (
 	AlertUnattachedWatchesProp = "sre.alert.unattached_watches"
 )
 
+// The alert lane (005): a transition is folded in a lane of its own, beside its source's other
+// assertions about the same node rather than in place of them.
+//
+// The fold takes, per source, the latest assertion at or before an instant (segments.go). Keyed on
+// the source alone, a transition — which states only the alert's state — hid everything the same
+// source had said about the monitor: from the transition onwards the ALERT node lost the service,
+// environment and type its definition carries, although nothing had contradicted them. They are
+// two different statements: what the monitor is, and what state it is in. So a transition is keyed
+// on its source's alert lane: a later transition still replaces an earlier one (a state replaces a
+// state), a re-asserted definition still replaces the previous definition, and the node carries both.
+// Property records still name the real source, so provenance does not change.
+const alertLaneSuffix = "\x00alert"
+
+// alertLane is the fold key of a source's alert transitions.
+func alertLane(sourceID string) string { return sourceID + alertLaneSuffix }
+
+// laneSource is the source a fold key belongs to.
+func laneSource(key string) string { return strings.TrimSuffix(key, alertLaneSuffix) }
+
 func (p *Projector) applyAlertTransition(ctx context.Context, tx pgx.Tx, env *graphv1.EventEnvelope, body *graphv1.AlertTransition, observedAt time.Time) error {
 	// Which watched refs the graph already knows is decided BEFORE the node is written, because the
 	// answer goes into the node: the unresolved ones become its unattached list (FR-048).
@@ -80,8 +100,8 @@ func (p *Projector) applyAlertTransition(ctx context.Context, tx pgx.Tx, env *gr
 		}
 	}
 
-	if err := p.applyUpsertNode(ctx, tx, env,
-		alertNodeAssertionWithUnattached(body, unattached), observedAt); err != nil {
+	if err := p.applyNodeAssertion(ctx, tx, env,
+		alertNodeAssertionWithUnattached(body, unattached), observedAt, alertLane(env.GetSourceId())); err != nil {
 		return err
 	}
 
