@@ -159,7 +159,25 @@ The logger must attach `DD_VERSION` (or `service.version`) to every line. A plat
 own run-time commit variable can replace the file. Check the platform's documentation for one
 before building the workaround.
 
-## 5. Two warnings
+## 5. The environment
+
+Unified service tagging gives each line a `service`, an `env` and a `version`. Many organisations
+ship logs with a `service` and no `env`, and the connector still measures them. `--watch
+<env>/<service>` watches one environment, and `--watch <service>` watches a service whose logs carry
+none. Such a source cannot be matched to the same service on another platform, because C9 needs the
+environment. So the connector says `missing env to match service` twice: when the source is
+configured, and in every discovery checkpoint.
+
+If you watch `<env>/<service>` and no line carries that environment, the connector counts the
+service's lines that carry no `env` at all. When there are some, it tells you so, rather than
+reporting a service that wrote nothing.
+
+To add the environment, use one of:
+- `DD_ENV=<env>` on the service;
+- the `tags.datadoghq.com/env` label on Kubernetes;
+- an `env:<env>` tag in the log pipeline.
+
+## 6. Two warnings
 
 - **A library's own `version` field is not a stamp.** SDKs log their own version under `version`, on
   a few start-up lines. The share test rejects it, and the verdict names it. If your application's
@@ -178,7 +196,7 @@ service:checkout env:production -version:*
 With a working stamp, this returns (almost) nothing. Run it again with `status:error` added. For the
 attribute forms, search `-@service.version:*` or `-@version:*` instead.
 
-## 6. Reading the connector's verdict
+## 7. Reading the connector's verdict
 
 Every discovery interval, each watched log source gets three things:
 

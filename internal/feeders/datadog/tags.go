@@ -69,7 +69,7 @@ func (f *Feeder) emitTags(ctx context.Context, em feeder.Emitter, src LogSource,
 		}
 		return counts[i].Value < counts[j].Value
 	})
-	key := src.Env + "/" + src.Service
+	key := src.Key()
 	for _, c := range counts {
 		owner, identifier := allowlisted(c.Key)
 		share := 0.0
@@ -121,10 +121,11 @@ func (f *Feeder) emitOwner(ctx context.Context, em feeder.Emitter, src LogSource
 
 func (f *Feeder) emitKubeClaim(ctx context.Context, em feeder.Emitter, src LogSource, c TagCount, at time.Time) error {
 	claim := feeder.Ref(feeder.NSK8sDeployment, c.Value)
-	attrs, err := feeder.NewProps().
-		Str(feeder.AttrDeploymentEnvironment, src.Env).
-		Str(feeder.PropK8sClaimKey, KubeDeploymentPair).
-		Build()
+	builder := feeder.NewProps().Str(feeder.PropK8sClaimKey, KubeDeploymentPair)
+	if src.Env != "" {
+		builder.Str(feeder.AttrDeploymentEnvironment, src.Env)
+	}
+	attrs, err := builder.Build()
 	if err != nil {
 		return err
 	}

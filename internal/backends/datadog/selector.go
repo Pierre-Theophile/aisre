@@ -51,10 +51,12 @@ func parseSelector(raw string) (selector, error) {
 			s.Terms = append(s.Terms, key+":"+value)
 		}
 	}
-	if s.Service == "" || s.Env == "" {
-		return selector{}, fmt.Errorf("datadog: a log selector must pin both service and env; %q does "+
-			"not, and a query over every service or every environment is not what the feeder minted", raw)
+	if s.Service == "" {
+		return selector{}, fmt.Errorf("datadog: a log selector must pin the service; %q does not, and a "+
+			"query over every service is not what the feeder minted", raw)
 	}
+	// No env term is the feeder's pointer for a service whose logs carry no environment (005): the
+	// selector is exactly what it minted, and the backend searches what the logs actually carry.
 	sort.Strings(s.Terms)
 	return s, nil
 }
@@ -62,7 +64,10 @@ func parseSelector(raw string) (selector, error) {
 // query renders the selector as the search query sent, deterministically, with extra clauses appended
 // — e.g. the error-level clause.
 func (s selector) query(extra ...string) string {
-	parts := []string{"service:" + s.Service, "env:" + s.Env}
+	parts := []string{"service:" + s.Service}
+	if s.Env != "" {
+		parts = append(parts, "env:"+s.Env)
+	}
 	parts = append(parts, s.Terms...)
 	parts = append(parts, extra...)
 	return strings.Join(parts, " ")
@@ -74,4 +79,12 @@ func (s selector) indexes(configured []string) []string {
 		return []string{s.Index}
 	}
 	return configured
+}
+
+// entity names what was searched: `<service>@<env>`, or the service alone when the logs carry no env.
+func (s selector) entity() string {
+	if s.Env == "" {
+		return s.Service
+	}
+	return s.Service + "@" + s.Env
 }
