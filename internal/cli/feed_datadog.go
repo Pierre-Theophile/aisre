@@ -65,6 +65,9 @@ type feedDatadogOptions struct {
 	quotaShare     float64
 	quotaReserve   int
 	envField       string
+	changeSources  []string
+	changeTags     []string
+	eventsInterval time.Duration
 }
 
 func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
@@ -88,13 +91,22 @@ func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
 	flags.StringSliceVar(&opts.monitorTags, "monitor-tags", nil,
 		"a monitor is in scope only if it carries every one of these key:value tags (FR-025c)")
 	flags.StringVar(&opts.capabilities, "capabilities", "logs,monitors,tags",
-		"enabled capabilities; apm_topology and changes are specified and not built in this release")
+		"enabled capabilities; changes reads Datadog's event stream and needs --change-sources or "+
+			"--change-tags; apm_topology is specified and not built in this release")
+	flags.StringSliceVar(&opts.changeSources, "change-sources", nil,
+		"changes capability: event sources (source_type_name) whose events are changes, e.g. jenkins; "+
+			"repeatable, and recorded in every events checkpoint (FR-029)")
+	flags.StringSliceVar(&opts.changeTags, "change-tags", nil,
+		"changes capability: key:value tags whose events are changes, e.g. event_type:deployment; "+
+			"repeatable (FR-029)")
+	flags.DurationVar(&opts.eventsInterval, "events-interval", ddfeeder.DefaultEventsInterval,
+		"changes capability: how often the event stream is read")
 	flags.StringVar(&opts.assertBy, "assert-read-only", "",
 		"named individual asserting the key is read-only, for what the gate could not verify; recorded in "+
 			"every checkpoint as operator_asserted")
 	flags.BoolVar(&opts.dryRun, "dry-run", false,
 		"perform the startup read-only gate and nothing else: no monitor read, no event, no server connection")
-	flags.BoolVar(&opts.once, "once", false, "one discovery tick and one monitor poll, then exit")
+	flags.BoolVar(&opts.once, "once", false, "one discovery tick, one monitor poll and, under changes, one events window, then exit")
 	flags.StringVar(&opts.replayDir, "replay", "", "read payloads from this fixture directory instead of Datadog")
 	flags.StringVar(&opts.recordDir, "record", "", "write payloads and events to this fixture directory; on a "+
 		"live run every payload is sanitised in the connector before a byte is written, under the corpus key "+
@@ -125,6 +137,15 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 	caps, err := ddfeeder.ParseCapabilities(opts.capabilities)
 	if err != nil {
 		return exitErrorf(ExitUsage, "feed datadog: %v", err)
+	}
+	scope := ddfeeder.ChangeScope{Sources: opts.changeSources, Tags: opts.changeTags}
+	if caps.Enabled(ddfeeder.CapChanges) {
+		if err := scope.Validate(); err != nil {
+			return exitErrorf(ExitUsage, "feed datadog: %v", err)
+		}
+	} else if len(scope.Sources)+len(scope.Tags) > 0 {
+		return exitErrorf(ExitUsage, "feed datadog: --change-sources and --change-tags configure the changes "+
+			"capability, which is off; enable it with --capabilities to read the event stream (FR-008b)")
 	}
 	var sources []ddfeeder.LogSource
 	for _, spec := range opts.watch {
@@ -184,6 +205,7 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 	feederOpts := ddfeeder.Options{
 		OrgSlug: opts.orgSlug, Site: opts.site, Capabilities: caps, MonitorTags: opts.monitorTags,
 		PollInterval: opts.pollInterval, LogSources: sources, Log: logger, VersionOverrides: overrides,
+		Changes: scope,
 	}
 	if err := feederOpts.Validate(); err != nil {
 		return exitErrorf(ExitUsage, "feed datadog: %v", err)
@@ -219,6 +241,7 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 			Pager: client, Tags: opts.monitorTags, Interval: opts.pollInterval, LogSources: sources,
 			Capabilities: caps, Push: chanSource.Push,
 			Measurer: datadogx.Measurer{Client: client, Cache: datadogx.NewMeasureCache()}, VersionOverrides: overrides, Usage: usage,
+			Events: client, Changes: scope, EventsInterval: opts.eventsInterval,
 		}
 		if opts.doorbellListen != "" {
 			if bell, err = startDatadogDoorbell(ctx, opts, poller, logger); err != nil {
@@ -241,6 +264,9 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 				// unmeasured because its bucket allows a call or two per window.
 				if err = poller.DiscoverAndWait(ctx); err == nil {
 					err = poller.PollOnce(ctx)
+				}
+				if err == nil {
+					err = poller.PollEvents(ctx)
 				}
 			} else {
 				err = poller.Run(ctx)

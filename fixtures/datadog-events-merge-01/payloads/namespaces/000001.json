@@ -1,0 +1,1 @@
+{"type":"ADDED","object":{"metadata":{"name":"shop","resourceVersion":"100","labels":{"app.kubernetes.io/part-of":"shop","deployment.environment.name":"prod"}},"spec":{},"status":{}}}

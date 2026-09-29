@@ -41,7 +41,7 @@ configuration and never appears in a pointer (FR-037).
 | `monitors` | get monitor | `GET /api/v1/monitor/{id}?group_states=all` | one monitor | a GET |
 | `tags` | — | none of its own | tags arrive on the payloads above | — |
 | `apm_topology` *(off)* | declared when the capability is built | — | — | — |
-| `changes` *(off)* | declared when the capability is built | — | — | — |
+| `changes` *(off)* | list events | `GET /api/v2/events` (`filter[from]`, `filter[to]`, `filter[query]`, `sort`, `page[limit]`, `page[cursor]`) | the events of a window, filtered by the configured sources and tags, paged by cursor | a GET; the endpoint reads the event stream and has no field that posts, edits or deletes one. Built against the published shape (T092), not yet verified against a live organisation |
 
 Every operation is on the default capabilities' list **only if** its capability is enabled; a disabled
 capability's operations are not declared at all (FR-008b), so the transport refuses them.

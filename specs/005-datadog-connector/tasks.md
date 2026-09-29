@@ -377,8 +377,11 @@ Built only when an organisation with tracing needs it. Until then SC-001/SC-002 
 applicable and SC-024 is asserted instead.
 
 - [X] T089 [US1] Assert SC-024 now, before any APM code exists: with `apm_topology` off, zero APM scopes, calls and derived events, the checkpoint names the capability as disabled; fixture: datadog-backend-logs-01
-  - Done 2026-09-29: `internal/feeders/datadog/capability_silence_test.go` asserts, over every datadog-* fixture, that the default configuration allows no APM or events scope, declares no APM, span, trace or event-stream operation, emits no event outside the enabled capabilities' kinds and namespaces, and that every checkpoint states `apm_topology=off`; datadog-backend-logs-01's run also asserts no span, APM or event-stream request. SC-024's last clause (goldens identical with the capability on) is not applicable while ParseCapabilities refuses to enable an unbuilt capability, and becomes a test with Phase 10.
+  - Done 2026-09-29: `internal/feeders/datadog/capability_silence_test.go` asserts, over every datadog-* fixture, that the default configuration allows no APM or events scope, declares no APM, span, trace or event-stream operation, emits no event outside the enabled capabilities' kinds and namespaces, and that every checkpoint states `apm_topology=off`; datadog-backend-logs-01's run also asserts no span, APM or event-stream request. SC-024's last clause (goldens identical with the capability on) is not applicable while ParseCapabilities refuses to enable an unbuilt capability: it became a test for `changes` with T092, and becomes one for `apm_topology` with T090.
 - [ ] T090 [US1] Register the APM metric and span vocabularies, declare the APM operations under the capability, and implement section B (FR-009–FR-017) with its fixture and the on/off golden identity of every other capability — **deferred until needed**; fixture: datadog-apm-topology-01
+  - *Deferred 2026-09-29 (T090):* the organisation has no tracing. With APM, the read side (backend terms:
+    `error_spans`, latency by version) comes first, the topology feeder second. T089 asserts the capability
+    is silent while off.
 
 ---
 
@@ -386,10 +389,20 @@ applicable and SC-024 is asserted instead.
 
 - [X] T091 [US3] Assert the `changes` capability is silent and stated while off, as T089; fixture: datadog-backend-logs-01
   - Done 2026-09-29 with T089, in the same tests: `changes=off` is stated in every checkpoint, `events_read` is never allowed, and the only change events are log-observed rollouts.
-- [ ] T092 [US3] Implement section D (FR-027–FR-033b) with `events_read` declared only under the capability, claims through the published `deploy.*` keys, and a fixture where a Datadog deploy event and a Kubernetes rollout appear once (SC-014) — **deferred until needed**; fixture: datadog-events-merge-01
-  - *Deferred 2026-09-29 (T090, T092):* the organisation has no tracing and sends no deploy events to
-    Datadog. With APM, the read side (backend terms: `error_spans`, latency by version) comes first,
-    the topology feeder second. T089 and T091 already assert both capabilities are silent while off.
+- [X] T092 [US3] Implement section D (FR-027–FR-033b) with `events_read` declared only under the capability, claims through the published `deploy.*` keys, and a fixture where a Datadog deploy event and a Kubernetes rollout appear once (SC-014); fixture: datadog-events-merge-01
+  - Done 2026-09-29: the `changes` capability is built and off by default (`internal/feeders/datadog/events.go`,
+    `events_poll.go`; `GET /api/v2/events` and `events_read` declared only under it; flags `--change-sources`,
+    `--change-tags`, `--events-interval`). An in-scope event is one CHANGE valid at Datadog's instant, "other"
+    with the vendor's kind kept where the taxonomy has none, unattached where it names no target, an actor
+    kind from the trigger tag and the source (UNKNOWN with the evidence otherwise, never from the name), and,
+    for a deployment only, `deploy.commit_sha`, `deploy.image` and `deploy.release` correlation keys with the
+    environment. The connector merges nothing: `datadog-events-merge-01` shows C9 and then C8 collapsing the
+    event and the cluster's rollout into one change (SC-014), the events read repeated over its overlap
+    adding nothing. The scope is applied by the poller and stated in every events checkpoint (FR-029);
+    a recording drops the actor's name (a people identifier survives in no form) and keeps the kind.
+    SC-024's last clause is now a test (`TestEveryOtherCapabilityIsByteIdenticalWithChangesOnAndOff`).
+    **Built against the published Events API shape and not yet verified against a live organisation**: the
+    organisation sends no events and its key lacks `events_read` (docs/connectors/datadog.md §5).
 
 ---
 

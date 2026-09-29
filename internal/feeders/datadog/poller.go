@@ -37,6 +37,19 @@ type Measurer interface {
 	Sightings(ctx context.Context, src LogSource, facet string, from, to time.Time, horizon time.Duration, known map[string]bool) ([]ValueSighting, error)
 }
 
+// EventsQuery is one page of the events read: the window, the server-side filter, and the cursor.
+type EventsQuery struct {
+	Query    string
+	From, To time.Time
+	Cursor   string
+	Limit    int
+}
+
+// EventPager reads one page of the event stream as its raw body (the `changes` capability).
+type EventPager interface {
+	ListEventsPage(ctx context.Context, q EventsQuery) ([]byte, error)
+}
+
 // DefaultPageSize is the monitor list's page size.
 const DefaultPageSize = 100
 
@@ -57,7 +70,15 @@ type Poller struct {
 	VersionOverrides map[string]string
 	DiscoveryWindow  time.Duration
 	Capabilities     Capabilities
-	Now              func() time.Time
+	// Events reads the event stream, and Changes is what counts as a change in it; both are required
+	// when the `changes` capability is on. EventsInterval, EventsOverlap and EventsHistory default to
+	// the events.go constants and to DefaultHistory.
+	Events         EventPager
+	Changes        ChangeScope
+	EventsInterval time.Duration
+	EventsOverlap  time.Duration
+	EventsHistory  time.Duration
+	Now            func() time.Time
 	// Push hands a payload to the feeder's source.
 	Push func(ctx context.Context, p feeder.Payload) error
 
@@ -69,6 +90,9 @@ type Poller struct {
 	Usage func() string
 
 	pollNow chan struct{}
+	// eventsTo is where the last complete events window ended; the next reaches back from it by the
+	// overlap. A restarted poller starts from the history instead, and the ids make the re-read a no-op.
+	eventsTo time.Time
 	// resumeAt is when Datadog said to read again after a 429; nothing is read before it.
 	resumeAt time.Time
 	// envFields are the environment fields discovered per source, so the discovery is paid for once;
@@ -258,7 +282,7 @@ func (p *Poller) failure(area Area, err error) string {
 // takeDeferred lists the deferred areas in the published order, and clears them.
 func (p *Poller) takeDeferred() []string {
 	var out []string
-	for _, a := range []Area{AreaMonitors, AreaDiscovery, AreaRollouts, AreaInvestigation} {
+	for _, a := range []Area{AreaMonitors, AreaDiscovery, AreaChanges, AreaRollouts, AreaInvestigation} {
 		if p.deferred[a] {
 			out = append(out, string(a))
 		}
@@ -291,8 +315,18 @@ func (p *Poller) Run(ctx context.Context) error {
 	if err := p.PollOnce(ctx); err != nil {
 		return err
 	}
+	if err := p.PollEvents(ctx); err != nil {
+		return err
+	}
 	poll := time.NewTicker(interval)
 	defer poll.Stop()
+	// The events ticker exists only under the changes capability; a nil channel never fires.
+	var events <-chan time.Time
+	if p.eventsEnabled() {
+		ticker := time.NewTicker(p.eventsInterval())
+		defer ticker.Stop()
+		events = ticker.C
+	}
 	discover := time.NewTicker(discovery)
 	defer discover.Stop()
 	for {
@@ -302,6 +336,8 @@ func (p *Poller) Run(ctx context.Context) error {
 			return nil
 		case <-poll.C:
 			err = p.PollOnce(ctx)
+		case <-events:
+			err = p.PollEvents(ctx)
 		case <-p.pollNow:
 			err = p.PollOnce(ctx)
 		case <-discover.C:

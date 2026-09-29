@@ -88,6 +88,7 @@ And the pieces that came after the first draft of this file:
 ```bash
 bin/aisre fixture verify fixtures/datadog-tags-01 --db "$PG_DSN"              # owners and identity claims from tags
 bin/aisre fixture verify fixtures/datadog-monitor-to-owner-01 --db "$PG_DSN"  # SC-016's corpus
+bin/aisre fixture verify fixtures/datadog-events-merge-01 --db "$PG_DSN"      # SC-014: an event and a rollout, once (changes; unverified live)
 go test ./internal/cli/ -run 'SC016FromADatadogMonitorIDAlone'                 # monitor id → alert, watched, changes, owner, pointers
 ```
 

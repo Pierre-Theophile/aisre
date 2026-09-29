@@ -241,6 +241,17 @@ func (c *Client) ListMonitorsPage(ctx context.Context, tags string, page, pageSi
 	return resp.Body, nil
 }
 
+// ListEventsPage issues one page of the event stream over q's window and returns the raw body, which
+// the poller filters to the configured scope and a feeder replays. The parameters are Datadog's
+// published ones; the operation is a GET and has no body.
+func (c *Client) ListEventsPage(ctx context.Context, q ddfeeder.EventsQuery) ([]byte, error) {
+	resp, err := c.ListEvents(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
+}
+
 // Usage is the usage report of the client's budget, empty without one. The feeder and the backend each
 // build their own client and budget, so each reports its own calls (FR-084a).
 func (c *Client) Usage() string {
