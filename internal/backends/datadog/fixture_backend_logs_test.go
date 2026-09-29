@@ -186,7 +186,13 @@ func crossProduct(t *testing.T, b *ddbackend.Backend, terms []*engine.Term) ([]*
 
 func backendLive(t *testing.T, lines []twinLine) (*ddbackend.Backend, *twin) {
 	t.Helper()
-	tw := &twin{t: t, lines: lines, monitor: backendMonitor()}
+	return backendLiveRefusing(t, lines, "")
+}
+
+// backendLiveRefusing is backendLive over a twin whose aggregate will not group by ungroupable.
+func backendLiveRefusing(t *testing.T, lines []twinLine, ungroupable string) (*ddbackend.Backend, *twin) {
+	t.Helper()
+	tw := &twin{t: t, lines: lines, monitor: backendMonitor(), ungroupable: ungroupable}
 	b, _ := liveBackend(t, tw.ServeHTTP)
 	return b, tw
 }
@@ -236,6 +242,12 @@ type graphHalf struct {
 // live twin over terms and the handles they mint.
 func generateBackendFixture(t *testing.T, fixture string, lines []twinLine, terms []*engine.Term, half graphHalf) {
 	t.Helper()
+	generateBackendFixtureRefusing(t, fixture, lines, terms, half, "")
+}
+
+// generateBackendFixtureRefusing is generateBackendFixture over a twin that will not group by ungroupable.
+func generateBackendFixtureRefusing(t *testing.T, fixture string, lines []twinLine, terms []*engine.Term, half graphHalf, ungroupable string) {
+	t.Helper()
 	dir := filepath.Join(repoRoot(t), fixture)
 	for _, generated := range []string{"world", "events.jsonl", "rejected.jsonl", "manifest.yaml"} {
 		if err := os.RemoveAll(filepath.Join(dir, generated)); err != nil {
@@ -247,7 +259,7 @@ func generateBackendFixture(t *testing.T, fixture string, lines []twinLine, term
 	}
 	writeBackendGraphHalf(t, dir, filepath.Base(fixture), half)
 
-	live, _ := backendLive(t, lines)
+	live, _ := backendLiveRefusing(t, lines, ungroupable)
 	recorder, err := sdk.NewRecorderWithOptions(filepath.Join(dir, "world"), sdk.RecordOptions{
 		DrillDownDepth:         1,
 		WindowGrid:             []*investigationv1.WindowPair{engine.NewWindowPair(backendDeploy, 20*time.Minute)},

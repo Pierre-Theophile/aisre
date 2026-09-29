@@ -143,8 +143,21 @@ world recording with the miss rate at or below the threshold, and zero APM or sp
 - [X] T038 [US5] Implement `compare` in `internal/backends/datadog/compare.go` over aggregate counts per window, coverage stating log-derived counts (FR-040b); fixture: datadog-backend-logs-01
 - [X] T039 [US5] Implement `onset` in `internal/backends/datadog/onset.go`: aggregate count timeseries, change point via `pkg/backend/onset`, no sample crossing the digest boundary; fixture: datadog-backend-logs-01
 - [X] T040 [US5] Implement `new_log_patterns` in `internal/backends/datadog/logpatterns.go`: bounded paged sample, backend-side mining with variables masked, sample stated against the window's aggregate total; reuse 003's miner, lifting it into `pkg/backend` if it proves GCP-specific ([research.md §4](./research.md)); fixture: datadog-backend-logs-01
-- [ ] T041 [US5] Close research §5 O1 before T042: record one read-only aggregate grouped by a faceted and by a non-faceted attribute, and by the `version` tag, as sanitised fixture payloads, and state the answer in [research.md](./research.md) §5; fixture: datadog-errors-by-version-01
-- [ ] T042 [US5] Implement `errors_by_version` in `internal/backends/datadog/errors_by_version.go`: two aggregates (errors, total) grouped by the term's attribute with the `missing` sentinel, each group normalised via `versionstamp` into `deploy_ref` or its reason; the sampled fallback where O1 says the attribute is not groupable ([contracts/datadog-telemetry-backend.md](./contracts/datadog-telemetry-backend.md) §3.1); fixture: datadog-errors-by-version-01
+- [X] T041 [US5] Close research §5 O1 before T042: record one read-only aggregate grouped by a faceted and by a non-faceted attribute, and by the `version` tag, as sanitised fixture payloads, and state the answer in [research.md](./research.md) §5; fixture: datadog-errors-by-version-01
+  - *Done 2026-09-29 (T041):* five read-only aggregates against the organisation's one log service over
+    the last hour, more than ten seconds apart, all HTTP 200: a faceted field (1 bucket), two attributes
+    that are not facets (32 and 4 buckets), the `version` tag (1 bucket, all in the `missing` group, as the
+    lines carry no stamp) and an SDK `@version` on start-up lines only (2 buckets). The aggregate therefore
+    groups by a non-faceted attribute and the `missing` sentinel works; research §5 O1 is closed on that.
+    The answers are recorded as text and as a twin case, not as payloads: a raw aggregate carries the
+    organisation's service and attribute values, and the twin's refused-group-by case (a synthetic 400)
+    is what the fallback needs.
+- [X] T042 [US5] Implement `errors_by_version` in `internal/backends/datadog/errors_by_version.go`: two aggregates (errors, total) grouped by the term's attribute with the `missing` sentinel, each group normalised via `versionstamp` into `deploy_ref` or its reason; the sampled fallback where O1 says the attribute is not groupable ([contracts/datadog-telemetry-backend.md](./contracts/datadog-telemetry-backend.md) §3.1); fixture: datadog-errors-by-version-01
+  - *Done 2026-09-29 (T042):* a 400 from the aggregate, and only a 400, sends the term to the sampled
+    path: `sample.go`'s newest-first read up to `LineCap`, grouped client-side, each group normalised as
+    before, PARTIAL where the cap stopped it, and `coverage.sampling` stating the lines read and why. The
+    fixture gained a second term over an attribute the twin refuses to group by; the recorded world
+    holds both answers and the identity test replays them against the live twin.
 - [X] T043 [US5] Implement `monitor_state` in `internal/backends/datadog/monitor_state.go` from `group_states`, marked sampled where derived from polls (FR-046); fixture: datadog-backend-logs-01
 - [X] T044 [US5] Implement `error_spans` as `NO_DATA` naming "no span data source configured for this organisation" while `apm_topology` is off (FR-049b); fixture: datadog-backend-logs-01
 - [X] T045 [US5] Implement `exemplars` (explicit request only, masked, capped) and `drill_down` (handles are references; deep links carry no credential) in `internal/backends/datadog/exemplars.go` and `drilldown.go` (FR-044a, FR-048c); fixture: datadog-backend-logs-01
@@ -158,7 +171,7 @@ world recording with the miss rate at or below the threshold, and zero APM or sp
     as is (`internal/investigation/workers/logs`); it is not GCP-specific, so nothing was lifted.
     `compare` over logs states COUNT, RATE and ERROR_RATE and refuses a latency percentile. A
     `datadog-monitor/v1` pointer carries its id in the published attribute `datadog.monitor.id`.
-    T042 is written except its sampled fallback, which waits on T041 (O1). The recorded-mode
+    T042's sampled fallback is in `errors_by_version.go` (T041 closed O1). The recorded-mode
     identity over the twin is T048/T051.
 - [X] T048 [US5] Build `fixtures/datadog-backend-logs-01`: a synthetic structural twin with a world recording over the full algebra cross product, and one event the graph must refuse (FR-078); fixture: datadog-backend-logs-01
 - [X] T049 [P] [US5] Build `fixtures/datadog-errors-by-version-01`: a stamped service whose errors rise with a new commit, a group of abbreviated shas, and a group of lines with no stamp; goldens show `deploy_ref` per group; fixture: datadog-errors-by-version-01
