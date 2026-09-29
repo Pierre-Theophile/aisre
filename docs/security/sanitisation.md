@@ -266,7 +266,7 @@ is why recording must **start** before the campaign scope is agreed.
 
 ```bash
 # Once per campaign. The key is never committed; store it where a human chose to.
-export SRE_AGENT_CORPUS_KEY=$(aisre feed gcp --print-corpus-key)
+export SRE_AGENT_CORPUS_KEY=$(openssl rand -hex 32)
 
 # Seed canaries into the source data BEFORE recording starts, and record what was planted.
 aisre feed gcp --seed-canaries --campaign nova-production-2026-09

@@ -182,6 +182,56 @@ func TestAddScopeClosesTheOpenWindowAndOpensTheNext(t *testing.T) {
 	}
 }
 
+// A Datadog-only campaign (005 T082): the window carries the Datadog scope, needs no project and no
+// mailbox, and a site with no environment is refused rather than read as "all".
+func TestADatadogCampaignRecordsItsScopeWithoutProjects(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "campaign-dd")
+	_, stderr, code := run(t, t.Context(), "fixture", "campaign", "record", dir,
+		"--org", "twin", "--started-at", "2026-09-01T09:00:00Z",
+		"--datadog-site", "datadoghq.eu")
+	if code == ExitOK {
+		t.Error("a Datadog scope naming no environment was accepted")
+	}
+	if !strings.Contains(stderr, "names no environment") {
+		t.Errorf("the refusal reads %s", stderr)
+	}
+
+	_, stderr, code = run(t, t.Context(), "fixture", "campaign", "record", dir,
+		"--org", "twin", "--started-at", "2026-09-01T09:00:00Z",
+		"--datadog-site", "datadoghq.eu", "--datadog-env", "production",
+		"--datadog-watch", "production/checkout",
+		"--signatory", "the platform owner")
+	if code != ExitOK {
+		t.Fatalf("record exited %d: %s", code, stderr)
+	}
+	r, err := campaign.Read(dir)
+	if err != nil {
+		t.Fatalf("the record does not read back: %v", err)
+	}
+	dd := r.Scopes[0].Datadog
+	if dd == nil || dd.Site != "datadoghq.eu" || len(dd.Environments) != 1 || len(dd.LogSources) != 1 {
+		t.Fatalf("the window's Datadog scope reads back as %+v", dd)
+	}
+	if len(r.Scopes[0].Projects) != 0 {
+		t.Errorf("a Datadog-only window names projects: %v", r.Scopes[0].Projects)
+	}
+
+	_, stderr, code = run(t, t.Context(), "fixture", "campaign", "record", dir,
+		"--add-scope", "2026-09-02T09:00:00Z",
+		"--datadog-site", "datadoghq.eu", "--datadog-env", "production,staging",
+		"--scope-why", "staging added")
+	if code != ExitOK {
+		t.Fatalf("record --add-scope with a Datadog scope exited %d: %s", code, stderr)
+	}
+	r, err = campaign.Read(dir)
+	if err != nil {
+		t.Fatalf("the record does not read back after the scope change: %v", err)
+	}
+	if len(r.Scopes) != 2 || len(r.Scopes[1].Datadog.Environments) != 2 {
+		t.Errorf("the new window does not carry the new Datadog scope: %+v", r.Scopes)
+	}
+}
+
 // The second-signature rule, driven through the command, and the two ways it gets defeated.
 func TestSigningRefusesAnUndeclaredSignerAndATeamOfOne(t *testing.T) {
 	dir := campaignFixture(t)
