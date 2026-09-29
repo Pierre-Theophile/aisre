@@ -431,6 +431,52 @@ grammar.
 **Join roles.** None: a monitor's `by {…}` group names are its grouping, not the entity's, and are
 carried as attributes.
 
+### `datadog-apm-metric/v1` — a service's Datadog APM trace metrics
+
+**Backend kind** `datadog` · **executed by** `GET /api/v1/query` · added by feature 005, minted only
+when the `apm_topology` capability is enabled
+
+```
+service:checkout env:production span:http.request
+```
+
+`service:<v>` and `env:<v>` always, and `span:<name>`, the operation Datadog derives the service's
+trace metrics from: `trace.<span>.hits`, `trace.<span>.errors` and the duration percentiles. No
+wildcard on `service`, no free text; the organisation, the site host and any credential are never in
+it. The backend builds the metric names from the span name, so a pointer names the operation and not
+the metric.
+
+**Why not `otel-semconv`.** The instrument is not a name the entity chose: Datadog derives it from the
+operation name (`trace.http.request.hits`), and the scope is Datadog's tag grammar. Expressed as
+attributes, the selector would name neither the metric nor the tag to filter it by, and the backend
+would have to guess both.
+
+**Join roles.** `version` is `version`, the tag Datadog stamps from `DD_VERSION`. `host` is `host`.
+`workload`, `pod` and `trace` are omitted: a metric has no trace, and the pod is not a tag the trace
+metrics carry.
+
+### `datadog-spans/v1` — a service's Datadog spans
+
+**Backend kind** `datadog` · **executed by** `POST /api/v2/spans/analytics/aggregate`, a named query
+operation (ADR-0010 item 3) · added by feature 005, minted only when the `apm_topology` capability is
+enabled
+
+```
+service:checkout env:production
+```
+
+A published subset of Datadog's span-search syntax: `service:<v>` and `env:<v>` always, and at most the
+tag and attribute terms the backend itself adds (`status:error`, `@peer.service:<v>`). No free text and
+no wildcard on `service`.
+
+**Why not `otel-semconv`.** As for `datadog-logs/v1`: the grammar distinguishes a **tag**
+(`version:x`) from an **attribute** (`@peer.service:x`, `@http.status_code:500`), which are different
+fields with different contents, and `otel-semconv/1.30` has one flat attribute space that cannot state
+the difference.
+
+**Join roles.** `version` is `version`, `host` is `host`, `trace` is `trace_id`. `workload` and `pod`
+are omitted.
+
 ### Adding one
 
 A new vocabulary is a schema change (constitution IX): version it in the name the way the ones above

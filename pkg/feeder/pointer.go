@@ -156,6 +156,19 @@ const (
 	// composite grammars, each with its own aggregation and threshold syntax, and a monitor query is
 	// only meaningful in its type's grammar. Contract §2.
 	VocabDatadogMonitor = "datadog-monitor/v1"
+
+	// VocabDatadogAPMMetric selects one service's APM trace metrics: `service:<v> env:<v> span:<name>`,
+	// the span name being the operation Datadog derives `trace.<span>.hits`, `.errors` and the duration
+	// percentiles from. Registered with the apm_topology capability and minted only under it. Not
+	// otel-semconv-expressible: the metric names are Datadog's own, derived from the operation name, and
+	// the scope is Datadog's tag grammar, where a Prometheus-style label selector would name none of
+	// them. Contract pointer-vocabularies.md §3.
+	VocabDatadogAPMMetric = "datadog-apm-metric/v1"
+	// VocabDatadogSpans selects one service's spans: `service:<v> env:<v>` in Datadog's span-search
+	// grammar, where a tag (`version:x`) and an attribute (`@http.status_code:500`) are different fields,
+	// as in the log grammar. Registered with the apm_topology capability and minted only under it.
+	// Contract pointer-vocabularies.md §4.
+	VocabDatadogSpans = "datadog-spans/v1"
 )
 
 // AttrDatadogMonitorID is the pointer attribute a `datadog-monitor/v1` pointer carries its monitor id
@@ -164,7 +177,7 @@ const (
 const AttrDatadogMonitorID = "datadog.monitor.id"
 
 // DatadogVocabularies is the set registered by feature 005, in the order the page documents them.
-var DatadogVocabularies = []string{VocabDatadogLogs, VocabDatadogMonitor}
+var DatadogVocabularies = []string{VocabDatadogLogs, VocabDatadogMonitor, VocabDatadogAPMMetric, VocabDatadogSpans}
 
 // VocabURL is a dashboard's URL or identifier in its backend. There is no OpenTelemetry vocabulary
 // for "a dashboard", which is the documented reason DashboardPointer does not use one.
@@ -188,6 +201,8 @@ var Vocabularies = []string{
 	VocabGCPTraceFilter,
 	VocabDatadogLogs,
 	VocabDatadogMonitor,
+	VocabDatadogAPMMetric,
+	VocabDatadogSpans,
 }
 
 // GCPVocabularies is the set registered by feature 003, in the order

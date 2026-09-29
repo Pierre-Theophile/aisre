@@ -81,10 +81,11 @@ func TestADisabledCapabilityDeclaresNothing(t *testing.T) {
 }
 
 // A capability that is specified but not built cannot be enabled, so it can never be half-enabled.
-// `changes` is built (T092) and off by default; `apm_topology` is not.
+// `changes` (T092) and `apm_topology` (T090) are built and off by default; a name outside the published
+// set is refused.
 func TestAnUnbuiltCapabilityCannotBeEnabled(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"apm_topology", "incidents"} {
+	for _, name := range []string{"incidents", "apm"} {
 		if _, err := ddfeeder.ParseCapabilities("logs," + name); err == nil {
 			t.Errorf("capability %q was accepted", name)
 		}

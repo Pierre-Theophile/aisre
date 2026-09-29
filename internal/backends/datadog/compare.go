@@ -21,13 +21,16 @@ import (
 // A log pointer can state three statistics honestly: a COUNT of lines, their RATE per second, and the
 // ERROR_RATE — error-level lines over all lines. Each window is one aggregate grouped by status, so
 // the numerator and the denominator come from the same call. A latency percentile is not a property
-// of a log count, and is refused rather than approximated; with apm_topology it gains the APM metric
-// surface (contract §2, last paragraph).
+// of a log count, and is refused rather than approximated; with apm_topology a pointer in the APM metric
+// vocabulary gains it from Datadog's trace metrics (apm.go; contract §2, last paragraph).
 
 // errorStatus is the status an error-level line carries: the same clause errors_by_version uses.
 const errorStatus = "error"
 
 func (b *Backend) compare(ctx context.Context, term *investigationv1.CompareTerm) (answer, error) {
+	if b.apm && term.GetPointer().GetVocabulary() == feeder.VocabDatadogAPMMetric {
+		return b.apmCompare(ctx, term)
+	}
 	raw := term.GetPointer().GetSelector()
 	sel, err := parseSelector(raw)
 	if err != nil {

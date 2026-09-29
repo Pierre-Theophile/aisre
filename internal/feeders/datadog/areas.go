@@ -14,10 +14,10 @@ import (
 // Areas and quota stops (005 T084, T085; contract §5).
 //
 // Every live call is drawn for an area, and the areas are ranked by the published deferral order:
-// transitions and monitor definitions (one read), then discovery, then the event stream, then rollout
-// detection. The client's budget (internal/datadogx/budget.go) makes a lower area leave part of the
-// share for the areas ahead of it, so under pressure the connector stops looking for new versions
-// first and stops reading alert transitions last.
+// transitions and monitor definitions (one read), then discovery, then the event stream, then the APM
+// topology, then rollout detection. The client's budget (internal/datadogx/budget.go) makes a lower
+// area leave part of the share for the areas ahead of it, so under pressure the connector stops looking
+// for new versions first and stops reading alert transitions last.
 
 // Area is what a call is for.
 type Area string
@@ -32,13 +32,17 @@ const (
 	// AreaChanges is the event stream read as a change source (section D). It yields before discovery
 	// does and after rollout detection: an event an organisation posted is a statement, where a
 	// rollout inferred from logs is a bound.
-	AreaChanges       Area = "changes"
+	AreaChanges Area = "changes"
+	// AreaTopology is the APM service map, read for its structure (section B). It yields after the event
+	// stream and before rollout detection: a dependency Datadog states is structure an investigation
+	// walks, where a rollout inferred from logs is a bound.
+	AreaTopology      Area = "topology"
 	AreaRollouts      Area = "rollouts"
 	AreaInvestigation Area = "investigation"
 )
 
 // MinHeadroom is the share of the window's allowance an area must leave unspent.
-var MinHeadroom = map[Area]float64{AreaMonitors: 0, AreaInvestigation: 0, AreaDiscovery: 0.25, AreaChanges: 0.35, AreaRollouts: 0.5}
+var MinHeadroom = map[Area]float64{AreaMonitors: 0, AreaInvestigation: 0, AreaDiscovery: 0.25, AreaChanges: 0.35, AreaTopology: 0.4, AreaRollouts: 0.5}
 
 type areaKey struct{}
 

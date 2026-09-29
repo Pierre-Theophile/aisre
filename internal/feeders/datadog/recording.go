@@ -101,6 +101,8 @@ func PreparePayload(san *sanitise.Sanitiser) func(kind string, raw []byte) ([]by
 			return raw, nil
 		case PayloadEvents:
 			return prepareEvents(san, raw)
+		case PayloadTopology:
+			return prepareTopology(san, raw)
 		default:
 			return nil, fmt.Errorf("datadog: no pre-pass for payload kind %q", kind)
 		}
@@ -255,6 +257,52 @@ func prepareEvents(san *sanitise.Sanitiser, raw []byte) ([]byte, error) {
 	return json.Marshal(page)
 }
 
+// prepareTopology pseudonymises every identifier a topology window names — the environment, each service
+// (as a service, a caller or a callee), each host and each operation — with the keyed pseudonym for its
+// kind, so the recording's edges join the recording's nodes and its log sources under the same tokens. A
+// version is kept: it is the join to the deploy feeders' changes. The failure reason is withheld, since
+// the vendor's words quote URLs and names.
+func prepareTopology(san *sanitise.Sanitiser, raw []byte) ([]byte, error) {
+	var p TopologyPayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, err
+	}
+	var err error
+	id := func(kind sanitise.Kind, value string) string {
+		if err != nil || value == "" {
+			return value
+		}
+		var out string
+		out, err = san.Identifier(kind, value)
+		return out
+	}
+	p.Env = id(sanitise.KindEnvironment, p.Env)
+	for i := range p.Services {
+		p.Services[i].Name = id(sanitise.KindService, p.Services[i].Name)
+		for j := range p.Services[i].Calls {
+			p.Services[i].Calls[j] = id(sanitise.KindService, p.Services[i].Calls[j])
+		}
+	}
+	for i := range p.Traffic {
+		p.Traffic[i].Caller, p.Traffic[i].Callee = id(sanitise.KindService, p.Traffic[i].Caller), id(sanitise.KindService, p.Traffic[i].Callee)
+	}
+	for i := range p.Versions {
+		p.Versions[i].Service = id(sanitise.KindService, p.Versions[i].Service)
+	}
+	for i := range p.Operations {
+		p.Operations[i].Service, p.Operations[i].Operation = id(sanitise.KindService, p.Operations[i].Service),
+			id(sanitise.KindResource, p.Operations[i].Operation)
+	}
+	for i := range p.Hosts {
+		p.Hosts[i].Service, p.Hosts[i].Host = id(sanitise.KindService, p.Hosts[i].Service), id(sanitise.KindHost, p.Hosts[i].Host)
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.Reason = redactReason(p.Reason)
+	return json.Marshal(p)
+}
+
 // recordedVocabulary keeps a value the published vocabulary names and pseudonymises any other.
 func recordedVocabulary(san *sanitise.Sanitiser, value string, known func(string) bool) (text, error) {
 	if value == "" || known(value) {
@@ -350,6 +398,14 @@ func PseudonymousOptions(san *sanitise.Sanitiser, opts Options) (Options, error)
 		if keep {
 			out.Changes.Tags = append(out.Changes.Tags, clean)
 		}
+	}
+	out.Topology = TopologyScope{RetractAfter: opts.Topology.RetractAfter}
+	for _, env := range opts.Topology.Envs {
+		clean, err := san.Identifier(sanitise.KindEnvironment, env)
+		if err != nil {
+			return Options{}, err
+		}
+		out.Topology.Envs = append(out.Topology.Envs, clean)
 	}
 	out.VersionOverrides = map[string]string{}
 	for key, v := range opts.VersionOverrides {

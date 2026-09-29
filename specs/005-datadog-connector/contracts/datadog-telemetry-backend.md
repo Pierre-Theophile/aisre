@@ -44,8 +44,10 @@ answered, with `NO_DATA` naming the absent source (FR-049b) — never undeclared
 | `drill_down` | whichever surface minted the handle | `CHEAP` | the handle's |
 
 With `apm_topology` enabled, `compare`, `onset` and `error_spans` gain the APM metric and span
-surfaces, and the coverage block names which one answered (FR-040b's last paragraph). That row set is
-specified with the capability and not built before it.
+surfaces, and the coverage block names which one answered (FR-040b's last paragraph). Built with T090
+for `compare` (over a `datadog-apm-metric/v1` pointer: COUNT, RATE, ERROR_RATE, P50, P95, P99 from the
+trace metrics, per version) and `error_spans` (the span aggregate over the retained spans, coverage
+`datadog_apm:spans`). `onset` over the APM metrics is not built.
 
 ---
 

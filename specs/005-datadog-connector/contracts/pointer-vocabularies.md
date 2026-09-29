@@ -7,8 +7,8 @@ A pointer says where to look, never what was measured (constitution IV). A new v
 schema change: a `Vocab…` constant and an entry in `Vocabularies` in `pkg/feeder/pointer.go`, a
 `### name/vN` section under "Vocabularies" in `docs/schema/pointers.md`, and the reason the selector
 cannot be expressed in `otel-semconv` — checked against each other by
-`pkg/feeder/vocabularies_test.go`. This feature adds **two**, for the default capabilities. The APM
-metric and span vocabularies are registered with `apm_topology`, not before.
+`pkg/feeder/vocabularies_test.go`. This feature adds **two** for the default capabilities, and **two** more, §3 and §4, registered with
+`apm_topology` (T090) and minted only under it.
 
 Every Datadog pointer makes the split 003's pointers make: the **selector** is in Datadog's own
 grammar because it is what runs; the **attributes** identifying the entity are OpenTelemetry
@@ -52,7 +52,28 @@ the pointer is about without reading Datadog's grammar (FR-036).
 
 ---
 
-## 3. Rules shared by both
+## 3. `datadog-apm-metric/v1`
+
+- **Kind**: `METRIC`. **Backend**: `datadog`. **Executed by**: `GET /api/v1/query`.
+- **Selector**: `service:<v> env:<v> span:<name>`, exactly those three exact terms; the span name is the
+  operation Datadog derives `trace.<span>.hits`, `.errors` and the duration percentiles from. No wildcard,
+  no free text, no metric name.
+- **Why not OTel semantic conventions**: the instrument is derived by Datadog from the operation name and
+  the scope is Datadog's tag grammar; attributes would name neither.
+- **Join keys**: `version` → `version`, `host` → `host`. `workload`, `pod` and `trace` omitted.
+
+## 4. `datadog-spans/v1`
+
+- **Kind**: `TRACE`. **Backend**: `datadog`. **Executed by**: `POST /api/v2/spans/analytics/aggregate`.
+- **Selector**: `service:<v> env:<v>` in the span-search grammar, plus at most the terms the backend adds
+  (`status:error`, `@peer.service:<v>`).
+- **Why not OTel semantic conventions**: as §1, a tag (`version:x`) and an attribute (`@peer.service:x`) are
+  different fields.
+- **Join keys**: `version` → `version`, `host` → `host`, `trace` → `trace_id`.
+
+---
+
+## 5. Rules shared by all
 
 - **No organisation, site host, account or credential in any selector** (FR-037). The site lives in
   configuration; a `SOURCE_LINK` to Datadog uses the configured site's app host and carries no key.

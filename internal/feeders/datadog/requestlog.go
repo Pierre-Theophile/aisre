@@ -31,6 +31,14 @@ const (
 	// Changes: the event stream read as a change source (section D). Declared only when the `changes`
 	// capability is enabled, and the only one that needs `events_read`.
 	OpListEvents feeder.ReadOperation = "GET /api/v2/events"
+
+	// APM topology: the services and their dependencies, the APM trace metrics and the spans (section B).
+	// Declared only when the `apm_topology` capability is enabled, and the only ones that need `apm_read`
+	// and `apm_service_catalog_read`. Built from the published API shapes and not yet verified against a
+	// live organisation.
+	OpServiceDependencies feeder.ReadOperation = "GET /api/v1/service_dependencies"
+	OpQueryMetrics        feeder.ReadOperation = "GET /api/v1/query"
+	OpAggregateSpans      feeder.ReadOperation = "POST /api/v2/spans/analytics/aggregate"
 )
 
 // Platform is the connector's name, as it appears in a refusal.
@@ -77,6 +85,24 @@ var capabilityOps = map[Capability]map[feeder.ReadOperation]feeder.ReadOperation
 			Area: "changes",
 			Why: "list the events of a window, filtered by the configured sources and tags and paged by " +
 				"cursor; the endpoint reads the event stream and has no field that posts, edits or deletes one",
+		},
+	},
+	CapAPMTopology: {
+		OpServiceDependencies: {
+			Area: "topology",
+			Why: "list the services of an environment and the services each one calls; a read of the service " +
+				"map, with no field that creates, updates or deletes anything",
+		},
+		OpQueryMetrics: {
+			Area: "topology",
+			Why: "read a timeseries of APM trace metrics (hits, errors, duration percentiles) for a scope and " +
+				"a window; a metrics query, with no field that writes a metric",
+		},
+		OpAggregateSpans: {
+			Area: "topology",
+			Why: "named query: returns counts and duration percentiles of the spans matching the query in the " +
+				"body, grouped by facet; the endpoint has no field that creates, updates or deletes anything",
+			NamedQuery: true,
 		},
 	},
 	// CapTags issues nothing of its own: tags arrive on the payloads above.

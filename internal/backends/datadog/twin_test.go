@@ -25,6 +25,9 @@ type twin struct {
 	// ungroupable, when set, is an attribute the aggregate refuses to group by (a 400, as Datadog
 	// does for an attribute it cannot group). Each line then also carries its version in a tag of that name.
 	ungroupable string
+	// spans are the APM half's data (apm_twin_test.go); with none, the span and metrics operations answer
+	// empty, which a test that never enables apm_topology asserts is never asked.
+	spans []twinSpan
 
 	mu    sync.Mutex
 	paths []string
@@ -52,6 +55,10 @@ func (tw *twin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		tw.search(w, r)
 	case r.URL.Path == "/api/v2/logs/analytics/aggregate":
 		tw.aggregate(w, r)
+	case r.URL.Path == "/api/v2/spans/analytics/aggregate":
+		tw.spanAggregate(w, r)
+	case r.URL.Path == "/api/v1/query":
+		tw.metricsQuery(w, r)
 	default:
 		tw.t.Errorf("the twin was asked for %s %s, which this backend never declared", r.Method, r.URL.Path)
 		w.WriteHeader(http.StatusNotFound)

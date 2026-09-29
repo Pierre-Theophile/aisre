@@ -12,6 +12,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
+	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	ddfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/datadog"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
@@ -21,14 +22,15 @@ import (
 // names them as off. A disabled capability must read as "we were not looking", never as "there was
 // nothing there" (FR-008a, FR-008b).
 //
-// The last clause (every other capability's goldens byte-identical with these on and off) is testable for
-// `changes` since T092 built it: TestEveryOtherCapabilityIsByteIdenticalWithChangesOnAndOff runs the
-// fixtures that contain no events both ways. It stays not applicable for `apm_topology`, which
-// ParseCapabilities refuses to enable (TestAnUnbuiltCapabilityCannotBeEnabled), and becomes a test with
-// T090.
+// The last clause (every other capability's goldens byte-identical with these on and off) is a test for
+// both: TestEveryOtherCapabilityIsByteIdenticalWithChangesOnAndOff (T092) and
+// TestEveryOtherCapabilityIsByteIdenticalWithAPMTopologyOnAndOff (T090) run the fixtures that contain none
+// of the capability's payloads both ways.
 //
-// A fixture whose checkpoints state `changes=on` (datadog-events-merge-01) is the capability's own, and is
-// held to what it may emit instead: changes and the deploy claims of section D, nothing of APM.
+// A fixture whose checkpoints state `changes=on` (datadog-events-merge-01) or `apm_topology=on`
+// (datadog-apm-topology-01) is that capability's own, and is held to what it may emit instead: for
+// changes, the changes and deploy claims of section D; for apm_topology, the services, dependencies,
+// hosts and rollouts of section B, and nothing of the other.
 
 // offScopes are the scopes only the disabled capabilities need.
 func offScopes() map[string]ddfeeder.Capability {
@@ -84,6 +86,19 @@ var enabledNamespaces = map[string]bool{
 // What only the changes capability adds: an event's target may be a Kubernetes deployment.
 var changesNamespaces = map[string]bool{"k8s.deployment": true}
 
+// What only apm_topology adds: the hosts a service runs on.
+var apmNamespaces = map[string]bool{"datadog.host": true}
+
+// statesAPMOn is statesChangesOn for the apm_topology capability.
+func statesAPMOn(t *testing.T, file string) bool {
+	t.Helper()
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Contains(string(raw), "apm_topology=on")
+}
+
 // statesChangesOn reports whether the fixture's Datadog checkpoints state the changes capability on:
 // then it is that capability's own fixture, held to what it may emit rather than to silence.
 func statesChangesOn(t *testing.T, file string) bool {
@@ -105,6 +120,7 @@ func TestADisabledCapabilityIsSilentAndStatedInEveryFixture(t *testing.T) {
 	for _, file := range files {
 		fixture := filepath.Base(filepath.Dir(file))
 		changesOn := statesChangesOn(t, file)
+		apmOn := statesAPMOn(t, file)
 		f, err := os.Open(file)
 		if err != nil {
 			t.Fatal(err)
@@ -128,17 +144,20 @@ func TestADisabledCapabilityIsSilentAndStatedInEveryFixture(t *testing.T) {
 					checkpoints++
 					var c struct{ Note string }
 					_ = json.Unmarshal(body, &c)
-					wantChanges := "changes=off"
+					wantChanges, wantAPM := "changes=off", "apm_topology=off"
 					if changesOn {
 						wantChanges = "changes=on"
 					}
-					if !strings.Contains(c.Note, "apm_topology=off") || !strings.Contains(c.Note, wantChanges) {
-						t.Errorf("%s %s: the checkpoint does not state apm_topology off and %s:\n%s", fixture, id, wantChanges, c.Note)
+					if apmOn {
+						wantAPM = "apm_topology=on"
+					}
+					if !strings.Contains(c.Note, wantAPM) || !strings.Contains(c.Note, wantChanges) {
+						t.Errorf("%s %s: the checkpoint does not state %s and %s:\n%s", fixture, id, wantAPM, wantChanges, c.Note)
 					}
 				case "upsertEdge":
 					var e struct{ Type string }
 					_ = json.Unmarshal(body, &e)
-					if e.Type != "OWNED_BY" {
+					if e.Type != "OWNED_BY" && (!apmOn || (e.Type != "CALLS" && e.Type != "RUNS_ON")) {
 						t.Errorf("%s %s: a %s edge; only tags' ownership edges are emitted with apm_topology off", fixture, id, e.Type)
 					}
 				case "observeChange":
@@ -146,15 +165,16 @@ func TestADisabledCapabilityIsSilentAndStatedInEveryFixture(t *testing.T) {
 						Props map[string]string
 					}
 					_ = json.Unmarshal(body, &c)
-					if !changesOn && c.Props["sre.change.valid_from_is_a_bound"] != "first_seen_in_logs" {
-						t.Errorf("%s %s: a change not observed in logs; with changes off none is emitted", fixture, id)
+					bound := c.Props["sre.change.valid_from_is_a_bound"]
+					if !changesOn && bound != "first_seen_in_logs" && (!apmOn || bound != "first_seen_in_apm") {
+						t.Errorf("%s %s: a change not observed in logs; with changes off and apm_topology off none is emitted", fixture, id)
 					}
 				}
 				if op == "identityClaim" {
 					continue // tags: an allowlisted tag names another platform's identity, whatever its namespace
 				}
 				for _, ns := range namespacesIn(body) {
-					if !enabledNamespaces[ns] && (!changesOn || !changesNamespaces[ns]) {
+					if !enabledNamespaces[ns] && (!changesOn || !changesNamespaces[ns]) && (!apmOn || !apmNamespaces[ns]) {
 						t.Errorf("%s %s: %s carries namespace %q, which no enabled capability emits", fixture, id, op, ns)
 					}
 				}
@@ -258,6 +278,89 @@ func TestEveryOtherCapabilityIsByteIdenticalWithChangesOnAndOff(t *testing.T) {
 		if !strings.Contains(checkpointNotes(run(t, offOpts, set.payloads...)), "changes=off") ||
 			!strings.Contains(checkpointNotes(run(t, onOpts, set.payloads...)), "changes=on") {
 			t.Errorf("%s: a checkpoint does not state the capability as it was configured", name)
+		}
+	}
+}
+
+// SC-024, last clause (T090): every other capability's output is byte-identical with `apm_topology` on and
+// off, over the payloads that contain no topology. The two runs read the same payloads; the only thing
+// that may differ is the checkpoint's statement of the capability. Nothing about a watched log source's
+// node, its pointers or its rollouts may move because APM is looking too.
+func TestEveryOtherCapabilityIsByteIdenticalWithAPMTopologyOnAndOff(t *testing.T) {
+	t.Parallel()
+	off := ddfeeder.DefaultCapabilities()
+	on := ddfeeder.DefaultCapabilities()
+	on[ddfeeder.CapAPMTopology] = true
+	scope := ddfeeder.TopologyScope{Envs: []string{"production", "staging"}}
+
+	sets := map[string]struct {
+		opts     ddfeeder.Options
+		payloads []feeder.Payload
+	}{
+		"rollouts": {ddfeeder.Options{OrgSlug: "twin"}, rolloutPayloads(t)},
+		"tags":     {ddfeeder.Options{OrgSlug: "twin"}, tagsPayloads(t)},
+	}
+	for _, fx := range monitorFixtures() {
+		sets[fx.dir] = struct {
+			opts     ddfeeder.Options
+			payloads []feeder.Payload
+		}{fixtureOptions(), fx.payloadsOf(t)}
+	}
+	for name, set := range sets {
+		offOpts, onOpts := set.opts, set.opts
+		offOpts.Capabilities = off
+		onOpts.Capabilities, onOpts.Topology = on, scope
+		serialise := func(opts ddfeeder.Options) []string {
+			var out []string
+			for _, ev := range run(t, opts, set.payloads...).Events() {
+				if c := ev.GetSourceCheckpoint(); c != nil {
+					c.Note = strings.ReplaceAll(c.Note, "apm_topology=off", "apm_topology=?")
+					c.Note = strings.ReplaceAll(c.Note, "apm_topology=on", "apm_topology=?")
+				}
+				raw, err := protojson.MarshalOptions{}.Marshal(ev)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, string(raw))
+			}
+			return out
+		}
+		a, b := serialise(offOpts), serialise(onOpts)
+		if len(a) == 0 {
+			t.Fatalf("%s: emitted nothing; the comparison would be vacuous", name)
+		}
+		if len(a) != len(b) {
+			t.Errorf("%s: %d events with apm_topology off, %d with it on", name, len(a), len(b))
+			continue
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				t.Errorf("%s: event %d differs with apm_topology on:\n off %s\n on  %s", name, i, a[i], b[i])
+				break
+			}
+		}
+		if !strings.Contains(checkpointNotes(run(t, offOpts, set.payloads...)), "apm_topology=off") ||
+			!strings.Contains(checkpointNotes(run(t, onOpts, set.payloads...)), "apm_topology=on") {
+			t.Errorf("%s: a checkpoint does not state the capability as it was configured", name)
+		}
+	}
+}
+
+// The other direction: the topology payloads of the APM fixture, read with apm_topology on, add only
+// what section B allows. A log source's node keeps its own props when APM states the same service.
+func TestTheTopologyFixtureAddsOnlyWhatSectionBAllows(t *testing.T) {
+	t.Parallel()
+	em := run(t, topoOptions(), topologyPayloads(t)...)
+	for _, ev := range em.Events() {
+		switch {
+		case ev.GetUpsertEdge() != nil:
+			if typ := ev.GetUpsertEdge().GetType(); typ != graphv1.EdgeType_CALLS && typ != graphv1.EdgeType_RUNS_ON {
+				t.Errorf("edge type %s", typ)
+			}
+		case ev.GetObserveChange() != nil:
+			if ev.GetObserveChange().GetChange().GetKind() != graphv1.ChangeKind_ROLLOUT {
+				t.Errorf("a %s change", ev.GetObserveChange().GetChange().GetKind())
+			}
 		}
 	}
 }

@@ -68,6 +68,9 @@ type feedDatadogOptions struct {
 	changeSources  []string
 	changeTags     []string
 	eventsInterval time.Duration
+	apmEnvs        []string
+	apmRetract     int
+	apmInterval    time.Duration
 }
 
 func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
@@ -92,7 +95,14 @@ func newFeedDatadogCommand(global *globalOptions) *cobra.Command {
 		"a monitor is in scope only if it carries every one of these key:value tags (FR-025c)")
 	flags.StringVar(&opts.capabilities, "capabilities", "logs,monitors,tags",
 		"enabled capabilities; changes reads Datadog's event stream and needs --change-sources or "+
-			"--change-tags; apm_topology is specified and not built in this release")
+			"--change-tags; apm_topology reads the APM service map and needs --apm-envs")
+	flags.StringSliceVar(&opts.apmEnvs, "apm-envs", nil,
+		"apm_topology capability: environments whose services and dependencies are read; repeatable, and "+
+			"recorded in every topology checkpoint (FR-009)")
+	flags.IntVar(&opts.apmRetract, "apm-retract-after", ddfeeder.DefaultTopologyRetractAfter,
+		"apm_topology capability: consecutive complete reads an edge may go unobserved before it is retracted")
+	flags.DurationVar(&opts.apmInterval, "apm-interval", ddfeeder.DefaultTopologyInterval,
+		"apm_topology capability: how often each environment is read, and the length of its window")
 	flags.StringSliceVar(&opts.changeSources, "change-sources", nil,
 		"changes capability: event sources (source_type_name) whose events are changes, e.g. jenkins; "+
 			"repeatable, and recorded in every events checkpoint (FR-029)")
@@ -146,6 +156,15 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 	} else if len(scope.Sources)+len(scope.Tags) > 0 {
 		return exitErrorf(ExitUsage, "feed datadog: --change-sources and --change-tags configure the changes "+
 			"capability, which is off; enable it with --capabilities to read the event stream (FR-008b)")
+	}
+	topology := ddfeeder.TopologyScope{Envs: opts.apmEnvs, RetractAfter: opts.apmRetract}
+	if caps.Enabled(ddfeeder.CapAPMTopology) {
+		if err := topology.Validate(); err != nil {
+			return exitErrorf(ExitUsage, "feed datadog: %v", err)
+		}
+	} else if len(topology.Envs) > 0 {
+		return exitErrorf(ExitUsage, "feed datadog: --apm-envs configures the apm_topology capability, which is "+
+			"off; enable it with --capabilities to read the service map (FR-008b)")
 	}
 	var sources []ddfeeder.LogSource
 	for _, spec := range opts.watch {
@@ -205,7 +224,7 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 	feederOpts := ddfeeder.Options{
 		OrgSlug: opts.orgSlug, Site: opts.site, Capabilities: caps, MonitorTags: opts.monitorTags,
 		PollInterval: opts.pollInterval, LogSources: sources, Log: logger, VersionOverrides: overrides,
-		Changes: scope,
+		Changes: scope, Topology: topology,
 	}
 	if err := feederOpts.Validate(); err != nil {
 		return exitErrorf(ExitUsage, "feed datadog: %v", err)
@@ -242,6 +261,7 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 			Capabilities: caps, Push: chanSource.Push,
 			Measurer: datadogx.Measurer{Client: client, Cache: datadogx.NewMeasureCache()}, VersionOverrides: overrides, Usage: usage,
 			Events: client, Changes: scope, EventsInterval: opts.eventsInterval,
+			Topology: client, TopologyScope: topology, TopologyInterval: opts.apmInterval,
 		}
 		if opts.doorbellListen != "" {
 			if bell, err = startDatadogDoorbell(ctx, opts, poller, logger); err != nil {
@@ -267,6 +287,9 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 				}
 				if err == nil {
 					err = poller.PollEvents(ctx)
+				}
+				if err == nil {
+					err = poller.PollTopology(ctx)
 				}
 			} else {
 				err = poller.Run(ctx)

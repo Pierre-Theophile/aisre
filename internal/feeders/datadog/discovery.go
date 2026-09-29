@@ -238,11 +238,15 @@ func (f *Feeder) emitMeasuredSource(ctx context.Context, em feeder.Emitter, src 
 		Meta: feeder.Meta{SourceObservedAt: at}, Ref: src.Ref(), Type: graphv1.NodeType_SERVICE,
 		DisplayName: src.Service, Props: built, Pointers: []*graphv1.Pointer{logPointer(src, v, hosts)},
 	}
+	// Under apm_topology the node is the log path's and APM's together: what APM states about the service
+	// is merged in, because a source's latest assertion of a node replaces its earlier one.
+	key := src.Ref().GetValue()
+	f.noteLogNode(key, feeder.UpsertNode(f.desc, "", fact).GetUpsertNode())
+	fact.Props, fact.Pointers = f.decorate(key, src.Env, src.Service, fact.Props, fact.Pointers)
 	digest, err := factDigest(fact)
 	if err != nil {
 		return err
 	}
-	key := src.Ref().GetValue()
 	f.mu.Lock()
 	previous, seen := f.verdicts[key]
 	f.verdicts[key] = digest
