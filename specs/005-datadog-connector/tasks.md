@@ -374,7 +374,8 @@ applicable and SC-024 is asserted instead.
 ## Phase 12: Polish & cross-cutting concerns
 
 - [X] T093 Write `docs/connectors/version-stamping.md` per [contracts/version-stamping.md](./contracts/version-stamping.md) §7: one recipe per deployment type, the two warnings, and how to read the connector's verdict (FR-040e); fixture: unit
-- [ ] T094 Close research §5 O4: check the organisation's voice-agent platform's own documentation for a runtime commit variable, and add it to the guide's vendor-hosted section if it exists, else keep the build-time recipe; fixture: unit
+- [X] T094 Close research §5 O4: check the organisation's voice-agent platform's own documentation for a runtime commit variable, and add it to the guide's vendor-hosted section if it exists, else keep the build-time recipe; fixture: unit
+  - Closed 2026-09-29: the platform's documentation states no runtime commit variable, and its log forwarding adds no environment or version field. The guide keeps the build-time recipe (bake the commit, export `DD_VERSION` at start); the first live run's verdict was "no stamp" (T099).
 - [X] T095 [P] Complete `docs/connectors/datadog.md`: capabilities, the gate and what it cannot prove (O2), the operation list (now enforced), cost; fixture: unit
 - [X] T096 [P] Update `docs/schema/digests.md` (or the page that documents `VersionBreakdown`) for `deploy_ref`; fixture: unit
 - [X] T097 Run the full local gate: `make gen build test lint verify`, `go test -race ./...`, `buf lint`, `buf breaking`, `check-no-secrets.sh` and self-test, `check-specs.sh`, `check-migrations.sh`, `fixture verify --report fixtures/*/` and `check-report.sh`; fixture: every datadog-* fixture
