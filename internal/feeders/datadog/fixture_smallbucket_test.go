@@ -116,7 +116,7 @@ func smallBucketRun(t *testing.T) ([]feeder.Payload, *smallBucketTwin) {
 	}
 	var out collected
 	p := &ddfeeder.Poller{
-		LogSources:   []ddfeeder.LogSource{{Env: "production", Service: "checkout"}},
+		LogSources:   []ddfeeder.LogSource{{Env: "production", Service: "checkout", EnvField: "env"}},
 		Capabilities: ddfeeder.DefaultCapabilities(),
 		Measurer:     datadogx.Measurer{Client: client, Cache: datadogx.NewMeasureCache()},
 		Now:          twin.clock, Push: out.push,
@@ -144,7 +144,7 @@ func TestGenerateDatadogSmallBucketFixture(t *testing.T) {
 			"`checkout`'s measurement take twelve windows, one each, and the tick is pushed once, complete: "+
 			"the `version` tag is accepted and the pointer carries its join key. The rollout lookup that "+
 			"follows finds the window's call spent and says so, typed `quota`; it looks again next interval.",
-		ddfeeder.Options{OrgSlug: "twin", LogSources: []ddfeeder.LogSource{{Env: "production", Service: "checkout"}}},
+		ddfeeder.Options{OrgSlug: "twin", LogSources: []ddfeeder.LogSource{{Env: "production", Service: "checkout", EnvField: "env"}}},
 		payloads, hm(13, 59), hm(14, 5), `
 queries:
   # The measurement completed over twelve windows: the pointer carries the version join key.

@@ -90,15 +90,6 @@ func validAttribute(field string) bool {
 	return strings.HasPrefix(field, "@") && name != "" && !strings.ContainsAny(name, " :*\"/")
 }
 
-// EnvAttributeWarning is what the connector says when a source's environment is carried as an
-// attribute and the source was configured to read the `env` tag.
-func EnvAttributeWarning(src LogSource, attribute string, lines int64) string {
-	return fmt.Sprintf("%s: no line carries the env tag env:%s, but %d line(s) carry the attribute %s:%s. "+
-		"Datadog's env tag is what unified service tagging, monitors and other tools read: remap %s to the env "+
-		"tag in a Datadog log pipeline (a Remapper), or watch with --env-field %s",
-		src.Key(), src.Env, lines, attribute, src.Env, attribute, attribute)
-}
-
 // MissingEnvWarning is what the connector says, wherever a source is configured or measured, about a
 // service whose logs carry no environment.
 func MissingEnvWarning(service string) string {
@@ -106,6 +97,13 @@ func MissingEnvWarning(service string) string {
 		"to the same service on other platforms (C9 needs the environment). Please add the environment to "+
 		"these logs: DD_ENV=<env> on the service, the tags.datadoghq.com/env label on Kubernetes, or an "+
 		"`env:<env>` tag on the log pipeline (docs/connectors/version-stamping.md)", service)
+}
+
+// UnnamedEnvNotice is what the configuration path says about a source watched without an environment.
+func UnnamedEnvNotice(service string) string {
+	return fmt.Sprintf("service %q is watched without an environment: the connector looks for one in its logs (%s) "+
+		"and says which it found. Without an environment the service cannot be matched to the same service on "+
+		"other platforms (C9 needs it); watch <env>/%s once you know it", service, envFieldList(), service)
 }
 
 // ParseLogSource reads the spelling of `--watch`: `<env>/<service>`, or `<service>` for a service

@@ -140,7 +140,7 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 		if src.Env == "" {
 			// On the configuration path, before anything runs: a source without an environment is
 			// measured, and it is said plainly what it will not do.
-			fmt.Fprintf(cmd.ErrOrStderr(), "warning: --watch %s: %s\n", spec, ddfeeder.MissingEnvWarning(src.Service))
+			fmt.Fprintf(cmd.ErrOrStderr(), "note: --watch %s: %s\n", spec, ddfeeder.UnnamedEnvNotice(src.Service))
 		}
 	}
 	overrides := map[string]string{}

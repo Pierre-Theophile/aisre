@@ -46,7 +46,9 @@ func parseSelector(raw string) (selector, error) {
 		switch key {
 		case "service":
 			s.Service = value
-		case "env", "@env":
+		case "env", "@env", "@environment", "@deployment.environment.name":
+			// The published environment fields (the feeder's envfield.go): the tag, or the attribute the
+			// feeder discovered the environment in.
 			s.Env, s.EnvKey = value, key
 		case "index":
 			s.Index = value

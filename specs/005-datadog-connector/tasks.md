@@ -438,6 +438,17 @@ applicable and SC-024 is asserted instead.
     Re-run live on `production/cloud.livekit.io` with `--env-field @env`: measured on the attribute,
     with no missing-env warning. The verdict is unchanged: no stamp.
 
+    On the owner's product call, the environment field is now **discovered** rather than configured:
+    - the connector tries `env` (tag), `@env`, `@environment` and `@deployment.environment.name` in
+      order, each accepted on 95 % of the service's lines;
+    - the field is remembered per source and poller;
+    - `--env-field` is only an override;
+    - the checkpoint states the field, or the environments that exist (for a name that matches
+      nothing, or no name), or `missing env`.
+
+    Live with no flag, `production/cloud.livekit.io` was found on `@env` (100 % of lines) for 3 extra
+    calls. `--watch cloud.livekit.io` named `production` and the source to watch.
+
 ---
 
 ## Dependencies & execution order

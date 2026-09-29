@@ -160,7 +160,7 @@ func rateLimitedRun(t *testing.T) ([]feeder.Payload, *quotaTwin, *datadogx.Budge
 	}
 	var out collected
 	p := &ddfeeder.Poller{
-		Pager: client, Tags: []string{"env:production"}, LogSources: []ddfeeder.LogSource{{Env: "production", Service: "checkout"}},
+		Pager: client, Tags: []string{"env:production"}, LogSources: []ddfeeder.LogSource{{Env: "production", Service: "checkout", EnvField: "env"}},
 		Capabilities: ddfeeder.DefaultCapabilities(), Measurer: datadogx.Measurer{Client: client},
 		Now: twin.clock, Push: out.push, Usage: budget.Report,
 	}
@@ -193,7 +193,7 @@ func TestGenerateDatadogRateLimitedFixture(t *testing.T) {
 	}
 	payloads, _, _ := rateLimitedRun(t)
 	opts := ddfeeder.Options{OrgSlug: "twin", Site: "datadoghq.eu", MonitorTags: []string{"env:production"},
-		LogSources: []ddfeeder.LogSource{{Env: "production", Service: "checkout"}}}
+		LogSources: []ddfeeder.LogSource{{Env: "production", Service: "checkout", EnvField: "env"}}}
 	generateFixture(t, rateLimitedFixture, "datadog-budget",
 		"The connector's budget under an incident, recorded from the live poller, the real client and its "+
 			"budget against a twin that answers with rate-limit headers. At 14:00 discovery measures `checkout` "+

@@ -45,7 +45,7 @@ func TestAWatchWithoutAnEnvironmentWarnsAtConfiguration(t *testing.T) {
 	if code != ExitUsage || !strings.Contains(stderr, "DD_API_KEY") {
 		t.Fatalf("exit %d, stderr %q; the source must be accepted and the run stop only on the missing keys", code, stderr)
 	}
-	for _, want := range []string{"warning: --watch checkout", "missing env to match service", "DD_ENV"} {
+	for _, want := range []string{"note: --watch checkout", "watched without an environment", "looks for one in its logs", "@env"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("stderr does not say %q:\n%s", want, stderr)
 		}
