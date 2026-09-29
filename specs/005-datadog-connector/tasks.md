@@ -345,6 +345,10 @@ seeded canary fails the commit.
     people identifier and no canary token.
 - [ ] T082 [US7] Run the campaign against the organisation per quickstart §8: record, scan, sign, verify, parity — **blocked on a read-only key and a named signatory**; fixture: private corpus
 - [ ] T083 [US7] Commit the signed private corpus and run the same suite in private CI; record the live parity result (SC-009, SC-010) — **blocked on T082**; fixture: private corpus
+  - *Deferred 2026-09-29 (T082, T083):* the owner moves the campaign to a dedicated cloud session with
+    access to a private repository made for the corpus, which never enters this open-source repository.
+    The read-only key exists; the session names the signatory. The connector's live behaviour is
+    covered meanwhile by the runs of 2026-09-27 and 2026-09-28 and by the twins built from their findings.
 
 ---
 
@@ -383,6 +387,9 @@ applicable and SC-024 is asserted instead.
 - [X] T091 [US3] Assert the `changes` capability is silent and stated while off, as T089; fixture: datadog-backend-logs-01
   - Done 2026-09-29 with T089, in the same tests: `changes=off` is stated in every checkpoint, `events_read` is never allowed, and the only change events are log-observed rollouts.
 - [ ] T092 [US3] Implement section D (FR-027–FR-033b) with `events_read` declared only under the capability, claims through the published `deploy.*` keys, and a fixture where a Datadog deploy event and a Kubernetes rollout appear once (SC-014) — **deferred until needed**; fixture: datadog-events-merge-01
+  - *Deferred 2026-09-29 (T090, T092):* the organisation has no tracing and sends no deploy events to
+    Datadog. With APM, the read side (backend terms: `error_spans`, latency by version) comes first,
+    the topology feeder second. T089 and T091 already assert both capabilities are silent while off.
 
 ---
 
