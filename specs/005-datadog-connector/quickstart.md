@@ -136,14 +136,46 @@ gate's verdict — scopes verified, or `operator_asserted` required with the rea
 service reads "no stamp", listing each convention and its shares — until the stamp is added per
 `docs/connectors/version-stamping.md`, after which the verdict names the attribute.
 
-> **Not yet executed.** Needs a read-only Datadog key from the administrator.
+> **Executed 2026-09-28** (tasks T099): the gate's verdict is `operator_asserted`, because a key
+> that can only read cannot read its own scopes (research §5 O2). The organisation's logs carry
+> their environment in the `@env` attribute, so the live run adds `--env-field @env`.
 
 ## 8. The recording campaign — **needs a credential and a named signatory**
 
 The `fixture campaign` flow from 003, with the Datadog scope fields (plan Gap G6). `sign` requires a
-named human signatory (FR-076); no automation supplies one.
+named human signatory (FR-076); no automation supplies one. The corpus lives in the private corpus
+repository, never in this one.
 
-> **Not yet executed.**
+```bash
+export SRE_AGENT_CORPUS_KEY=$(openssl rand -hex 32)   # kept outside both repositories (FR-135)
+C=fixtures-private/campaign-<date>
+
+# The campaign's account of itself, before recording (FR-130). No project, so no mailbox.
+bin/aisre fixture campaign record $C --org <slug> --started-at <now> \
+    --datadog-site datadoghq.eu --datadog-env production,staging \
+    --datadog-watch production/<service>,staging/<service> --signatory "<name>"
+
+# Record: sanitised in the connector before a byte is written (FR-137).
+bin/aisre feed datadog --site datadoghq.eu --org <slug> --env-field @env \
+    --watch production/<service>,staging/<service> --assert-read-only "<name>" --record $C/datadog-live-01
+
+# Then name the reads the goldens hold (manifest `queries:`), and the gates, in order.
+bin/aisre fixture record $C/datadog-live-01
+bin/aisre fixture verify $C/datadog-live-01
+bin/aisre fixture campaign record $C --ended-at <end>
+bin/aisre fixture campaign sanitise $C
+bin/aisre fixture campaign scan $C
+scripts/check-no-secrets.sh $C                      # FR-138's independent scan
+bin/aisre fixture campaign sign $C --signer "<name>"
+bin/aisre fixture campaign verify $C
+
+# Live digest parity (SC-009): every term live, then again over the recorded responses.
+DD_LIVE_PARITY=1 DD_SITE=datadoghq.eu DD_PARITY_SELECTOR='service:<service> @env:production' \
+    DD_PARITY_MONITOR=<monitor id> go test ./internal/backends/datadog/ -run LiveDigestParity -v
+```
+
+> **Executed 2026-09-29** (tasks T082, T083). The run and its results are recorded in tasks.md under
+> T082–T083; the corpus is in the private corpus repository.
 
 ---
 
@@ -152,5 +184,5 @@ named human signatory (FR-076); no automation supplies one.
 | section | runnable once built | why not |
 |---|---|---|
 | §0–§6b | ✅ run 2026-09-27 | fixtures and unit tests only |
-| §7 | ❌ | a read-only Datadog key |
-| §8 | ❌ | the above, plus a named signatory |
+| §7 | ✅ run 2026-09-28 | needs a read-only Datadog key |
+| §8 | ✅ run 2026-09-29 | needs the key, a corpus key and a named signatory |
