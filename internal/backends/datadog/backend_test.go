@@ -15,6 +15,7 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	ddbackend "github.com/Pierre-Theophile/aisre/internal/backends/datadog"
 	"github.com/Pierre-Theophile/aisre/internal/datadogx"
+	ddfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/datadog"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/sanitise"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
@@ -26,6 +27,26 @@ var at = time.Date(2026, 9, 21, 14, 40, 0, 0, time.UTC)
 // liveBackend builds a live backend over a Datadog twin served by h, counting the requests it gets.
 func liveBackend(t *testing.T, h http.HandlerFunc) (*ddbackend.Backend, *int64) {
 	t.Helper()
+	return liveBackendWith(t, h, false)
+}
+
+// liveBackendWith is liveBackend with the apm_topology capability on or off: on, the client declares the
+// capability's operations and the backend answers the span and APM metric terms.
+func liveBackendWith(t *testing.T, h http.HandlerFunc, apm bool) (*ddbackend.Backend, *int64) {
+	t.Helper()
+	surface := datadogx.DefaultSurface()
+	if apm {
+		caps := ddfeeder.DefaultCapabilities()
+		caps[ddfeeder.CapAPMTopology] = true
+		surface = ddfeeder.SurfaceFor(caps)
+	}
+	return liveBackendFull(t, h, surface, apm)
+}
+
+// liveBackendFull names the client's declared surface and the backend's capability independently, for the
+// test that a backend asked for an APM term with no declared operation fails rather than answers.
+func liveBackendFull(t *testing.T, h http.HandlerFunc, surface *feeder.ReadOnlySurface, apm bool) (*ddbackend.Backend, *int64) {
+	t.Helper()
 	var calls int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&calls, 1)
@@ -33,7 +54,7 @@ func liveBackend(t *testing.T, h http.HandlerFunc) (*ddbackend.Backend, *int64) 
 	}))
 	t.Cleanup(srv.Close)
 	client, err := datadogx.New(datadogx.Options{
-		BaseURL: srv.URL, APIKey: "k", AppKey: "a", Surface: datadogx.DefaultSurface(),
+		BaseURL: srv.URL, APIKey: "k", AppKey: "a", Surface: surface,
 		Now: func() time.Time { return at },
 	})
 	if err != nil {
@@ -59,6 +80,7 @@ func liveBackend(t *testing.T, h http.HandlerFunc) (*ddbackend.Backend, *int64) 
 	}
 	b, err := ddbackend.New(ddbackend.Options{
 		OrgSlug: "twin", Client: client, Sanitiser: s, Redactor: r, Now: func() time.Time { return at },
+		APMTopology: apm, APMEnv: "production",
 	})
 	if err != nil {
 		t.Fatal(err)

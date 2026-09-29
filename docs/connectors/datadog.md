@@ -6,8 +6,9 @@
 > `internal/feeders/datadog/requestlog.go`'s default surface, and a test compares the two in both
 > directions. The cost figures in §4 come from a recorded run (`fixtures/datadog-rate-limited-01`).
 > The monitors, logs and tags capabilities have run against a live organisation (2026-09-27, 2026-09-28).
-> The `changes` capability (§5) has not: it is built against Datadog's published Events API shape and is
-> not yet verified against a live organisation. The gate's behaviour with a narrowly scoped key (research
+> The `changes` capability (§5) and the `apm_topology` capability (§6) have not: they are built against
+> Datadog's published API shapes and are not yet verified against a live organisation (the audited one has
+> no tracing, and its key lacks the APM scopes). The gate's behaviour with a narrowly scoped key (research
 > §5 O2) is recorded in §3 from the first live run (2026-09-28).
 
 What this connector reads, what it costs, and the proof it can only read.
@@ -27,7 +28,7 @@ scope, declares no operation and emits nothing (FR-008a, FR-008b).
 | `logs` | on | a service node and a log pointer for every watched log source; the telemetry backend's log terms |
 | `monitors` | on | alerts and their transitions; `monitor_state` |
 | `tags` | on | owners and identity claims from allowlisted tags |
-| `apm_topology` | off | APM service map, metrics and spans — not built until an organisation needs it |
+| `apm_topology` | off | the APM service map as graph nodes and `calls` edges, rollouts from the version APM reports, and the backend's span and APM metric terms (§6); built against the published API shapes, not yet verified live |
 | `changes` | off | Datadog's event stream as a change source, for an organisation that posts deployment, configuration or infrastructure events into Datadog (§5); built against the published API shape, not yet verified live |
 
 The host is the configured site's API host (`api.datadoghq.com`, `api.datadoghq.eu`, …). The site is
@@ -165,6 +166,7 @@ backend builds its own client and budget and reports them separately (FR-084a).
   - Monitor transitions and definitions (one read) may spend the share to the end.
   - Discovery stops when a quarter of the share is left.
   - The event stream (only under `changes`, §5) stops when 35 % of the share is left.
+  - The APM topology read (only under `apm_topology`, §6) stops when 40 % of the share is left.
   - Rollout lookup stops when half of the share is left.
 
   Under pressure, the connector stops looking for new versions first, and stops reading alert
@@ -255,7 +257,105 @@ page (up to 100 events each). It draws on the `changes` area, which yields befor
 rollout detection (§4). A window that does not finish is partial and says so; the next window reaches
 back from the last complete one, less five minutes, and Datadog's own event ids make the overlap free.
 
-## 6. Where to read next
+## 6. The `apm_topology` capability
+
+> **Built against the published API shapes. Not yet verified against a live organisation.** The audited
+> organisation has no tracing and its application key lacks `apm_read` and `apm_service_catalog_read`, so
+> the request and response shapes, the span facet names (`@peer.service`, `@error.type`, `@duration`), the
+> trace metric names (`trace.<span>.hits`, `.errors`, `.duration.by.service.<pct>p`) and the service
+> dependencies endpoint below come from Datadog's documentation and from two synthetic twins,
+> `datadog-apm-topology-01` (the graph) and `datadog-backend-apm-01` (the backend). Expect the first live
+> run to correct them; the metric names are one table (`apmMetrics`, `internal/backends/datadog/apm.go`).
+
+Off by default. With it off nothing below happens: no APM scope, no APM call, no service or dependency
+node, no APM rollout, no APM pointer, `error_spans` answers the typed `NO_DATA` naming the absent span
+source, and every checkpoint says `apm_topology=off` (FR-008b, SC-023, SC-024). With it on, every other
+capability's output is byte-identical (tested both ways).
+
+**Enabling it.** Name the environments to read, or it refuses to start:
+
+```
+feed datadog --capabilities logs,monitors,tags,apm_topology --apm-envs production
+```
+
+| flag | meaning |
+|---|---|
+| `--apm-envs` | environments whose services and dependencies are read; repeatable, recorded in every checkpoint |
+| `--apm-retract-after` | consecutive complete reads an edge may go unobserved before it is retracted (default 4) |
+| `--apm-interval` | how often each environment is read, and the length of its window (default 15 minutes) |
+
+The backend is enabled with the same capability (`Options.APMTopology`); its client must declare the
+operations below, and a backend that asks for one it did not declare fails rather than answers.
+
+**Scopes and operations.** `apm_read` and `apm_service_catalog_read`, requested only when `apm_topology`
+is on. Three operations, all reads; the one POST is a named query like the two log queries.
+
+| area | operation | why |
+|---|---|---|
+| topology | `GET /api/v1/service_dependencies` | list the services of an environment and the services each one calls; a read of the service map, with no field that creates, updates or deletes anything |
+| topology | `GET /api/v1/query` | read a timeseries of APM trace metrics (hits, errors, duration percentiles) for a scope and a window; a metrics query, with no field that writes a metric |
+| topology | `POST /api/v2/spans/analytics/aggregate` | named query: returns counts and duration percentiles of the spans matching the query in the body, grouped by facet; the endpoint has no field that creates, updates or deletes anything |
+
+**What the map becomes (FR-009–FR-017).**
+
+- A SERVICE node for every service Datadog reports in an in-scope environment, on the same ref a watched
+  log source uses (`datadog.service=<env>/<service>`), carrying the version APM reports as
+  `service.version`, the APM metric pointer (`datadog-apm-metric/v1`, naming the service's busiest
+  operation) and the span pointer (`datadog-spans/v1`). A watched log source and APM state one node, built
+  from both, because a source's latest assertion of a node replaces its earlier one. The node is dated by
+  the window APM first reported it in, an instant Datadog states; Datadog does not say since when a
+  service has existed, so that is a bound, and it is what lets an edge valid from the same window find its
+  endpoints. It is never the poll's instant.
+- A `calls` edge for every dependency, carrying only a weight **class** from the published ordinal scale,
+  derived from a count of the spans Datadog retained and then discarded: a lower bound of the traffic. A
+  dependency with no retained span in the window carries **no class** and the checkpoint lists it; class 0
+  would say traffic was watched and found negligible. Its valid start is the first window it was observed
+  in. A class change is believed when a second window agrees, and dated from the first.
+- Retraction: an edge unobserved in `--apm-retract-after` consecutive **complete** reads is retracted, its
+  valid end the end of the last window it was seen in. A part of a read that did not finish, or was
+  refused for quota, neither confirms nor denies anything: nothing is retracted on it, no rollout is
+  inferred from it, and the checkpoint declares the gap (`gap_before`). The next window reaches back from
+  the last complete one.
+- A dependency target Datadog reports and no listing names is a THIRD_PARTY node on the same ref, marked
+  `sre.datadog.unlisted_dependency`. A later listing asserts a SERVICE on that ref, which replaces it. It
+  is asserted only from a complete dependencies read, and never for a watched log source.
+- A version that was not in the previous complete read is a ROLLOUT, `datadog.change=apm/<env>/<service>@<version>@<window>`,
+  valid at the window it first appeared in and marked `sre.change.valid_from_is_a_bound=first_seen_in_apm`,
+  with a `changed-by` edge to the service and the old and new version recorded. Its actor kind is
+  **unknown**, with the evidence in `sre.change.actor_evidence`: APM states the version and never who
+  deployed it, and deployment tracking's origin is not read (FR-033a, FR-033b). It carries the version's
+  `deploy.commit_sha`, `deploy.image` or `deploy.release` key like a log-observed rollout, so C8 merges it
+  with the platform's. The first read of a service is a baseline, not a change.
+- Hosts: an INFRA_RESOURCE (`datadog.host=<host>`) and a `runs-on` edge from the service, whose start is
+  unknown (FR-017). Only the `host` facet is read: never a container id or a pod name (FR-014).
+
+**What the backend gains.**
+
+- `error_spans(src, dst)` reads the spans `src` emitted towards `dst` (`@peer.service:<dst>`) from the span
+  aggregate, grouped by operation and error kind, errors first, latency in milliseconds. The counts are of
+  **retained** spans and the coverage says so (`datadog_apm:spans`, sampling `retained: …`): an aggregate
+  over retained spans is a sample of the requests. Entity ids are read as `<env>/<service>`, or a bare
+  service in `Options.APMEnv`, unless a caller supplies `Options.EntityService`.
+- `compare` over a `datadog-apm-metric/v1` pointer states COUNT, RATE, ERROR_RATE, P50, P95 and P99 from
+  the trace metrics, which count every ingested request, with a series per version where the service
+  stamps one (the version is the join key). A percentile is the mean of Datadog's per-interval
+  percentiles, and the coverage says so (`percentile_of_intervals`). Over a log pointer it still refuses a
+  latency percentile.
+- Not done: `onset` over the APM metrics, and `errors_by_version` from a span's `version`. The log path
+  answers `errors_by_version`, and the engine answers it where the logs carry no stamp.
+
+**Recording.** A live recording pseudonymises every environment, service, host and operation name with
+the keyed pseudonym for its kind, so the recorded edges join the recorded nodes and log sources; a version
+survives, for the join to the deploy feeders; the failure reason is withheld. The payload's window is
+`start`/`end`, not `from`/`to`, which the sanitiser drops as an email's sender and recipient.
+
+**Cost and budget.** Per environment per window: one dependencies read and four span aggregates (callee,
+version, operation, host), five calls. At the default 15-minute window that is 480 calls a day per
+environment, drawn on the `topology` area, which yields when 40 % of the share is left (§4). Backend
+terms draw on the investigation area: `error_spans` is one aggregate, `compare` two to four metric
+queries per window.
+
+## 7. Where to read next
 
 - [version-stamping.md](version-stamping.md): making each log line name the version that wrote it,
   on every deployment type, and reading the connector's verdict.

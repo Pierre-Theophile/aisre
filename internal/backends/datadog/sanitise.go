@@ -61,6 +61,27 @@ func SanitiseThenRedact(s Sanitiser, r *engine.Redactor, resp *engine.Response) 
 		}
 		log.Patterns = kept
 	}
+	if trace := resp.GetDigest().GetTrace(); trace != nil {
+		// An operation is a span's resource name, which routinely carries a route with an identifier or a
+		// statement with its literals: it goes through the same masking a log line does, and a group whose
+		// name cannot be kept safe is named as withheld rather than dropped, so its count still counts.
+		for _, group := range trace.GetGroups() {
+			for _, field := range []*string{&group.Operation, &group.ErrorKind} {
+				if *field == "" {
+					continue
+				}
+				template, keep, err := s.Template("a live span digest", *field)
+				if err != nil {
+					return err
+				}
+				if keep {
+					*field = template
+				} else {
+					*field = "(withheld by the sanitiser)"
+				}
+			}
+		}
+	}
 	for _, keys := range joinKeysIn(resp.GetDigest()) {
 		if err := sanitiseJoinKeys(s, keys); err != nil {
 			return err
@@ -117,6 +138,10 @@ func joinKeysIn(d *investigationv1.Digest) []*investigationv1.JoinKeys {
 	case *investigationv1.Digest_ErrorsByVersion:
 		for _, v := range body.ErrorsByVersion.GetVersions() {
 			out = append(out, v.GetJoinKeys())
+		}
+	case *investigationv1.Digest_Trace:
+		for _, g := range body.Trace.GetGroups() {
+			out = append(out, g.GetJoinKeys())
 		}
 	case *investigationv1.Digest_Exemplars:
 		for _, e := range body.Exemplars.GetExemplars() {

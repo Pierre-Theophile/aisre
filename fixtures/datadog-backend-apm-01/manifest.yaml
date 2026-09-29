@@ -1,0 +1,30 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-backend-apm-01
+family: datadog-backend
+description: 'The Datadog telemetry backend''s span and APM metric terms over a synthetic structural twin. `checkout` calls `payments`; at 14:10 a new version ships and the calls start failing with a timeout, slowly. Datadog retains two of every three spans and counts every one in its trace metrics, so error_spans (retained spans) and compare (trace metrics) disagree on a count by design and each coverage block says which surface answered. world/ is the cross product of the terms the apm_topology capability adds — compare over an APM metric pointer for every statistic it states, error_spans over the edge and over the empty reverse edge — and the two log answers that must not move; internal/backends/datadog asserts on every run that it answers every question exactly as the live twin does, and that with the capability off the twin is never asked for a span or a metric. Built against the published API shapes, not verified against a live organisation. Synthetic structural twin: no identifier is derived from any organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T12:59:00Z
+    end: 2026-09-21T15:30:00Z
+
+queries:
+  # The service node as the connector states it: its log-service correlation, and no property of it
+  # holding a measurement.
+  - name: checkout-log-service
+    kind: subgraph
+    focus: datadog.service=production/checkout
+    valid_at: 2026-09-21T15:30:00Z
+    observed_at: 2026-09-21T15:30:00Z
+    hops: 1
+    direction: both

@@ -1,0 +1,54 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-apm-topology-01
+family: datadog-apm-topology
+description: 'The service map Datadog APM states, built from the published API shapes and not verified against a live organisation. `checkout` (also a watched log source) calls payments, search and stripe; payments calls ledger; stripe is reported as called and is no service, so it is a third party until a listing promotes it, and its edge, with no retained span, carries no weight class. At 14:15 a new commit appears beside the old: one rollout, actor kind unknown, valid at that window; traffic to payments jumps a class, believed only when 14:45 agrees, and dated from 14:15. The 14:30 read is partial and retracts and infers nothing. payments→ledger, unobserved from 14:15, is retracted at 15:00 after three consecutive complete reads, ending at the end of the last window it was seen in. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T13:59:00Z
+    end: 2026-09-21T15:30:00Z
+
+queries:
+  # checkout as the map states it at 14:10: its log source, its APM pointers, its dependencies and its hosts.
+  - name: checkout-before-the-deploy
+    kind: subgraph
+    focus: datadog.service=production/checkout
+    valid_at: 2026-09-21T14:10:00Z
+    observed_at: 2026-09-21T16:00:00Z
+    hops: 1
+    direction: both
+  # payments at 14:10 calls ledger; at 15:10 it no longer does, and the edge's history says when it ended.
+  - name: payments-before-the-retraction
+    kind: subgraph
+    focus: datadog.service=production/payments
+    valid_at: 2026-09-21T14:10:00Z
+    observed_at: 2026-09-21T16:00:00Z
+    hops: 1
+    direction: both
+  - name: payments-after-the-retraction
+    kind: subgraph
+    focus: datadog.service=production/payments
+    valid_at: 2026-09-21T15:10:00Z
+    observed_at: 2026-09-21T16:00:00Z
+    hops: 1
+    direction: both
+  # What changed on checkout between 14:00 and 15:30: the one rollout Datadog APM saw.
+  - name: what-changed-on-checkout
+    kind: diff
+    focus: datadog.service=production/checkout
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T15:30:00Z
+    reference_at: 2026-09-21T15:30:00Z
+    observed_at: 2026-09-21T16:00:00Z
+    hops: 1
+    direction: both

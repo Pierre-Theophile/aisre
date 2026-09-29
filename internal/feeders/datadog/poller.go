@@ -78,7 +78,12 @@ type Poller struct {
 	EventsInterval time.Duration
 	EventsOverlap  time.Duration
 	EventsHistory  time.Duration
-	Now            func() time.Time
+	// Topology reads one environment's window, and TopologyScope names the environments and the patience
+	// of the retraction; both are required when the `apm_topology` capability is on.
+	Topology         TopologyReader
+	TopologyScope    TopologyScope
+	TopologyInterval time.Duration
+	Now              func() time.Time
 	// Push hands a payload to the feeder's source.
 	Push func(ctx context.Context, p feeder.Payload) error
 
@@ -93,6 +98,8 @@ type Poller struct {
 	// eventsTo is where the last complete events window ended; the next reaches back from it by the
 	// overlap. A restarted poller starts from the history instead, and the ids make the re-read a no-op.
 	eventsTo time.Time
+	// topologyTo is where each environment's last complete topology window ended.
+	topologyTo map[string]time.Time
 	// resumeAt is when Datadog said to read again after a 429; nothing is read before it.
 	resumeAt time.Time
 	// envFields are the environment fields discovered per source, so the discovery is paid for once;
@@ -282,7 +289,7 @@ func (p *Poller) failure(area Area, err error) string {
 // takeDeferred lists the deferred areas in the published order, and clears them.
 func (p *Poller) takeDeferred() []string {
 	var out []string
-	for _, a := range []Area{AreaMonitors, AreaDiscovery, AreaChanges, AreaRollouts, AreaInvestigation} {
+	for _, a := range []Area{AreaMonitors, AreaDiscovery, AreaChanges, AreaTopology, AreaRollouts, AreaInvestigation} {
 		if p.deferred[a] {
 			out = append(out, string(a))
 		}
@@ -318,8 +325,18 @@ func (p *Poller) Run(ctx context.Context) error {
 	if err := p.PollEvents(ctx); err != nil {
 		return err
 	}
+	if err := p.PollTopology(ctx); err != nil {
+		return err
+	}
 	poll := time.NewTicker(interval)
 	defer poll.Stop()
+	// The topology ticker exists only under the apm_topology capability, as the events one does.
+	var topology <-chan time.Time
+	if p.topologyEnabled() {
+		ticker := time.NewTicker(p.topologyInterval())
+		defer ticker.Stop()
+		topology = ticker.C
+	}
 	// The events ticker exists only under the changes capability; a nil channel never fires.
 	var events <-chan time.Time
 	if p.eventsEnabled() {
@@ -338,6 +355,8 @@ func (p *Poller) Run(ctx context.Context) error {
 			err = p.PollOnce(ctx)
 		case <-events:
 			err = p.PollEvents(ctx)
+		case <-topology:
+			err = p.PollTopology(ctx)
 		case <-p.pollNow:
 			err = p.PollOnce(ctx)
 		case <-discover.C:

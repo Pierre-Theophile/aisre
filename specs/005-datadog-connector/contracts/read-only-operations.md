@@ -40,7 +40,9 @@ configuration and never appears in a pointer (FR-037).
 | `monitors` | list monitors | `GET /api/v1/monitor?group_states=all` | definitions and group states | a GET |
 | `monitors` | get monitor | `GET /api/v1/monitor/{id}?group_states=all` | one monitor | a GET |
 | `tags` | — | none of its own | tags arrive on the payloads above | — |
-| `apm_topology` *(off)* | declared when the capability is built | — | — | — |
+| `apm_topology` *(off)* | service dependencies | `GET /api/v1/service_dependencies` (`env`, `start`, `end`) | the services of an environment and the services each calls | a GET. Built against the published shape (T090), not yet verified against a live organisation |
+| `apm_topology` *(off)* | query metrics | `GET /api/v1/query` (`query`, `from`, `to`) | APM trace metrics: hits, errors, duration percentiles | a GET; a metrics query has no field that writes a metric |
+| `apm_topology` *(off)* | aggregate spans | **`POST /api/v2/spans/analytics/aggregate`** | counts and duration percentiles of spans, grouped by facet | named query operation, as the log aggregate: the body is a query, the endpoint returns buckets, and it has no field that creates, updates or deletes anything |
 | `changes` *(off)* | list events | `GET /api/v2/events` (`filter[from]`, `filter[to]`, `filter[query]`, `sort`, `page[limit]`, `page[cursor]`) | the events of a window, filtered by the configured sources and tags, paged by cursor | a GET; the endpoint reads the event stream and has no field that posts, edits or deletes one. Built against the published shape (T092), not yet verified against a live organisation |
 
 Every operation is on the default capabilities' list **only if** its capability is enabled; a disabled

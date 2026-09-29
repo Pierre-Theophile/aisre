@@ -378,10 +378,26 @@ applicable and SC-024 is asserted instead.
 
 - [X] T089 [US1] Assert SC-024 now, before any APM code exists: with `apm_topology` off, zero APM scopes, calls and derived events, the checkpoint names the capability as disabled; fixture: datadog-backend-logs-01
   - Done 2026-09-29: `internal/feeders/datadog/capability_silence_test.go` asserts, over every datadog-* fixture, that the default configuration allows no APM or events scope, declares no APM, span, trace or event-stream operation, emits no event outside the enabled capabilities' kinds and namespaces, and that every checkpoint states `apm_topology=off`; datadog-backend-logs-01's run also asserts no span, APM or event-stream request. SC-024's last clause (goldens identical with the capability on) is not applicable while ParseCapabilities refuses to enable an unbuilt capability: it became a test for `changes` with T092, and becomes one for `apm_topology` with T090.
-- [ ] T090 [US1] Register the APM metric and span vocabularies, declare the APM operations under the capability, and implement section B (FR-009–FR-017) with its fixture and the on/off golden identity of every other capability — **deferred until needed**; fixture: datadog-apm-topology-01
-  - *Deferred 2026-09-29 (T090):* the organisation has no tracing. With APM, the read side (backend terms:
-    `error_spans`, latency by version) comes first, the topology feeder second. T089 asserts the capability
-    is silent while off.
+- [X] T090 [US1] Register the APM metric and span vocabularies, declare the APM operations under the capability, and implement section B (FR-009–FR-017) with its fixture and the on/off golden identity of every other capability; fixture: datadog-apm-topology-01
+  - Done 2026-09-29, built against Datadog's published API shapes and **not verified against a live organisation**
+    (the audited one has no tracing and its key lacks the APM scopes); `docs/connectors/datadog.md` §6 says so.
+    Read side: `datadog-apm-metric/v1` and `datadog-spans/v1` registered (`pkg/feeder/pointer.go`,
+    `docs/schema/pointers.md`); `GET /api/v1/service_dependencies`, `GET /api/v1/query` and
+    `POST /api/v2/spans/analytics/aggregate` declared only under `apm_topology`
+    (`internal/feeders/datadog/requestlog.go`), scopes `apm_read` and `apm_service_catalog_read` only under
+    it, own budget area `topology`; `error_spans` answers from the retained spans (coverage states the
+    sample) and `compare` states COUNT, RATE, ERROR_RATE and P50/P95/P99 from the trace metrics per version
+    (`internal/backends/datadog/apm.go`), `datadog-backend-apm-01` for the world and its live/recorded
+    identity. Feeder: `internal/feeders/datadog/topology.go`, `topology_poll.go`,
+    `internal/datadogx/topology.go`; flags `--apm-envs`, `--apm-retract-after`, `--apm-interval`;
+    `datadog-apm-topology-01`. SC-024's last clause is a test for `apm_topology` in both halves
+    (`capability_silence_test.go`, `apm_test.go`).
+  - Left, stated in the docs: `onset` over the APM metrics and `errors_by_version` from a span's `version`
+    (the log path answers the latter); no deployment-tracking read, so a rollout's actor kind is UNKNOWN with
+    the evidence. Deviations to review: a service or host node is dated by the window it was first reported
+    in (a stated bound), not marked unknown, because the edges valid from that window need endpoints that
+    exist then and the shuffle step fails otherwise; an edge with no retained span carries no weight class
+    rather than class 0.
 
 ---
 
