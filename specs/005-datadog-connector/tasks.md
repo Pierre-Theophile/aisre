@@ -359,14 +359,16 @@ the call, work deferred in the published order.
 Built only when an organisation with tracing needs it. Until then SC-001/SC-002 report not
 applicable and SC-024 is asserted instead.
 
-- [ ] T089 [US1] Assert SC-024 now, before any APM code exists: with `apm_topology` off, zero APM scopes, calls and derived events, the checkpoint names the capability as disabled; fixture: datadog-backend-logs-01
+- [X] T089 [US1] Assert SC-024 now, before any APM code exists: with `apm_topology` off, zero APM scopes, calls and derived events, the checkpoint names the capability as disabled; fixture: datadog-backend-logs-01
+  - Done 2026-09-29: `internal/feeders/datadog/capability_silence_test.go` asserts, over every datadog-* fixture, that the default configuration allows no APM or events scope, declares no APM, span, trace or event-stream operation, emits no event outside the enabled capabilities' kinds and namespaces, and that every checkpoint states `apm_topology=off`; datadog-backend-logs-01's run also asserts no span, APM or event-stream request. SC-024's last clause (goldens identical with the capability on) is not applicable while ParseCapabilities refuses to enable an unbuilt capability, and becomes a test with Phase 10.
 - [ ] T090 [US1] Register the APM metric and span vocabularies, declare the APM operations under the capability, and implement section B (FR-009–FR-017) with its fixture and the on/off golden identity of every other capability — **deferred until needed**; fixture: datadog-apm-topology-01
 
 ---
 
 ## Phase 11: User Story 3 — Datadog's event stream as a change source (Priority: P3, off by default, **deferrable**)
 
-- [ ] T091 [US3] Assert the `changes` capability is silent and stated while off, as T089; fixture: datadog-backend-logs-01
+- [X] T091 [US3] Assert the `changes` capability is silent and stated while off, as T089; fixture: datadog-backend-logs-01
+  - Done 2026-09-29 with T089, in the same tests: `changes=off` is stated in every checkpoint, `events_read` is never allowed, and the only change events are log-observed rollouts.
 - [ ] T092 [US3] Implement section D (FR-027–FR-033b) with `events_read` declared only under the capability, claims through the published `deploy.*` keys, and a fixture where a Datadog deploy event and a Kubernetes rollout appear once (SC-014) — **deferred until needed**; fixture: datadog-events-merge-01
 
 ---

@@ -393,10 +393,14 @@ func TestTheRecordedWorldAnswersLikeTheLiveTwin(t *testing.T) {
 		}
 	}
 
-	// SC-023: no span or APM request in the whole run.
+	// SC-023, SC-024: no span, APM or event-stream request in the whole run, with apm_topology and
+	// changes off.
 	for _, p := range tw.requests() {
 		if strings.Contains(p, "/spans") || strings.Contains(p, "/apm") || strings.Contains(p, "/trace") {
 			t.Errorf("a span or APM request was made: %s", p)
+		}
+		if strings.Contains(p, "/events") && !strings.Contains(p, "/logs/events") {
+			t.Errorf("an event-stream request was made with changes off: %s", p)
 		}
 	}
 }
