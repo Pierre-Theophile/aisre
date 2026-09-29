@@ -12,6 +12,7 @@ import (
 	"time"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
+	ddbackend "github.com/Pierre-Theophile/aisre/internal/backends/datadog"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 )
 
@@ -123,6 +124,105 @@ func TestErrorsByVersionMapsDatadogRefusals(t *testing.T) {
 		}
 		if resp.GetOutcome() != investigationv1.TermOutcome_QUERY_FAILED || resp.GetFailureReason() != want {
 			t.Errorf("%d: got %v / %v, want %v", status, resp.GetOutcome(), resp.GetFailureReason(), want)
+		}
+	}
+}
+
+// refusingAggregate answers the aggregate with status and everything else from the search twin.
+func refusingAggregate(t *testing.T, status int, lines []twinLine, forever bool) http.HandlerFunc {
+	search := searchTwin(t, lines, forever)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "aggregate") {
+			w.WriteHeader(status)
+			_, _ = io.WriteString(w, `{"errors":["cannot group by this attribute"]}`)
+			return
+		}
+		search(w, r)
+	}
+}
+
+func versionLines() []twinLine {
+	lines := incidentLines()
+	for i := range 2 { // errors with no stamp: the crash handler's own logger
+		lines = append(lines, twinLine{at: at.Add(-20*time.Minute + time.Duration(i)*time.Minute),
+			msg: "worker panicked: nil map write", status: "error", host: "h1"})
+	}
+	return lines
+}
+
+// Where Datadog will not group by the attribute, the answer comes from the newest lines grouped here,
+// each group still names its deploy reference, and coverage says it is a read of lines (contract §3.1).
+func TestErrorsByVersionFallsBackToASampleWhereTheAttributeIsNotGroupable(t *testing.T) {
+	t.Parallel()
+	b, calls := liveBackend(t, refusingAggregate(t, http.StatusBadRequest, versionLines(), false))
+	resp, err := b.Execute(context.Background(), request(engine.ErrorsByVersion(logPointer(),
+		engine.NewWindow(at.Add(-time.Hour), at), "version")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetOutcome() != investigationv1.TermOutcome_DIGEST {
+		t.Fatalf("outcome %v / %v", resp.GetOutcome(), resp.GetFailureReason())
+	}
+	if *calls != 2 { // the refused aggregate, then the one page of lines
+		t.Errorf("%d Datadog calls, want the refused aggregate and one page", *calls)
+	}
+	rows := resp.GetDigest().GetErrorsByVersion().GetVersions()
+	if len(rows) != 2 {
+		t.Fatalf("%d groups, want v2 and the unstamped lines: %v", len(rows), rows)
+	}
+	// v2: 6 errors of 12 lines (0.5); unstamped: 2 of 2 (1.0), first.
+	if rows[0].GetVersion() != "" || rows[0].GetErrors() != 2 || rows[0].GetTotal() != 2 ||
+		rows[0].GetDeployRefAbsentReason() != investigationv1.DeployRefAbsentReason_NOT_A_STABLE_IDENTIFIER {
+		t.Errorf("unstamped group %v", rows[0])
+	}
+	if rows[1].GetVersion() != "v2" || rows[1].GetErrors() != 6 || rows[1].GetTotal() != 12 ||
+		rows[1].GetDeployRef().GetNamespace() != "deploy.release" || rows[1].GetDrillDown() == nil {
+		t.Errorf("v2 group %v", rows[1])
+	}
+	cov := resp.GetDigest().GetCoverage()
+	if cov.GetVolumeConsidered() != 14 || !strings.Contains(cov.GetSampling(), "would not group by version") ||
+		!strings.Contains(cov.GetSampling(), "all 14 lines") || cov.GetSampling() == "none" {
+		t.Errorf("coverage does not state the sample: volume %d, sampling %q", cov.GetVolumeConsidered(), cov.GetSampling())
+	}
+}
+
+// A sample the line cap stopped is PARTIAL, never a complete digest.
+func TestTheSampledErrorsByVersionIsPartialAtTheLineCap(t *testing.T) {
+	t.Parallel()
+	var lines []twinLine
+	for i := range 1000 {
+		lines = append(lines, twinLine{at: at.Add(-30*time.Minute + time.Duration(i)*time.Second),
+			msg: "tick", status: "error", host: "h1", version: "v1"})
+	}
+	b, calls := liveBackend(t, refusingAggregate(t, http.StatusBadRequest, lines, true))
+	resp, err := b.Execute(context.Background(), request(engine.ErrorsByVersion(logPointer(),
+		engine.NewWindow(at.Add(-time.Hour), at), "version")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cov := resp.GetDigest().GetCoverage()
+	if resp.GetOutcome() != investigationv1.TermOutcome_PARTIAL || !strings.Contains(cov.GetTruncation(), "line_cap") ||
+		!strings.HasPrefix(cov.GetSampling(), "sampled: the newest 5000 lines") {
+		t.Fatalf("got %v, truncation %q, sampling %q", resp.GetOutcome(), cov.GetTruncation(), cov.GetSampling())
+	}
+	if want := int64(ddbackend.LineCap/1000) + 1; *calls != want {
+		t.Errorf("%d calls, want the refused aggregate and %d pages", *calls, want-1)
+	}
+}
+
+// Only a refusal of the aggregate itself sends the term to the sample: a rate limit or a missing
+// permission is a failure, and reading thousands of lines under either would spend the wrong quota.
+func TestErrorsByVersionDoesNotSampleOnOtherRefusals(t *testing.T) {
+	t.Parallel()
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusForbidden, http.StatusGatewayTimeout} {
+		b, calls := liveBackend(t, refusingAggregate(t, status, versionLines(), false))
+		resp, err := b.Execute(context.Background(), request(engine.ErrorsByVersion(logPointer(),
+			engine.NewWindow(at.Add(-time.Hour), at), "version")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.GetOutcome() != investigationv1.TermOutcome_QUERY_FAILED || *calls != 1 {
+			t.Errorf("%d: outcome %v after %d calls, want a failure after the one aggregate", status, resp.GetOutcome(), *calls)
 		}
 	}
 }

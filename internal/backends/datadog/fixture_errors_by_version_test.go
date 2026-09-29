@@ -5,6 +5,7 @@ package datadog_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,15 +44,20 @@ func ebvLines() []twinLine {
 }
 
 func ebvTerms() []*engine.Term {
-	return []*engine.Term{engine.ErrorsByVersion(backendLogPointer(),
-		engine.NewWindow(backendDeploy.Add(-20*time.Minute), backendTo), "version")}
+	window := engine.NewWindow(backendDeploy.Add(-20*time.Minute), backendTo)
+	return []*engine.Term{
+		engine.ErrorsByVersion(backendLogPointer(), window, "version"),
+		// The same question over an attribute the aggregate refuses to group by (research §5 O1): the
+		// answer comes from the newest lines, grouped here.
+		engine.ErrorsByVersion(backendLogPointer(), window, ungroupableFacet),
+	}
 }
 
 func TestGenerateDatadogErrorsByVersionFixture(t *testing.T) {
 	if os.Getenv(genFixturesEnv) == "" {
 		t.Skipf("set %s=1 to regenerate %s", genFixturesEnv, ebvFixture)
 	}
-	generateBackendFixture(t, ebvFixture, ebvLines(), ebvTerms(), graphHalf{
+	generateBackendFixtureRefusing(t, ebvFixture, ebvLines(), ebvTerms(), graphHalf{
 		family: "datadog-backend",
 		description: "errors_by_version's groups and what each names. `checkout` stamps the deployed " +
 			"commit on its logs; a new commit ships at 14:10 and a payment error starts; a crash handler " +
@@ -60,10 +66,13 @@ func TestGenerateDatadogErrorsByVersionFixture(t *testing.T) {
 			"drill-downs and exemplars behind its groups, followed once. Each full commit's group names " +
 			"deploy.commit_sha; the abbreviated group names nothing and says ABBREVIATED_SHA, because its " +
 			"full form cannot be recovered; the unstamped lines are a group of their own, " +
-			"NOT_A_STABLE_IDENTIFIER. internal/backends/datadog asserts all of it against the world on every " +
+			"NOT_A_STABLE_IDENTIFIER. A second term asks the same question over an attribute the aggregate " +
+			"API refuses to group by (a 400, as for an attribute Datadog cannot group), and is answered " +
+			"from the newest lines grouped client-side, its coverage stating the sample. " +
+			"internal/backends/datadog asserts all of it against the world on every " +
 			"run, and that the world answers as the live twin does. Synthetic structural twin: no " +
 			"identifier is derived from the organisation.",
-	})
+	}, ungroupableFacet)
 }
 
 // Every group names its deploy reference or the reason it has none, read off the recorded world, and
@@ -71,7 +80,7 @@ func TestGenerateDatadogErrorsByVersionFixture(t *testing.T) {
 func TestEachVersionGroupNamesItsDeployReference(t *testing.T) {
 	t.Parallel()
 	recorded := backendRecorded(t, ebvFixture)
-	live, _ := backendLive(t, ebvLines())
+	live, _ := backendLiveRefusing(t, ebvLines(), ungroupableFacet)
 	liveReqs, liveResps := crossProduct(t, live, ebvTerms())
 	_, recordedResps := crossProduct(t, recorded, ebvTerms())
 	if len(recordedResps) != len(liveResps) {
@@ -108,5 +117,45 @@ func TestEachVersionGroupNamesItsDeployReference(t *testing.T) {
 	}
 	if len(groups) != 4 {
 		t.Errorf("%d groups, want 4: %v", len(groups), groups)
+	}
+}
+
+// Over the attribute the aggregate refuses, the recorded answer is the sampled one: the same groups
+// and the same deploy references as the aggregated answer, with coverage saying they were read from
+// lines and grouped here rather than counted by Datadog (contract §3.1).
+func TestTheSampledFallbackIsRecordedAndSaysSo(t *testing.T) {
+	t.Parallel()
+	recorded := backendRecorded(t, ebvFixture)
+	terms := ebvTerms()
+	exact, err := recorded.Execute(context.Background(), &engine.Request{Term: terms[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sampled, err := recorded.Execute(context.Background(), &engine.Request{Term: terms[1]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sampled.GetOutcome() != investigationv1.TermOutcome_DIGEST {
+		t.Fatalf("outcome %v / %v", sampled.GetOutcome(), sampled.GetFailureReason())
+	}
+	cov := sampled.GetDigest().GetCoverage()
+	if cov.GetSampling() == "none" || !strings.Contains(cov.GetSampling(), "would not group by "+ungroupableFacet) ||
+		cov.GetVolumeConsidered() == 0 {
+		t.Errorf("coverage does not state the sample: %d lines, %q", cov.GetVolumeConsidered(), cov.GetSampling())
+	}
+	if exact.GetDigest().GetCoverage().GetSampling() != "none" {
+		t.Errorf("the aggregated answer states a sample: %q", exact.GetDigest().GetCoverage().GetSampling())
+	}
+	want, got := exact.GetDigest().GetErrorsByVersion().GetVersions(), sampled.GetDigest().GetErrorsByVersion().GetVersions()
+	if len(got) != len(want) {
+		t.Fatalf("%d sampled groups, %d aggregated", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].GetVersion() != want[i].GetVersion() || got[i].GetErrors() != want[i].GetErrors() ||
+			got[i].GetTotal() != want[i].GetTotal() ||
+			!proto.Equal(got[i].GetDeployRef(), want[i].GetDeployRef()) ||
+			got[i].GetDeployRefAbsentReason() != want[i].GetDeployRefAbsentReason() {
+			t.Errorf("group %d: sampled %v, aggregated %v", i, got[i], want[i])
+		}
 	}
 }

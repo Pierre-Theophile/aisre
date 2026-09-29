@@ -22,6 +22,9 @@ type twin struct {
 	t       *testing.T
 	lines   []twinLine // oldest first
 	monitor string     // the monitor read's JSON body
+	// ungroupable, when set, is an attribute the aggregate refuses to group by (a 400, as Datadog
+	// does for an attribute it cannot group). Each line then also carries its version in a tag of that name.
+	ungroupable string
 
 	mu    sync.Mutex
 	paths []string
@@ -79,7 +82,7 @@ func clausesMatch(query string, l twinLine) bool {
 			if l.status != value {
 				return false
 			}
-		case "version":
+		case "version", ungroupableFacet:
 			if l.version != value {
 				return false
 			}
@@ -113,6 +116,9 @@ func splitQuery(q string) []string {
 	return out
 }
 
+// ungroupableFacet is the attribute a twin can be told to refuse: the version, stamped a second way.
+const ungroupableFacet = "build.version"
+
 func (tw *twin) search(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Filter twinFilter `json:"filter"`
@@ -133,6 +139,9 @@ func (tw *twin) search(w http.ResponseWriter, r *http.Request) {
 		tags := []string{"env:production", "service:checkout"}
 		if l.version != "" {
 			tags = append(tags, "version:"+l.version)
+			if tw.ungroupable != "" {
+				tags = append(tags, tw.ungroupable+":"+l.version)
+			}
 		}
 		data = append(data, map[string]any{"id": fmt.Sprintf("ev-%s-%d", l.at.Format("150405"), i),
 			"attributes": map[string]any{
@@ -160,6 +169,11 @@ func (tw *twin) aggregate(w http.ResponseWriter, r *http.Request) {
 		} `json:"group_by"`
 	}
 	tw.decode(r, &req)
+	if len(req.GroupBy) > 0 && req.GroupBy[0].Facet == tw.ungroupable && tw.ungroupable != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		tw.encode(w, map[string]any{"errors": []string{"cannot group by " + tw.ungroupable}})
+		return
+	}
 	lines := tw.match(req.Filter)
 
 	groups := map[string][]twinLine{}

@@ -43,6 +43,8 @@ type sample struct {
 	pages   int
 	newest  time.Time
 	last    *datadogx.Response
+	// why, when set, is why the lines were read at all; it ends the sampling statement.
+	why string
 }
 
 // sampleLogs reads up to LineCap lines matching query over window, newest first.
@@ -136,10 +138,14 @@ func matches(template, line string) bool {
 
 // sampling states the sample in coverage's words.
 func (s sample) sampling() string {
+	out := fmt.Sprintf("complete: all %d lines in %d pages", len(s.lines), s.pages)
 	if s.capped {
-		return fmt.Sprintf("sampled: the newest %d lines (the line cap) in %d pages", len(s.lines), s.pages)
+		out = fmt.Sprintf("sampled: the newest %d lines (the line cap) in %d pages", len(s.lines), s.pages)
 	}
-	return fmt.Sprintf("complete: all %d lines in %d pages", len(s.lines), s.pages)
+	if s.why != "" {
+		out += "; " + s.why
+	}
+	return out
 }
 
 // truncation names what the sample did not read.

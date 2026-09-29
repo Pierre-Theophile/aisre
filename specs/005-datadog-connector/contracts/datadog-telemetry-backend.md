@@ -61,7 +61,8 @@ specified with the capability and not built before it.
   stamp form their own, named group rather than vanishing.
 - Each group is normalised per [version-stamping.md §4](./version-stamping.md) into `deploy_ref` or
   `deploy_ref_absent_reason`.
-- **If the attribute is not groupable** (research §5 O1): the answer is computed from a paged search
+- **If the attribute is not groupable** (research §5 O1: Datadog groups by non-faceted attributes, so this
+  is the exception; the trigger is the aggregate answering 400, not a rate limit or a permission): the answer is computed from a paged search
   up to the published line cap, `coverage.sampling` states the sample and its size, and the digest
   is never presented as exact.
 
