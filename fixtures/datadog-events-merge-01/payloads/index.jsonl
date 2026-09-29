@@ -1,0 +1,9 @@
+{"kind":"discovery","at":"2026-09-21T14:00:00Z","seq":0,"file":"discovery/000001.json"}
+{"kind":"namespaces","at":"2026-09-21T14:00:00Z","seq":100,"file":"namespaces/000001.json"}
+{"kind":"deployments","at":"2026-09-21T14:00:00Z","seq":1003,"file":"deployments/000001.json"}
+{"kind":"sync","at":"2026-09-21T14:01:00Z","seq":1100,"file":"sync/000001.pb"}
+{"kind":"deployments","at":"2026-09-21T14:10:00Z","seq":1050,"file":"deployments/000002.json"}
+{"kind":"events","at":"2026-09-21T14:20:00Z","seq":0,"file":"events/000001.json"}
+{"kind":"events-poll","at":"2026-09-21T14:20:00Z","seq":0,"file":"events-poll/000001.json"}
+{"kind":"events","at":"2026-09-21T14:25:00Z","seq":0,"file":"events/000002.json"}
+{"kind":"events-poll","at":"2026-09-21T14:25:00Z","seq":0,"file":"events-poll/000002.json"}

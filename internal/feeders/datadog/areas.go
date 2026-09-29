@@ -14,10 +14,10 @@ import (
 // Areas and quota stops (005 T084, T085; contract §5).
 //
 // Every live call is drawn for an area, and the areas are ranked by the published deferral order:
-// transitions and monitor definitions (one read), then discovery, then rollout detection. The client's
-// budget (internal/datadogx/budget.go) makes a lower area leave part of the share for the areas ahead of
-// it, so under pressure the connector stops looking for new versions first and stops reading alert
-// transitions last.
+// transitions and monitor definitions (one read), then discovery, then the event stream, then rollout
+// detection. The client's budget (internal/datadogx/budget.go) makes a lower area leave part of the
+// share for the areas ahead of it, so under pressure the connector stops looking for new versions
+// first and stops reading alert transitions last.
 
 // Area is what a call is for.
 type Area string
@@ -26,15 +26,19 @@ type Area string
 const (
 	// AreaStartup is the startup gate's reads: they happen once, before any area runs, and are never
 	// deferred.
-	AreaStartup       Area = "startup"
-	AreaMonitors      Area = "monitors"
-	AreaDiscovery     Area = "discovery"
+	AreaStartup   Area = "startup"
+	AreaMonitors  Area = "monitors"
+	AreaDiscovery Area = "discovery"
+	// AreaChanges is the event stream read as a change source (section D). It yields before discovery
+	// does and after rollout detection: an event an organisation posted is a statement, where a
+	// rollout inferred from logs is a bound.
+	AreaChanges       Area = "changes"
 	AreaRollouts      Area = "rollouts"
 	AreaInvestigation Area = "investigation"
 )
 
 // MinHeadroom is the share of the window's allowance an area must leave unspent.
-var MinHeadroom = map[Area]float64{AreaMonitors: 0, AreaInvestigation: 0, AreaDiscovery: 0.25, AreaRollouts: 0.5}
+var MinHeadroom = map[Area]float64{AreaMonitors: 0, AreaInvestigation: 0, AreaDiscovery: 0.25, AreaChanges: 0.35, AreaRollouts: 0.5}
 
 type areaKey struct{}
 

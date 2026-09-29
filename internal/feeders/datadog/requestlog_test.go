@@ -3,6 +3,7 @@
 package datadog_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -80,9 +81,10 @@ func TestADisabledCapabilityDeclaresNothing(t *testing.T) {
 }
 
 // A capability that is specified but not built cannot be enabled, so it can never be half-enabled.
+// `changes` is built (T092) and off by default; `apm_topology` is not.
 func TestAnUnbuiltCapabilityCannotBeEnabled(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"apm_topology", "changes", "incidents"} {
+	for _, name := range []string{"apm_topology", "incidents"} {
 		if _, err := ddfeeder.ParseCapabilities("logs," + name); err == nil {
 			t.Errorf("capability %q was accepted", name)
 		}
@@ -94,6 +96,42 @@ func TestAnUnbuiltCapabilityCannotBeEnabled(t *testing.T) {
 	if got := caps.String(); got != "apm_topology=off,changes=off,logs=on,monitors=on,tags=off" {
 		t.Errorf("the checkpoint spelling is %q; every capability must be stated, off ones included", got)
 	}
+	built, err := ddfeeder.ParseCapabilities("logs,monitors,tags,changes")
+	if err != nil {
+		t.Fatalf("the changes capability is built and must be enableable: %v", err)
+	}
+	if got := built.String(); got != "apm_topology=off,changes=on,logs=on,monitors=on,tags=on" {
+		t.Errorf("the checkpoint spelling is %q", got)
+	}
+}
+
+// FR-008b for the events read: `GET /api/v2/events` and its scope `events_read` are declared only under
+// the changes capability, the operation is a plain GET, and posting an event stays refused whatever is on.
+func TestTheEventsReadIsDeclaredOnlyUnderTheChangesCapability(t *testing.T) {
+	t.Parallel()
+	def := ddfeeder.DefaultCapabilities()
+	if _, err := ddfeeder.SurfaceFor(def).Issuable(ddfeeder.OpListEvents); err == nil {
+		t.Error("the events read is issuable with the changes capability off")
+	}
+	on := ddfeeder.Capabilities{ddfeeder.CapLogs: true, ddfeeder.CapMonitors: true, ddfeeder.CapTags: true, ddfeeder.CapChanges: true}
+	surface := ddfeeder.SurfaceFor(on)
+	spec, err := surface.Issuable(ddfeeder.OpListEvents)
+	if err != nil || spec.Area != "changes" {
+		t.Fatalf("the events read is not declared under changes: %v %+v", err, spec)
+	}
+	if n := surface.StateChanges(); n != 0 {
+		t.Errorf("%d published operations change state with changes on", n)
+	}
+	if !strings.HasPrefix(string(ddfeeder.OpListEvents), "GET ") {
+		t.Errorf("%q is not a GET", ddfeeder.OpListEvents)
+	}
+	if _, err := surface.Issuable("POST /api/v1/events"); err == nil {
+		t.Error("posting an event is issuable with changes on")
+	}
+	scopes := strings.Join(ddfeeder.AllowedScopes(on), ",")
+	if !strings.Contains(scopes, "events_read") || strings.Contains(strings.Join(ddfeeder.AllowedScopes(def), ","), "events_read") {
+		t.Errorf("events_read is allowed with changes on: %q; and must not be with it off", scopes)
+	}
 }
 
 // The namespace C9 reads is spelled the same by the feeder that mints it and the rule that reads it;
@@ -102,5 +140,34 @@ func TestTheLogServiceNamespaceIsTheOneC9Reads(t *testing.T) {
 	t.Parallel()
 	if ddfeeder.NSLogService != resolution.NamespaceDatadogLogService {
 		t.Fatalf("the feeder mints %q and C9 reads %q", ddfeeder.NSLogService, resolution.NamespaceDatadogLogService)
+	}
+}
+
+// The page an operator approves also publishes what the changes capability adds, verbatim: the operation
+// and the reason the code states, and no more than that one operation.
+func TestThePageAlsoPublishesWhatTheChangesCapabilityAdds(t *testing.T) {
+	t.Parallel()
+	on := ddfeeder.DefaultCapabilities()
+	on[ddfeeder.CapChanges] = true
+	added := map[feeder.ReadOperation]bool{}
+	for _, op := range ddfeeder.SurfaceFor(on).Operations() {
+		if _, err := ddfeeder.DefaultSurface.Issuable(op); err != nil {
+			added[op] = true
+		}
+	}
+	if len(added) != 1 || !added[ddfeeder.OpListEvents] {
+		t.Fatalf("the changes capability adds %v, want exactly %s", added, ddfeeder.OpListEvents)
+	}
+	page, err := os.ReadFile("../../../docs/connectors/datadog.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, _ := ddfeeder.SurfaceFor(on).SpecOf(ddfeeder.OpListEvents)
+	row := "| " + spec.Area + " | `" + string(ddfeeder.OpListEvents) + "` | " + spec.Why + " |"
+	if !strings.Contains(string(page), row) {
+		t.Errorf("docs/connectors/datadog.md does not publish the row:\n%s", row)
+	}
+	if !strings.Contains(string(page), "not yet verified against a live organisation") {
+		t.Error("the page does not say the changes capability is unverified against a live organisation")
 	}
 }

@@ -27,6 +27,10 @@ const (
 	// Monitors: definitions and per-group states.
 	OpListMonitors feeder.ReadOperation = "GET /api/v1/monitor"
 	OpGetMonitor   feeder.ReadOperation = "GET /api/v1/monitor/{monitor_id}"
+
+	// Changes: the event stream read as a change source (section D). Declared only when the `changes`
+	// capability is enabled, and the only one that needs `events_read`.
+	OpListEvents feeder.ReadOperation = "GET /api/v2/events"
 )
 
 // Platform is the connector's name, as it appears in a refusal.
@@ -66,6 +70,13 @@ var capabilityOps = map[Capability]map[feeder.ReadOperation]feeder.ReadOperation
 		OpGetMonitor: {
 			Area: "monitors",
 			Why:  "read one monitor with its per-group states",
+		},
+	},
+	CapChanges: {
+		OpListEvents: {
+			Area: "changes",
+			Why: "list the events of a window, filtered by the configured sources and tags and paged by " +
+				"cursor; the endpoint reads the event stream and has no field that posts, edits or deletes one",
 		},
 	},
 	// CapTags issues nothing of its own: tags arrive on the payloads above.

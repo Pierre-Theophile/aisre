@@ -21,7 +21,10 @@ func TestFeedDatadogRefusesBeforeReading(t *testing.T) {
 	}{
 		{"a live recording with no corpus key", []string{"--org", "twin", "--site", "datadoghq.eu", "--record", t.TempDir()}, "FR-137"},
 		{"no site", []string{"--org", "twin"}, "--site is required"},
-		{"an unbuilt capability", []string{"--org", "twin", "--capabilities", "logs,changes"}, "not built"},
+		{"an unbuilt capability", []string{"--org", "twin", "--capabilities", "logs,apm_topology"}, "not built"},
+		{"changes with nothing to select", []string{"--org", "twin", "--capabilities", "logs,changes"}, "--change-sources"},
+		{"a change scope with the capability off", []string{"--org", "twin", "--change-sources", "jenkins"}, "which is off"},
+		{"a malformed change tag", []string{"--org", "twin", "--capabilities", "logs,changes", "--change-tags", "deployment"}, "key:value"},
 		{"a malformed log source", []string{"--org", "twin", "--site", "datadoghq.eu", "--watch", "production/check/out"}, "separator"},
 		{"a malformed override", []string{"--org", "twin", "--site", "datadoghq.eu", "--version-override", "production/checkout"}, "<env>/<service>=<field>"},
 		{"no keys", []string{"--org", "twin", "--site", "datadoghq.eu", "--dry-run"}, "DD_API_KEY"},

@@ -10,18 +10,25 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protojson"
+
 	ddfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/datadog"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
-// SC-024, asserted before any APM or event-stream code exists (T089, T091): with `apm_topology` and
-// `changes` off, the default, the connector requests no scope for them, declares no operation of theirs,
-// emits nothing derived from them, and every checkpoint names them as off. A disabled capability must
-// read as "we were not looking", never as "there was nothing there" (FR-008a, FR-008b).
+// SC-024 (T089, T091, T092): with `apm_topology` and `changes` off, the default, the connector requests no
+// scope for them, declares no operation of theirs, emits nothing derived from them, and every checkpoint
+// names them as off. A disabled capability must read as "we were not looking", never as "there was
+// nothing there" (FR-008a, FR-008b).
 //
-// The last clause of SC-024 (every other capability's goldens byte-identical with these on and off) is
-// not applicable while they are not built: ParseCapabilities refuses to enable them
-// (TestAnUnbuiltCapabilityCannotBeEnabled), so there is no "on" run to compare. It becomes a test with
-// the phase that builds either.
+// The last clause (every other capability's goldens byte-identical with these on and off) is testable for
+// `changes` since T092 built it: TestEveryOtherCapabilityIsByteIdenticalWithChangesOnAndOff runs the
+// fixtures that contain no events both ways. It stays not applicable for `apm_topology`, which
+// ParseCapabilities refuses to enable (TestAnUnbuiltCapabilityCannotBeEnabled), and becomes a test with
+// T090.
+//
+// A fixture whose checkpoints state `changes=on` (datadog-events-merge-01) is the capability's own, and is
+// held to what it may emit instead: changes and the deploy claims of section D, nothing of APM.
 
 // offScopes are the scopes only the disabled capabilities need.
 func offScopes() map[string]ddfeeder.Capability {
@@ -74,6 +81,20 @@ var enabledNamespaces = map[string]bool{
 	"owner.user":          true,
 }
 
+// What only the changes capability adds: an event's target may be a Kubernetes deployment.
+var changesNamespaces = map[string]bool{"k8s.deployment": true}
+
+// statesChangesOn reports whether the fixture's Datadog checkpoints state the changes capability on:
+// then it is that capability's own fixture, held to what it may emit rather than to silence.
+func statesChangesOn(t *testing.T, file string) bool {
+	t.Helper()
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Contains(string(raw), "changes=on")
+}
+
 func TestADisabledCapabilityIsSilentAndStatedInEveryFixture(t *testing.T) {
 	t.Parallel()
 	files, err := filepath.Glob(filepath.Join(repoRoot(t), "fixtures", "datadog-*", "events.jsonl"))
@@ -83,6 +104,7 @@ func TestADisabledCapabilityIsSilentAndStatedInEveryFixture(t *testing.T) {
 	checkpoints := 0
 	for _, file := range files {
 		fixture := filepath.Base(filepath.Dir(file))
+		changesOn := statesChangesOn(t, file)
 		f, err := os.Open(file)
 		if err != nil {
 			t.Fatal(err)
@@ -106,8 +128,12 @@ func TestADisabledCapabilityIsSilentAndStatedInEveryFixture(t *testing.T) {
 					checkpoints++
 					var c struct{ Note string }
 					_ = json.Unmarshal(body, &c)
-					if !strings.Contains(c.Note, "apm_topology=off") || !strings.Contains(c.Note, "changes=off") {
-						t.Errorf("%s %s: the checkpoint does not state apm_topology and changes as off:\n%s", fixture, id, c.Note)
+					wantChanges := "changes=off"
+					if changesOn {
+						wantChanges = "changes=on"
+					}
+					if !strings.Contains(c.Note, "apm_topology=off") || !strings.Contains(c.Note, wantChanges) {
+						t.Errorf("%s %s: the checkpoint does not state apm_topology off and %s:\n%s", fixture, id, wantChanges, c.Note)
 					}
 				case "upsertEdge":
 					var e struct{ Type string }
@@ -120,7 +146,7 @@ func TestADisabledCapabilityIsSilentAndStatedInEveryFixture(t *testing.T) {
 						Props map[string]string
 					}
 					_ = json.Unmarshal(body, &c)
-					if c.Props["sre.change.valid_from_is_a_bound"] != "first_seen_in_logs" {
+					if !changesOn && c.Props["sre.change.valid_from_is_a_bound"] != "first_seen_in_logs" {
 						t.Errorf("%s %s: a change not observed in logs; with changes off none is emitted", fixture, id)
 					}
 				}
@@ -128,7 +154,7 @@ func TestADisabledCapabilityIsSilentAndStatedInEveryFixture(t *testing.T) {
 					continue // tags: an allowlisted tag names another platform's identity, whatever its namespace
 				}
 				for _, ns := range namespacesIn(body) {
-					if !enabledNamespaces[ns] {
+					if !enabledNamespaces[ns] && (!changesOn || !changesNamespaces[ns]) {
 						t.Errorf("%s %s: %s carries namespace %q, which no enabled capability emits", fixture, id, op, ns)
 					}
 				}
@@ -169,4 +195,69 @@ func namespacesIn(raw json.RawMessage) []string {
 	}
 	walk(v)
 	return out
+}
+
+// SC-024, last clause (T092): every other capability's output is byte-identical with `changes` on and
+// off, over the fixtures that contain no events. The two runs read the same payloads; the only thing that
+// may differ is the checkpoint's statement of the capability, which is the point of stating it.
+func TestEveryOtherCapabilityIsByteIdenticalWithChangesOnAndOff(t *testing.T) {
+	t.Parallel()
+	off := ddfeeder.DefaultCapabilities()
+	on := ddfeeder.DefaultCapabilities()
+	on[ddfeeder.CapChanges] = true
+	scope := ddfeeder.ChangeScope{Sources: []string{"jenkins"}, Tags: []string{"event_type:deployment"}}
+
+	sets := map[string]struct {
+		opts     ddfeeder.Options
+		payloads []feeder.Payload
+	}{
+		"rollouts": {ddfeeder.Options{OrgSlug: "twin"}, rolloutPayloads(t)},
+		"tags":     {ddfeeder.Options{OrgSlug: "twin"}, tagsPayloads(t)},
+	}
+	for _, fx := range monitorFixtures() {
+		sets[fx.dir] = struct {
+			opts     ddfeeder.Options
+			payloads []feeder.Payload
+		}{fixtureOptions(), fx.payloadsOf(t)}
+	}
+	for name, set := range sets {
+		offOpts, onOpts := set.opts, set.opts
+		offOpts.Capabilities = off
+		onOpts.Capabilities, onOpts.Changes = on, scope
+		serialise := func(opts ddfeeder.Options, capsAs string) []string {
+			var out []string
+			for _, ev := range run(t, opts, set.payloads...).Events() {
+				if c := ev.GetSourceCheckpoint(); c != nil {
+					// The statement of the capability is the one thing that is meant to differ.
+					c.Note = strings.ReplaceAll(c.Note, "changes=off", capsAs)
+					c.Note = strings.ReplaceAll(c.Note, "changes=on", capsAs)
+				}
+				raw, err := protojson.MarshalOptions{}.Marshal(ev)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, string(raw))
+			}
+			return out
+		}
+		a, b := serialise(offOpts, "changes=?"), serialise(onOpts, "changes=?")
+		if len(a) == 0 {
+			t.Fatalf("%s: emitted nothing; the comparison would be vacuous", name)
+		}
+		if len(a) != len(b) {
+			t.Errorf("%s: %d events with changes off, %d with it on", name, len(a), len(b))
+			continue
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				t.Errorf("%s: event %d differs with changes on:\n off %s\n on  %s", name, i, a[i], b[i])
+				break
+			}
+		}
+		// And the statement itself differs, so the comparison is not blind to the note it normalised.
+		if !strings.Contains(checkpointNotes(run(t, offOpts, set.payloads...)), "changes=off") ||
+			!strings.Contains(checkpointNotes(run(t, onOpts, set.payloads...)), "changes=on") {
+			t.Errorf("%s: a checkpoint does not state the capability as it was configured", name)
+		}
+	}
 }
