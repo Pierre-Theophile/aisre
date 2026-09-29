@@ -238,6 +238,20 @@ if ! (cd "$work/clean" && bash scripts/check-no-secrets.sh fixtures >/dev/null 2
   failed=1
 fi
 
+# A root outside the scanner's repository, named relative to the caller's directory: the private
+# corpus's CI checks the corpus out beside the tooling. Before 005 T083 the root was read relative to
+# the tooling's own directory after its cd, matched nothing and passed as a clean scan of nothing.
+mkdir -p "$work/outside/corpus/campaign-x"
+printf '{"owner": "jane.doe@acme-corp.io"}\n' >"$work/outside/corpus/campaign-x/payload.json"
+if (cd "$work/outside" && bash "$OLDPWD/scripts/check-no-secrets.sh" corpus >/dev/null 2>&1); then
+  echo "FAIL: a root outside the repository passed with a person's address in it" >&2
+  failed=1
+fi
+if (cd "$work/outside" && bash "$OLDPWD/scripts/check-no-secrets.sh" no-such-root >/dev/null 2>&1); then
+  echo "FAIL: a root that does not exist passed as a clean scan" >&2
+  failed=1
+fi
+
 # The real tree is deliberately NOT scanned here: `scripts/check-no-secrets.sh` is run on it by
 # the same CI job (and by hand), and scanning the whole corpus twice doubles the slowest step in
 # the lint job for no extra information. This test is about the rules, not about the tree.
