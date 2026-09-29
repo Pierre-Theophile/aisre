@@ -161,30 +161,37 @@ before building the workaround.
 
 ## 5. The environment
 
-Unified service tagging gives each line a `service`, an `env` and a `version`. Many organisations
-ship logs with a `service` and no `env`, and the connector still measures them. `--watch
-<env>/<service>` watches one environment, and `--watch <service>` watches a service whose logs carry
-none. Such a source cannot be matched to the same service on another platform, because C9 needs the
-environment. So the connector says `missing env to match service` twice: when the source is
-configured, and in every discovery checkpoint.
+Unified service tagging gives each line a `service`, an `env` and a `version`. Many organisations'
+logs carry the environment somewhere else, or not at all. The connector does not require the tag: it
+**discovers** where the environment is, the way it discovers the version stamp. It tries these fields
+in order, and accepts the first one present on 95 % of the service's lines:
 
-JSON logs often carry the environment as a field, such as `{"env": "production", ...}`. That field is
-the `@env` **attribute**, not the `env` tag, and Datadog's `env:` search reads only the tag. You can
-either:
-- remap it in a Datadog log pipeline (a Remapper from `@env` to the `env` tag), which fixes it for
-  every tool; or
-- tell the connector where to read it with `--env-field @env`. The source is then measured and
-  pointed at on `service:<service> @env:<env>`, and it keeps its environment, so C9 still merges
-  it.
+| # | Field | Typically set by |
+|---|---|---|
+| 1 | `env` (tag) | unified service tagging: `DD_ENV`, the `tags.datadoghq.com/env` label |
+| 2 | `@env` (attribute) | a JSON logger's `env` field |
+| 3 | `@environment` (attribute) | the same, spelled out |
+| 4 | `@deployment.environment.name` (attribute) | OpenTelemetry's resource attribute, kept as an attribute |
 
-If you watch `<env>/<service>` and no line carries that environment tag, the connector first counts
-the service's lines with `@env:<env>`, then the lines that carry no `env` at all. When it finds
-either, it tells you which fix applies, rather than reporting a service that wrote nothing.
+The field found is the one the source is measured on, and the one its pointer searches, for example
+`service:checkout @env:production`. The source keeps its environment, so C9 still matches it to the
+same service on other platforms. The discovery costs one count of the service's lines plus one per
+field tried. It is made once per source, and made again only when the source stops matching.
+`--env-field <field>` skips it and names the field, as `--version-override` does for the version.
 
-To add the environment, use one of:
-- `DD_ENV=<env>` on the service;
-- the `tags.datadoghq.com/env` label on Kubernetes;
-- an `env:<env>` tag in the log pipeline.
+Each discovery checkpoint says what it found:
+
+- **An attribute.** "the environment is read from @env, present on 99.8 % of the service's lines". A
+  Datadog log-pipeline Remapper from that attribute to the `env` tag is still worth adding, so that
+  monitors and dashboards can read it too.
+- **A name that matches nothing.** `--watch prod/checkout` finds no line while `@env` says `production`:
+  the checkpoint lists the environments that exist and the source to watch.
+- **No environment given.** `--watch checkout`: the checkpoint lists the environments found and
+  suggests `--watch production/checkout`. Until then the service is measured on its name alone, and
+  it is not matched to other platforms.
+- **No field at all.** The checkpoint says `missing env to match service` and how to add one: `DD_ENV`
+  on the service, the `tags.datadoghq.com/env` label on Kubernetes, or an `env:<env>` tag on the log
+  pipeline.
 
 ## 6. Two warnings
 

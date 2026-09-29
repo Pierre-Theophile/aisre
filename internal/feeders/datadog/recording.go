@@ -163,6 +163,13 @@ func prepareDiscovery(san *sanitise.Sanitiser, raw []byte) ([]byte, error) {
 			return nil, err
 		}
 		m.Failed, m.ValuesFailed = redactReason(m.Failed), redactReason(m.ValuesFailed)
+		if m.EnvDiscovery != nil {
+			for j := range m.EnvDiscovery.Values {
+				if m.EnvDiscovery.Values[j].Value, err = san.Identifier(sanitise.KindEnvironment, m.EnvDiscovery.Values[j].Value); err != nil {
+					return nil, err
+				}
+			}
+		}
 		for j := range m.Tags {
 			t := &m.Tags[j]
 			switch {

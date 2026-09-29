@@ -71,6 +71,9 @@ type Poller struct {
 	pollNow chan struct{}
 	// resumeAt is when Datadog said to read again after a 429; nothing is read before it.
 	resumeAt time.Time
+	// envFields are the environment fields discovered per source, so the discovery is paid for once;
+	// forgotten when the source stops matching, so it is made again (envfield.go).
+	envFields map[string]string
 	// pendingWindow is a discovery the budget stopped, kept so that it resumes over the same window
 	// (and the measurer's cache answers what was already read) at retryAt, the reset Datadog stated.
 	pendingWindow *DiscoveryWindow
@@ -134,7 +137,14 @@ func (p *Poller) Discover(ctx context.Context) error {
 				m = SourceMeasurement{Failed: StopRateLimited}
 			} else {
 				var err error
-				m, err = p.Measurer.Measure(WithArea(ctx, AreaDiscovery), src, p.VersionOverrides[key], tick.Window.From, tick.Window.To)
+				msrc := src
+				if msrc.EnvField == "" {
+					msrc.EnvField = p.envFields[key]
+				}
+				m, err = p.Measurer.Measure(WithArea(ctx, AreaDiscovery), msrc, p.VersionOverrides[key], tick.Window.From, tick.Window.To)
+				if err == nil {
+					p.rememberEnvField(src, key, m)
+				}
 				if err != nil {
 					if ctx.Err() != nil {
 						return ctx.Err()
@@ -403,4 +413,20 @@ func (p *Poller) discoveryInterval() time.Duration {
 		return p.DiscoveryInterval
 	}
 	return DefaultDiscoveryInterval
+}
+
+// rememberEnvField keeps a discovered environment field, and forgets it when the source matched nothing
+// with it, so the next tick discovers again. A configured --env-field is never replaced.
+func (p *Poller) rememberEnvField(src LogSource, key string, m SourceMeasurement) {
+	if src.EnvField != "" {
+		return
+	}
+	if p.envFields == nil {
+		p.envFields = map[string]string{}
+	}
+	if m.EnvField == "" || m.Lines == 0 {
+		delete(p.envFields, key)
+		return
+	}
+	p.envFields[key] = m.EnvField
 }

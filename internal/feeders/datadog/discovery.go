@@ -61,14 +61,11 @@ type SourceMeasurement struct {
 	// ValuesFailed says the values could not be listed and why: this interval's rollouts are then
 	// missing, and the checkpoint says so. The next interval looks again.
 	ValuesFailed string `json:"values_failed,omitempty"`
-	// LinesWithoutEnv counts the service's lines that carry no `env` tag, measured only when the source
-	// names an environment and none of its lines carry it: the configuration to fix is then that
-	// the logs have no environment, not that the service is silent.
-	LinesWithoutEnv int64 `json:"lines_without_env,omitempty"`
-	// LinesWithEnvAttribute counts, in the same case, the service's lines that carry the environment as
-	// the `@env` attribute instead of the tag. Measured first: when it is non-zero the fix is a
-	// remapper or --env-field, not adding an environment.
-	LinesWithEnvAttribute int64 `json:"lines_with_env_attribute,omitempty"`
+	// EnvField is the field the environment was read from: `env` (the tag), an attribute such as
+	// `@env`, or empty when none of the published fields carries it (envfield.go).
+	EnvField string `json:"env_field,omitempty"`
+	// EnvDiscovery is the environment-field discovery, when this tick made it.
+	EnvDiscovery *EnvDiscovery `json:"env_discovery,omitempty"`
 	// Failed says the measurement could not be completed and why; the source is then asserted without
 	// a pointer change, and the checkpoint says so.
 	Failed string `json:"failed,omitempty"`

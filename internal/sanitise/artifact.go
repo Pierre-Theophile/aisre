@@ -60,8 +60,8 @@ var groupMention = regexp.MustCompile(`@(here|channel|everyone)($|[^A-Za-z0-9-])
 // the environment field (`@env`, 005) and the attributes of the published version-stamp conventions
 // (pkg/feeder/versionstamp). They name a field, never a person, and a recording of logs that carry
 // them must not be refused for it. Any other `@name` is still a handle.
-var logAttribute = regexp.MustCompile(`@(env|version|service\.version|git\.commit\.sha|container\.image\.name|` +
-	`container\.image\.digest|faas\.version)($|[^A-Za-z0-9._-])`)
+var logAttribute = regexp.MustCompile(`@(env|environment|deployment\.environment\.name|version|service\.version|git\.commit\.sha|container\.image\.name|` +
+	`container\.image\.digest|faas\.version)\.?($|[^A-Za-z0-9._-])`)
 
 // address is the shape an address is written in, for the byte-level pass.
 var address = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)

@@ -5,6 +5,7 @@ package datadogx
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -96,13 +97,22 @@ func (m Measurer) search(ctx context.Context, window string, req SearchRequest) 
 	return out, nil
 }
 
-// Measure measures one source.
+// Measure measures one source. A source whose environment field is not known — not configured with
+// --env-field, not remembered by the poller — first discovers it (ddfeeder envfield.go).
 func (m Measurer) Measure(ctx context.Context, src ddfeeder.LogSource, override string, from, to time.Time) (ddfeeder.SourceMeasurement, error) {
-	base := src.Query()
 	indexes := m.Indexes
 	if src.Index != "" {
 		indexes = []string{src.Index}
 	}
+	var disc *ddfeeder.EnvDiscovery
+	if src.EnvField == "" {
+		d, field, err := m.discoverEnv(ctx, src, from, to, indexes)
+		if err != nil {
+			return ddfeeder.SourceMeasurement{}, err
+		}
+		disc, src.EnvField = d, field
+	}
+	base := src.Query()
 	count := func(extra string) (lines, errorLines int64, err error) {
 		query := base
 		if extra != "" {
@@ -130,22 +140,17 @@ func (m Measurer) Measure(ctx context.Context, src ddfeeder.LogSource, override 
 	if out.Lines, out.ErrorLines, err = count(""); err != nil {
 		return out, err
 	}
-	if out.Lines == 0 && src.Env != "" && src.EnvField == "" {
-		// Nothing carries this environment as the `env` tag. First, whether the service carries it as
-		// the `@env` attribute (JSON logs often do); else whether it logs with no `env` at all. Either is
-		// a configuration to fix rather than a silent service, and each costs one count.
-		n, err := m.countQuery(ctx, "service:"+src.Service+" "+ddfeeder.EnvAttribute+":"+src.Env, from, to, indexes)
+	out.EnvField = src.EnvField
+	if disc != nil && src.EnvField != "" && (src.Env == "" || out.Lines == 0) {
+		// The source names no environment, or one no line carries: which environments the field does
+		// carry is what tells the operator what to watch.
+		values, err := m.envValues(ctx, src, from, to, indexes)
 		if err != nil {
 			return out, err
 		}
-		out.LinesWithEnvAttribute = n
-		if n == 0 {
-			if n, err = m.countQuery(ctx, "service:"+src.Service+" -env:*", from, to, indexes); err != nil {
-				return out, err
-			}
-			out.LinesWithoutEnv = n
-		}
+		disc.Values = values
 	}
+	out.EnvDiscovery = disc
 	if out.HostLines, _, err = count("host:*"); err != nil {
 		return out, err
 	}
@@ -295,4 +300,57 @@ func (m Measurer) countQuery(ctx context.Context, query string, from, to time.Ti
 		lines += n
 	}
 	return lines, nil
+}
+
+// discoverEnv counts the service's lines, then each published environment field's presence on them, in
+// order, and stops at the first present on the published share. One count, plus one per field tried.
+func (m Measurer) discoverEnv(ctx context.Context, src ddfeeder.LogSource, from, to time.Time, indexes []string) (*ddfeeder.EnvDiscovery, string, error) {
+	service := "service:" + src.Service
+	total, err := m.countQuery(ctx, service, from, to, indexes)
+	if err != nil {
+		return nil, "", err
+	}
+	d := &ddfeeder.EnvDiscovery{ServiceLines: total}
+	if total == 0 {
+		return d, "", nil
+	}
+	present := map[string]int64{}
+	for _, c := range ddfeeder.EnvFields {
+		n, err := m.countQuery(ctx, service+" "+c.Field+":*", from, to, indexes)
+		if err != nil {
+			return nil, "", err
+		}
+		present[c.Field] = n
+		d.Fields = append(d.Fields, ddfeeder.CandidateCount{Label: c.Label(), Lines: n})
+		if field := ddfeeder.DecideEnvField(total, present); field != "" {
+			return d, field, nil
+		}
+	}
+	return d, "", nil
+}
+
+// envValues lists the environments a field carries on the service's lines, most lines first.
+func (m Measurer) envValues(ctx context.Context, src ddfeeder.LogSource, from, to time.Time, indexes []string) ([]ddfeeder.EnvValue, error) {
+	out, err := m.aggregate(ctx, AggregateRequest{
+		Compute: []Compute{{Aggregation: "count", Type: "total"}},
+		Filter:  NewLogFilter("service:"+src.Service, from, to, indexes),
+		GroupBy: []GroupBy{{Facet: src.EnvField, Limit: 10}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var values []ddfeeder.EnvValue
+	for _, b := range out.Data.Buckets {
+		if v := b.Key(src.EnvField); v != "" {
+			n, _ := b.Count(0)
+			values = append(values, ddfeeder.EnvValue{Value: v, Lines: n})
+		}
+	}
+	sort.Slice(values, func(i, j int) bool {
+		if values[i].Lines != values[j].Lines {
+			return values[i].Lines > values[j].Lines
+		}
+		return values[i].Value < values[j].Value
+	})
+	return values, nil
 }

@@ -21,6 +21,8 @@ func TestTheArtifactScanDoesNotFireOnThisProjectsOwnEntityKeys(t *testing.T) {
 		// A log attribute a connector writes into a selector or a join key names a field (005).
 		`{"selector": "service:search @env:production"}`,
 		`{"joinKeys": {"version": "@version"}}`,
+		`{"note": "the environment is read from @env. A Remapper would help"}`,
+		`{"note": "or @deployment.environment.name"}`,
 		`{"service": "px_svc_abcdefghijkl", "region": "europe-west1"}`,
 	} {
 		if class := sanitise.PeopleInArtifact([]byte(clean)); class != "" {

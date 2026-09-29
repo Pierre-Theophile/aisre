@@ -88,7 +88,7 @@ ALLOW_MARKER='check-no-secrets: allow'
 # not a concession to the twins — it is a rule every real GCP recording needs. Principal *fields* are
 # caught by name regardless of value (the gcp-principal rule), so allow-listing the domain does not
 # weaken the detection that matters.
-PEOPLE_ALLOWED_RE='@(otel|k8s|app|service|host|container|cloud|db|server|http|url|process|net|node|pod|namespace|telemetry|deployment|statefulset|daemonset|faas|messaging|rpc|aws|gcp|azure)\.|@([A-Za-z0-9.-]+\.)?(example|invalid|test|localhost)($|[^A-Za-z0-9.-])|@example\.(com|org|net)($|[^A-Za-z0-9.-])|@(here|channel|everyone)($|[^A-Za-z0-9-])|@(env|version|service\.version|git\.commit\.sha|container\.image\.name|container\.image\.digest|faas\.version)($|[^A-Za-z0-9._-])|@[A-Za-z0-9.-]*\.?(iam\.gserviceaccount\.com|developer\.gserviceaccount\.com|appspot\.gserviceaccount\.com)($|[^A-Za-z0-9.-])'
+PEOPLE_ALLOWED_RE='@(otel|k8s|app|service|host|container|cloud|db|server|http|url|process|net|node|pod|namespace|telemetry|deployment|statefulset|daemonset|faas|messaging|rpc|aws|gcp|azure)\.|@([A-Za-z0-9.-]+\.)?(example|invalid|test|localhost)($|[^A-Za-z0-9.-])|@example\.(com|org|net)($|[^A-Za-z0-9.-])|@(here|channel|everyone)($|[^A-Za-z0-9-])|@(env|environment|version|service\.version|git\.commit\.sha|container\.image\.name|container\.image\.digest|faas\.version)\.?($|[^A-Za-z0-9._-])|@[A-Za-z0-9.-]*\.?(iam\.gserviceaccount\.com|developer\.gserviceaccount\.com|appspot\.gserviceaccount\.com)($|[^A-Za-z0-9.-])'
 
 # A log attribute a connector writes into a selector or a join key names a field, never a person: the
 # environment field (`@env`, 005) and the attributes of the published version-stamp conventions. The same

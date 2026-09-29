@@ -155,6 +155,8 @@ type Feeder struct {
 	// warnedEnv are the environment warnings already logged: each is logged once per run, and stated in
 	// every checkpoint it applies to.
 	warnedEnv map[string]bool
+	// envNotes are the last environment statements per source.
+	envNotes map[string]envStatement
 }
 
 // New returns a feeder over opts.
@@ -313,6 +315,10 @@ func (f *Feeder) applyDiscovery(ctx context.Context, em feeder.Emitter, tick Dis
 		}
 		switch {
 		case ok && m.Failed == "" && tick.Window != nil:
+			if m.EnvField != "" && src.Env != "" {
+				// The field the environment was found in is the one the pointer searches.
+				src.EnvField = m.EnvField
+			}
 			if err := f.emitMeasuredSource(ctx, em, src, m, *tick.Window, at); err != nil {
 				return err
 			}
@@ -502,39 +508,49 @@ func emit(ctx context.Context, em feeder.Emitter, ev *graphv1.EventEnvelope) err
 	return nil
 }
 
-// warnEnv says, in the checkpoint and in the log, what a source's environment keeps it from doing: a
-// source configured without one is never matched to the same service elsewhere, and a source whose
-// environment no line carries is measuring the wrong thing when the service logs with none (005,
-// the first live run: a whole organisation's logs carried no env tag).
+// warnEnv states, in the checkpoint and once in the log, how a source's environment was read and what
+// to fix when it could not be (envfield.go). A source discovered without an environment keeps saying so
+// on the ticks that did not rediscover it.
 func (f *Feeder) warnEnv(ctx context.Context, src LogSource, m SourceMeasurement, measured bool) {
-	var warning string
+	note, warning := envNote(src, m, measured)
+	f.mu.Lock()
+	if f.envNotes == nil {
+		f.envNotes = map[string]envStatement{}
+	}
+	last, known := f.envNotes[src.Key()]
 	switch {
-	case src.Env == "":
-		warning = src.Key() + ": " + MissingEnvWarning(src.Service)
-	case measured && m.Lines == 0 && m.LinesWithEnvAttribute > 0:
-		warning = EnvAttributeWarning(src, EnvAttribute, m.LinesWithEnvAttribute)
-	case measured && m.Lines == 0 && m.LinesWithoutEnv > 0:
-		warning = fmt.Sprintf("%s: no line carries env:%s, but %d line(s) of service %s carry no env at all. %s; "+
-			"or watch the service without an environment: --watch %s", src.Key(), src.Env, m.LinesWithoutEnv,
-			src.Service, MissingEnvWarning(src.Service), src.Service)
-	default:
+	case measured && m.EnvDiscovery == nil && known:
+		// A tick that did not rediscover the field says what the last discovery said.
+		note, warning = last.note, last.warning
+	case note != "":
+		f.envNotes[src.Key()] = envStatement{note, warning}
+	}
+	f.mu.Unlock()
+	if note == "" {
 		return
 	}
-	f.noteDiscovery(warning)
+	f.noteDiscovery(note)
 	f.mu.Lock()
 	if f.warnedEnv == nil {
 		f.warnedEnv = map[string]bool{}
 	}
-	first := !f.warnedEnv[warning]
-	f.warnedEnv[warning] = true
+	first := !f.warnedEnv[note]
+	f.warnedEnv[note] = true
 	f.mu.Unlock()
-	if first {
-		f.log.WarnContext(ctx, warning)
+	switch {
+	case !first:
+	case warning:
+		f.log.WarnContext(ctx, note)
+	default:
+		f.log.InfoContext(ctx, note)
 	}
 }
 
-// EnvAttribute is the attribute probed for an environment the `env` tag does not carry.
-const EnvAttribute = "@env"
+// envStatement is the last thing said about a source's environment.
+type envStatement struct {
+	note    string
+	warning bool
+}
 
 // configured returns a tick's source with what only the configuration states — its index, its
 // environment field, its version override — so a recorded tick replays against the same selector.

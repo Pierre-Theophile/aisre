@@ -15,39 +15,75 @@ import (
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
-// datadog-log-source-no-env-01: logs that carry no environment (005, the first live run).
+// datadog-log-source-no-env-01: where a service's environment is carried (005, the first live run).
 //
-// Many organisations ship logs without unified service tagging's `env`; the first live organisation's
-// logs carried none at all. An agent installed there must still measure them, and must say what to fix:
+// Unified service tagging puts the environment in the `env` tag; many organisations' logs carry it
+// elsewhere or not at all. The connector discovers the field (envfield.go) and says, per source, how it
+// read the environment or what to fix:
 //
-//   - `checkout` is watched without an environment (`--watch checkout`): it is measured on
-//     `service:checkout` alone, its `version` tag is accepted, and its pointer is `service:checkout`.
-//     It carries no C9 claim, because a name alone would merge a service across every environment it
-//     runs in, and the checkpoint says "missing env to match service" with how to add one;
-//   - `production/billing` is watched in an environment no line carries, while 3 000 of the service's
-//     lines carry no `env` at all: the checkpoint says the logs have no environment, rather than
-//     letting it read as a silent service;
-//   - `production/ledger` is watched on the `env` tag, while 2 000 of its lines carry the environment as
-//     the JSON attribute `@env`: the checkpoint names the remapper and `--env-field @env`;
-//   - `production/search` is watched with `--env-field @env`: measured and pointed at on
-//     `service:search @env:production`, it keeps its environment and its C9 claim.
+//   - `payments` (production) carries it as the `@env` attribute, discovered on 99.8 % of its lines: it
+//     is measured and pointed at on `service:payments @env:production`, keeps its environment and its C9
+//     claim, and the checkpoint states the field and suggests a Remapper for the other tools;
+//   - `search` (production) is configured with `--env-field @env`: the same, without a discovery;
+//   - `worker` is watched without an environment and its logs carry `@env`: the checkpoint names the
+//     environments found and the source to watch instead;
+//   - `ledger` is watched as `prod/ledger` while its `@env` says `staging`: no line matches, and the
+//     checkpoint names the environments that exist;
+//   - `checkout` is watched without an environment, and `billing` in `production`, and neither's lines
+//     carry any published environment field: both say "missing env to match service".
 
 const noEnvFixture = "fixtures/datadog-log-source-no-env-01"
 
+func discovered(total int64, present map[string]int64, values ...ddfeeder.EnvValue) *ddfeeder.EnvDiscovery {
+	d := &ddfeeder.EnvDiscovery{ServiceLines: total, Values: values}
+	for _, c := range ddfeeder.EnvFields {
+		d.Fields = append(d.Fields, ddfeeder.CandidateCount{Label: c.Label(), Lines: present[c.Field]})
+		if ddfeeder.DecideEnvField(total, present) == c.Field {
+			break
+		}
+	}
+	return d
+}
+
+func stamped(source string, lines int64) ddfeeder.SourceMeasurement {
+	return ddfeeder.SourceMeasurement{Source: source, Lines: lines, ErrorLines: lines / 100, HostLines: lines,
+		Candidates: []ddfeeder.CandidateCount{{Label: "version (tag)", Lines: lines, ErrorLines: lines / 100}}}
+}
+
 func noEnvPayloads(t *testing.T) []feeder.Payload {
 	t.Helper()
-	checkout := ddfeeder.SourceMeasurement{Source: "checkout", Lines: 8000, ErrorLines: 80, HostLines: 8000,
-		Candidates: []ddfeeder.CandidateCount{{Label: "version (tag)", Lines: 8000, ErrorLines: 80}}}
-	billing := ddfeeder.SourceMeasurement{Source: "production/billing", LinesWithoutEnv: 3000}
-	ledger := ddfeeder.SourceMeasurement{Source: "production/ledger", LinesWithEnvAttribute: 2000}
-	search := ddfeeder.SourceMeasurement{Source: "production/search", Lines: 6000, ErrorLines: 60, HostLines: 6000,
-		Candidates: []ddfeeder.CandidateCount{{Label: "version (tag)", Lines: 6000, ErrorLines: 60}}}
+	payments := stamped("production/payments", 4990)
+	payments.EnvField, payments.EnvDiscovery = "@env", discovered(5000, map[string]int64{"@env": 4990})
+	search := stamped("production/search", 6000)
+	search.EnvField = "@env"
+	worker := stamped("worker", 5000)
+	worker.EnvField, worker.EnvDiscovery = "@env", discovered(5000, map[string]int64{"@env": 5000},
+		ddfeeder.EnvValue{Value: "production", Lines: 4990}, ddfeeder.EnvValue{Value: "staging", Lines: 10})
+	ledger := ddfeeder.SourceMeasurement{Source: "prod/ledger", EnvField: "@env",
+		EnvDiscovery: discovered(2000, map[string]int64{"@env": 2000}, ddfeeder.EnvValue{Value: "staging", Lines: 2000})}
+	checkout := stamped("checkout", 8000)
+	checkout.EnvDiscovery = discovered(8000, nil)
+	billing := ddfeeder.SourceMeasurement{Source: "production/billing", EnvDiscovery: discovered(3000, nil)}
+	all := []ddfeeder.SourceMeasurement{payments, search, worker, ledger, checkout, billing}
+
 	var out []feeder.Payload
-	for _, at := range []time.Time{hm(14, 0), hm(15, 0)} {
-		raw, err := json.Marshal(ddfeeder.DiscoveryTick{
-			LogSources:   []string{"checkout", "production/billing", "production/ledger", "production/search"},
-			Window:       &ddfeeder.DiscoveryWindow{From: at.Add(-time.Hour), To: at},
-			Measurements: []ddfeeder.SourceMeasurement{checkout, billing, ledger, search}})
+	for i, at := range []time.Time{hm(14, 0), hm(15, 0)} {
+		measurements := all
+		if i == 1 {
+			// The second tick rediscovers nothing: the poller remembered each field. The checkpoint still
+			// says what the first discovery found.
+			measurements = nil
+			for _, m := range all {
+				m.EnvDiscovery = nil
+				measurements = append(measurements, m)
+			}
+		}
+		var sources []string
+		for _, m := range measurements {
+			sources = append(sources, m.Source)
+		}
+		raw, err := json.Marshal(ddfeeder.DiscoveryTick{LogSources: sources,
+			Window: &ddfeeder.DiscoveryWindow{From: at.Add(-time.Hour), To: at}, Measurements: measurements})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -57,9 +93,10 @@ func noEnvPayloads(t *testing.T) []feeder.Payload {
 }
 
 func noEnvOptions(log *slog.Logger) ddfeeder.Options {
-	return ddfeeder.Options{OrgSlug: "twin", Log: log,
-		LogSources: []ddfeeder.LogSource{{Service: "checkout"}, {Env: "production", Service: "billing"},
-			{Env: "production", Service: "ledger"}, {Env: "production", Service: "search", EnvField: "@env"}}}
+	return ddfeeder.Options{OrgSlug: "twin", Log: log, LogSources: []ddfeeder.LogSource{
+		{Env: "production", Service: "payments"}, {Env: "production", Service: "search", EnvField: "@env"},
+		{Service: "worker"}, {Env: "prod", Service: "ledger"}, {Service: "checkout"}, {Env: "production", Service: "billing"},
+	}}
 }
 
 func TestGenerateDatadogNoEnvFixture(t *testing.T) {
@@ -67,83 +104,85 @@ func TestGenerateDatadogNoEnvFixture(t *testing.T) {
 		t.Skipf("set %s=1 to regenerate %s", genFixturesEnv, noEnvFixture)
 	}
 	generateFixture(t, noEnvFixture, "datadog-log-sources",
-		"Logs that carry no environment. `checkout` is watched without one: it is measured on "+
-			"`service:checkout` alone, its `version` tag is accepted, and its pointer is `service:checkout`; it "+
-			"carries no C9 claim, since a name alone would merge a service across every environment, and the "+
-			"checkpoint says `missing env to match service` with how to add one. `production/billing` is "+
-			"watched in an environment no line carries while 3000 of the service's lines carry none, and the "+
-			"checkpoint says so rather than letting it read as a silent service.",
+		"Where a service's environment is carried, discovered rather than required. `payments` carries it as "+
+			"the `@env` attribute on 99.8% of its lines: it is measured and pointed at on `service:payments "+
+			"@env:production` and keeps its C9 claim. `search` is configured with --env-field @env. `worker` is "+
+			"watched without an environment and its logs carry `@env`: the checkpoint names the environments "+
+			"found. `ledger` is watched as `prod` while its `@env` says `staging`: the checkpoint names what "+
+			"exists. `checkout` and `billing` carry no environment field at all: missing env to match service.",
 		noEnvOptions(nil), noEnvPayloads(t), hm(12, 59), hm(15, 30), `
 queries:
-  # The environment-less source's pointer: service alone, with its version join key.
+  # The discovered @env field: the pointer searches it, and the environment is kept.
+  - name: payments-pointer-on-the-discovered-env-field
+    kind: pointers
+    focus: datadog.service=production/payments
+    valid_at: 2026-09-21T15:10:00Z
+    observed_at: 2026-09-21T15:30:00Z
+  # An environment-less source: service alone.
   - name: checkout-pointer-without-an-environment
     kind: pointers
     focus: datadog.service=checkout
     valid_at: 2026-09-21T15:10:00Z
     observed_at: 2026-09-21T15:30:00Z
-  # The environment read from the @env attribute: the pointer searches it, and the environment is kept.
-  - name: search-pointer-on-the-env-attribute
-    kind: pointers
-    focus: datadog.service=production/search
-    valid_at: 2026-09-21T15:10:00Z
-    observed_at: 2026-09-21T15:30:00Z
 `)
 }
 
-func TestLogsWithoutAnEnvironmentAreMeasuredAndWarnedAbout(t *testing.T) {
+func TestTheEnvironmentIsDiscoveredAndStated(t *testing.T) {
 	t.Parallel()
 	var logged bytes.Buffer
 	em := run(t, noEnvOptions(slog.New(slog.NewTextHandler(&logged, nil))), noEnvPayloads(t)...)
 
-	var pointer, attrPointer *ddfeederPointer
-	var notes []string
+	selectors := map[string]string{}
 	correlated := map[string]bool{}
+	var notes []string
 	for _, ev := range em.Events() {
-		if n := ev.GetUpsertNode(); n != nil && n.GetRef().GetValue() == "production/search" {
+		if n := ev.GetUpsertNode(); n != nil {
 			for _, p := range n.GetPointers() {
-				attrPointer = &ddfeederPointer{selector: p.GetSelector(), version: p.GetJoinKeys()["version"]}
-			}
-		}
-		if n := ev.GetUpsertNode(); n != nil && n.GetRef().GetValue() == "checkout" {
-			for _, p := range n.GetPointers() {
-				pointer = &ddfeederPointer{selector: p.GetSelector(), version: p.GetJoinKeys()["version"]}
-			}
-			if _, ok := n.GetProps().GetFields()[feeder.AttrDeploymentEnvironment]; ok {
-				t.Error("the environment-less node states an environment")
+				selectors[n.GetRef().GetValue()] = p.GetSelector()
 			}
 		}
 		if c := ev.GetCorrelateEntity(); c != nil && c.GetKey().GetNamespace() == ddfeeder.NSLogService {
 			correlated[c.GetSubject().GetValue()] = true
 		}
-		if c := ev.GetSourceCheckpoint(); c != nil {
+		if c := ev.GetSourceCheckpoint(); c != nil && strings.HasPrefix(c.GetNote(), "datadog log-source discovery") {
 			notes = append(notes, c.GetNote())
 		}
 	}
-	if pointer == nil || pointer.selector != "service:checkout" || pointer.version != "version" {
-		t.Errorf("checkout's pointer %+v, want `service:checkout` with the version join key", pointer)
-	}
-	if attrPointer == nil || attrPointer.selector != "service:search @env:production" {
-		t.Errorf("search's pointer %+v, want it pinned on the @env attribute", attrPointer)
-	}
-	if correlated["checkout"] || !correlated["production/billing"] || !correlated["production/search"] {
-		t.Errorf("C9 claims on %v: an environment-less source must carry none, a sourced one keeps its own", correlated)
-	}
-	all := strings.Join(notes, "\n")
-	for _, want := range []string{
-		`checkout: missing env to match service "checkout"`,
-		"production/billing: no line carries env:production, but 3000 line(s) of service billing carry no env at all",
-		"--watch billing",
-		"production/ledger: no line carries the env tag env:production, but 2000 line(s) carry the attribute @env:production",
-		"remap @env to the env tag in a Datadog log pipeline (a Remapper), or watch with --env-field @env",
+	for source, want := range map[string]string{
+		"production/payments": "service:payments @env:production",
+		"production/search":   "service:search @env:production",
+		"worker":              "service:worker",
+		"checkout":            "service:checkout",
 	} {
-		if !strings.Contains(all, want) {
-			t.Errorf("no checkpoint says %q:\n%s", want, all)
+		if selectors[source] != want {
+			t.Errorf("%s's pointer %q, want %q", source, selectors[source], want)
 		}
 	}
-	// Two ticks, each stated in its checkpoint, each warning logged once.
-	if n := strings.Count(logged.String(), `missing env to match service \"checkout\"`); n != 1 {
-		t.Errorf("the checkout warning was logged %d times, want once per run:\n%s", n, logged.String())
+	if !correlated["production/payments"] || !correlated["production/search"] || correlated["worker"] || correlated["checkout"] {
+		t.Errorf("C9 claims %v: a source with an environment keeps one, one without has none", correlated)
+	}
+	if len(notes) != 2 {
+		t.Fatalf("%d discovery checkpoints, want 2", len(notes))
+	}
+	for i, note := range notes {
+		for _, want := range []string{
+			"production/payments: the environment is read from @env, present on 99.8% of the service's lines",
+			"worker: its logs carry the environment in @env: production (4990 lines), staging (10 lines). Watch <env>/worker (for example --watch production/worker)",
+			"prod/ledger: no line carries @env:prod, and the service's lines carry @env: staging (2000 lines). Check the environment's name: --watch staging/ledger",
+			`checkout: missing env to match service "checkout"`,
+			"production/billing: none of env, @env, @environment, @deployment.environment.name is on the service's lines",
+		} {
+			if i == 1 && strings.HasPrefix(want, "production/payments") {
+				want = "production/payments: the environment is read from @env"
+			}
+			if !strings.Contains(note, want) {
+				t.Errorf("checkpoint %d does not say %q:\n%s", i, want, note)
+			}
+		}
+	}
+	for _, want := range []string{`msg="worker: its logs carry`, `level=INFO msg="production/payments: the environment is read from @env`} {
+		if n := strings.Count(logged.String(), want); n != 1 {
+			t.Errorf("%q logged %d times, want once:\n%s", want, n, logged.String())
+		}
 	}
 }
-
-type ddfeederPointer struct{ selector, version string }
