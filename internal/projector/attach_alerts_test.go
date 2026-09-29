@@ -219,3 +219,45 @@ func TestAnAlertWhoseTargetIsAlreadyKnownGetsItsEdgeImmediately(t *testing.T) {
 			"whose targets all resolve must produce exactly the node it did before FR-048", unattached)
 	}
 }
+
+// Every segment of an alert whose target never appears names it, whichever transition arrived last
+// (005 T082). A later transition re-plans the earlier segments from the log, and the re-planned ones
+// used to lose the list the direct path writes: in arrival order the fired segment carried no gap
+// while a shuffled order gave it one. The first live Datadog campaign's shuffle step caught it.
+func TestEverySegmentOfAnAlertNamesItsUnattachedTarget(t *testing.T) {
+	for _, order := range [][2]int{{0, 1}, {1, 0}} {
+		store := openStore(t)
+		p := projector.New(store)
+
+		fired := watchAlertEvent("a:fired", "checkout", "2026-09-01T14:21:00Z")
+		recovered := watchAlertEvent("a:recovered", "checkout", "2026-09-01T14:40:00Z")
+		recovered.GetAlertTransition().FromState, recovered.GetAlertTransition().ToState = "alert", "ok"
+		events := []*graphv1.EventEnvelope{fired, recovered}
+		apply(t, p, events[order[0]], "2026-09-01T14:45:00Z")
+		apply(t, p, events[order[1]], "2026-09-01T14:45:01Z")
+
+		rows, err := store.Pool().Query(context.Background(), `
+			SELECT props ? $2 FROM graph.entity_versions
+			WHERE entity_id = $1 AND upper_inf(observed) AND props ? $3`,
+			graph.EntityID("gcp.alert", "policy-7"), projector.AlertUnattachedWatchesProp, projector.AlertStateProp)
+		if err != nil {
+			t.Fatalf("read alert versions: %v", err)
+		}
+		var segments, named int
+		for rows.Next() {
+			var has bool
+			if err := rows.Scan(&has); err != nil {
+				t.Fatalf("scan: %v", err)
+			}
+			segments++
+			if has {
+				named++
+			}
+		}
+		rows.Close()
+		if segments != 2 || named != segments {
+			t.Errorf("order %v: %d of %d alert segments name the unattached target, want every one of 2",
+				order, named, segments)
+		}
+	}
+}
