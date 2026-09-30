@@ -83,21 +83,9 @@ func laneSource(key string) string { return strings.TrimSuffix(key, alertLaneSuf
 func (p *Projector) applyAlertTransition(ctx context.Context, tx pgx.Tx, env *graphv1.EventEnvelope, body *graphv1.AlertTransition, observedAt time.Time) error {
 	// Which watched refs the graph already knows is decided BEFORE the node is written, because the
 	// answer goes into the node: the unresolved ones become its unattached list (FR-048).
-	var attached, unattached []*graphv1.Ref
-	for _, watched := range body.GetWatches() {
-		ref := graph.RefFromProto(watched)
-		if ref.Namespace == "" || ref.Value == "" {
-			continue
-		}
-		_, found, err := p.lookupRef(ctx, tx, ref)
-		if err != nil {
-			return err
-		}
-		if found {
-			attached = append(attached, watched)
-		} else {
-			unattached = append(unattached, watched)
-		}
+	attached, unattached, err := p.splitWatches(ctx, tx, body)
+	if err != nil {
+		return err
 	}
 
 	if err := p.applyNodeAssertion(ctx, tx, env,
@@ -117,6 +105,42 @@ func (p *Projector) applyAlertTransition(ctx context.Context, tx pgx.Tx, env *gr
 		}
 	}
 	return nil
+}
+
+// splitWatches sorts a transition's watched refs into those the graph knows now and those it does not.
+func (p *Projector) splitWatches(ctx context.Context, tx pgx.Tx, body *graphv1.AlertTransition) (attached, unattached []*graphv1.Ref, err error) {
+	for _, watched := range body.GetWatches() {
+		ref := graph.RefFromProto(watched)
+		if ref.Namespace == "" || ref.Value == "" {
+			continue
+		}
+		_, found, err := p.lookupRef(ctx, tx, ref)
+		if err != nil {
+			return nil, nil, err
+		}
+		if found {
+			attached = append(attached, watched)
+		} else {
+			unattached = append(unattached, watched)
+		}
+	}
+	return attached, unattached, nil
+}
+
+// storedAlertAssertion renders a transition read back out of the log, when a later assertion re-plans
+// the alert's segments. It carries the unattached list the direct path would write now, so a
+// re-planned segment and a freshly projected one are the same node whatever the arrival order. Without
+// it, a re-planned segment lost the list while the latest one kept it, and which segments carried it
+// depended on which transition arrived last: the first live Datadog campaign's shuffle step caught it
+// (005 T082), on a monitor watching a service the graph never learns. A target that does appear later
+// is removed from every waiting version by attach.go, so reading the graph's state now is consistent
+// with that path too.
+func (p *Projector) storedAlertAssertion(ctx context.Context, tx pgx.Tx, body *graphv1.AlertTransition) (*graphv1.UpsertNode, error) {
+	_, unattached, err := p.splitWatches(ctx, tx, body)
+	if err != nil {
+		return nil, err
+	}
+	return alertNodeAssertionWithUnattached(body, unattached), nil
 }
 
 // alertNodeAssertionWithUnattached is AlertNodeAssertion plus the unattached-watches list.
@@ -144,7 +168,8 @@ func alertNodeAssertionWithUnattached(body *graphv1.AlertTransition, unattached 
 //
 // It is exported and pure because it is used twice: once when the event is projected, and once
 // when a later transition reads it back out of the log to plan its segments. Two independent
-// renderings would be a correctness bug waiting for the second transition to arrive.
+// renderings would be a correctness bug waiting for the second transition to arrive. Both paths add
+// the unattached-watches list through alertNodeAssertionWithUnattached, for the same reason.
 //
 // Every prop is omitted when the source said nothing, so an alert whose transport reports only
 // a state produces exactly one property and a golden that does not move when a richer connector

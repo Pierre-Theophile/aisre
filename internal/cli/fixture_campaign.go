@@ -103,6 +103,21 @@ type campaignRecordOptions struct {
 	addScope string
 	scopeWhy string
 	endedAt  string
+	// The Datadog scope of the window, for a campaign recording that connector (005 T082). A window
+	// names projects, a Datadog scope, or both.
+	ddSite    string
+	ddEnvs    []string
+	ddSources []string
+	ddIndexes []string
+}
+
+// datadogScope is the window's Datadog scope, or nil when no Datadog flag was given. A partial one is
+// kept rather than dropped, so the record's own validation names what is missing.
+func (o campaignRecordOptions) datadogScope() *campaign.DatadogScope {
+	if o.ddSite == "" && len(o.ddEnvs) == 0 && len(o.ddSources) == 0 && len(o.ddIndexes) == 0 {
+		return nil
+	}
+	return &campaign.DatadogScope{Site: o.ddSite, Environments: o.ddEnvs, LogSources: o.ddSources, Indexes: o.ddIndexes}
 }
 
 func newCampaignRecordCommand(global *globalOptions) *cobra.Command {
@@ -126,7 +141,11 @@ func newCampaignRecordCommand(global *globalOptions) *cobra.Command {
 	f.StringVar(&opts.id, "id", "", "campaign id, conventionally campaign-<date> (default: the directory name)")
 	f.StringVar(&opts.org, "org", "", "organisation slug the source ids carry (required on a new record)")
 	f.StringVar(&opts.startedAt, "started-at", "", "when recording began, RFC 3339 (required on a new record; FR-130 wants it before the scope was agreed)")
-	f.StringSliceVar(&opts.projects, "projects", nil, "projects in the scope window (required; no code may assume a project name — FR-131)")
+	f.StringSliceVar(&opts.projects, "projects", nil, "projects in the scope window (required unless the window has a Datadog scope; no code may assume a project name — FR-131)")
+	f.StringVar(&opts.ddSite, "datadog-site", "", "Datadog site of the scope window, e.g. datadoghq.eu (005 FR-007)")
+	f.StringSliceVar(&opts.ddEnvs, "datadog-env", nil, "environments in the window's Datadog scope; required with --datadog-site, since an empty list would read as \"all\"")
+	f.StringSliceVar(&opts.ddSources, "datadog-watch", nil, "watched log sources in the window's Datadog scope, as the feeder's --watch takes them")
+	f.StringSliceVar(&opts.ddIndexes, "datadog-index", nil, "log indexes searched; empty means the default")
 	f.StringSliceVar(&opts.regions, "regions", nil, "regions in the scope window; empty means ALL regions, which is the first campaign's scope (FR-131)")
 	f.StringVar(&opts.mailboxPath, "mailbox-path", "", "how the notice mailbox is read: "+accessPathList())
 	f.StringVar(&opts.authorisedBy, "authorised-by", "", "named individual who authorised the mailbox read (FR-132)")
@@ -177,6 +196,7 @@ func runCampaignRecord(cmd *cobra.Command, global *globalOptions, dir string, op
 			From:     startedAt,
 			Projects: opts.projects,
 			Regions:  opts.regions,
+			Datadog:  opts.datadogScope(),
 			Why:      firstNonEmpty(opts.scopeWhy, "the scope in force when recording began (FR-130)"),
 		}},
 		Mailbox: campaign.Mailbox{
@@ -215,9 +235,9 @@ func extendCampaignRecord(cmd *cobra.Command, global *globalOptions, dir string,
 
 	err = campaign.Update(dir, func(r *campaign.Record) error {
 		if !addAt.IsZero() {
-			if len(opts.projects) == 0 {
-				return fmt.Errorf("--add-scope needs --projects; a window naming no project is a " +
-					"record that says nothing rather than one meaning \"all\" (FR-131)")
+			if len(opts.projects) == 0 && opts.datadogScope() == nil {
+				return fmt.Errorf("--add-scope needs --projects or a Datadog scope; a window naming " +
+					"neither is a record that says nothing rather than one meaning \"all\" (FR-131)")
 			}
 			last := len(r.Scopes) - 1
 			if !r.Scopes[last].To.IsZero() {
@@ -234,6 +254,7 @@ func extendCampaignRecord(cmd *cobra.Command, global *globalOptions, dir string,
 				From:     addAt,
 				Projects: opts.projects,
 				Regions:  opts.regions,
+				Datadog:  opts.datadogScope(),
 				Why:      opts.scopeWhy,
 			})
 		}
@@ -283,14 +304,25 @@ func renderCampaignRecord(cmd *cobra.Command, global *globalOptions, dir string,
 		if s.AllRegions() {
 			regions = "all"
 		}
-		rows = append(rows, []string{s.From.Format(time.RFC3339), to, strings.Join(s.Projects, ","), regions, s.Why})
+		if len(s.Projects) == 0 {
+			regions = ""
+		}
+		datadog := ""
+		if s.Datadog != nil {
+			datadog = s.Datadog.Site + " " + strings.Join(s.Datadog.Environments, ",")
+		}
+		rows = append(rows, []string{s.From.Format(time.RFC3339), to, strings.Join(s.Projects, ","), regions, datadog, s.Why})
 	}
-	if err := p.writeTable([]string{"FROM", "TO", "PROJECTS", "REGIONS", "WHY"}, rows); err != nil {
+	if err := p.writeTable([]string{"FROM", "TO", "PROJECTS", "REGIONS", "DATADOG", "WHY"}, rows); err != nil {
 		return err
 	}
-	return p.writeLine("\nmailbox   %s, authorised by %s on %s\nsignatories %s\npolicy    %s",
-		r.Mailbox.Path, r.Mailbox.AuthorisedBy, r.Mailbox.AuthorisedOn.Format("2006-01-02"),
-		strings.Join(r.Signatories, ", "), r.PolicyVersion)
+	mailbox := "none: no window names a project, so no notice mailbox is read"
+	if r.Mailbox.Path != "" {
+		mailbox = fmt.Sprintf("%s, authorised by %s on %s", r.Mailbox.Path, r.Mailbox.AuthorisedBy,
+			r.Mailbox.AuthorisedOn.Format("2006-01-02"))
+	}
+	return p.writeLine("\nmailbox   %s\nsignatories %s\npolicy    %s",
+		mailbox, strings.Join(r.Signatories, ", "), r.PolicyVersion)
 }
 
 // ---- sanitise --------------------------------------------------------------------------------

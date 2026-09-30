@@ -53,7 +53,21 @@
 
 set -euo pipefail
 
+# Named roots are resolved BEFORE the cd below. A root outside this repository — the private corpus,
+# checked out beside the tooling in CI — would otherwise be read relative to the wrong directory, match
+# no file and pass as a clean scan of nothing. A root that does not exist is an error for the same
+# reason.
+named_roots=()
+for arg in "$@"; do
+  if [ ! -e "$arg" ]; then
+    echo "check-no-secrets: $arg does not exist; a scan of a missing root is not a clean scan" >&2
+    exit 2
+  fi
+  named_roots+=("$(cd "$(dirname "$arg")" && pwd -P)/$(basename "$arg")")
+done
+
 cd "$(dirname "$0")/.."
+repo_root="$(pwd -P)"
 
 BASELINE_FILE="scripts/known-recording-findings.txt"
 
@@ -101,7 +115,15 @@ PEOPLE_RE='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|(^|[[:space:]])@[A-Za-
 # "template" far longer than that is a raw log line that never went through the miner.
 TEMPLATE_MAX=200
 
-roots=("$@")
+roots=()
+for root in ${named_roots[@]+"${named_roots[@]}"}; do
+  # Inside this repository a root is kept relative, so the allow-list and the baseline read as before.
+  case "$root" in
+    "$repo_root") roots+=(".") ;;
+    "$repo_root"/*) roots+=("${root#"$repo_root"/}") ;;
+    *) roots+=("$root") ;;
+  esac
+done
 if [ ${#roots[@]} -eq 0 ]; then
   roots=()
   for root in "${DEFAULT_ROOTS[@]}"; do
@@ -123,11 +145,15 @@ digest() { printf '%s' "$1" | shasum -a 256 2>/dev/null | cut -c1-16; }
 # files lists every text file under the roots, skipping the allowlist. Binary payloads (recorded
 # OTLP is protobuf) are skipped: base64 noise inside them is not a finding.
 files() {
-  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    git ls-files -z --cached --others --exclude-standard -- "${roots[@]}"
-  else
-    find "${roots[@]}" -type f -print0
-  fi | while IFS= read -r -d '' file; do
+  local root
+  for root in "${roots[@]}"; do
+    # git lists what would be committed; a root outside this repository is walked directly.
+    if [[ "$root" != /* ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git ls-files -z --cached --others --exclude-standard -- "$root"
+    else
+      find "$root" -type f -print0
+    fi
+  done | while IFS= read -r -d '' file; do
     [[ "$file" =~ $ALLOWLIST_RE ]] && continue
     if [ -f "$file" ] && LC_ALL=C grep -qI . "$file" 2>/dev/null; then
       printf '%s\0' "$file"

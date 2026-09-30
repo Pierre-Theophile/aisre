@@ -391,6 +391,22 @@ func (p *Projector) nodeAssertions(ctx context.Context, tx pgx.Tx, eventIDs []st
 	}
 	defer rows.Close()
 
+	fill := func(assertion nodeAssertion, body *graphv1.UpsertNode) {
+		assertion.assertedAt = assertion.assertedAt.UTC()
+		assertion.displayName = body.GetDisplayName()
+		assertion.props = body.GetProps().GetFields()
+		assertion.pointers = body.GetPointers()
+		assertion.nodeType = graph.NodeTypeFromProto(body.GetType())
+		assertion.ref = graph.RefFromProto(body.GetRef())
+		out[assertion.eventID] = assertion
+	}
+	// A transition is rendered once the rows are read: its unattached list is read from the graph,
+	// and the connection is busy until then.
+	type pendingTransition struct {
+		assertion nodeAssertion
+		body      *graphv1.AlertTransition
+	}
+	var transitions []pendingTransition
 	for rows.Next() {
 		var (
 			assertion nodeAssertion
@@ -401,27 +417,31 @@ func (p *Projector) nodeAssertions(ctx context.Context, tx pgx.Tx, eventIDs []st
 			&assertion.fromUnknown, &payload, &eventType); err != nil {
 			return nil, fmt.Errorf("projector: scan node assertion: %w", err)
 		}
-		body := &graphv1.UpsertNode{}
 		if eventType == "alert_transition" {
 			transition := &graphv1.AlertTransition{}
 			if err := protojson.Unmarshal(payload, transition); err != nil {
 				return nil, fmt.Errorf("projector: decode alert transition %s: %w", assertion.eventID, err)
 			}
-			body = AlertNodeAssertion(transition)
 			assertion.sourceID = alertLane(assertion.sourceID)
-		} else if err := protojson.Unmarshal(payload, body); err != nil {
+			transitions = append(transitions, pendingTransition{assertion, transition})
+			continue
+		}
+		body := &graphv1.UpsertNode{}
+		if err := protojson.Unmarshal(payload, body); err != nil {
 			return nil, fmt.Errorf("projector: decode node assertion %s: %w", assertion.eventID, err)
 		}
-		assertion.assertedAt = assertion.assertedAt.UTC()
-		assertion.displayName = body.GetDisplayName()
-		assertion.props = body.GetProps().GetFields()
-		assertion.pointers = body.GetPointers()
-		assertion.nodeType = graph.NodeTypeFromProto(body.GetType())
-		assertion.ref = graph.RefFromProto(body.GetRef())
-		out[assertion.eventID] = assertion
+		fill(assertion, body)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("projector: read node assertions: %w", err)
+	}
+	rows.Close()
+	for _, t := range transitions {
+		body, err := p.storedAlertAssertion(ctx, tx, t.body)
+		if err != nil {
+			return nil, err
+		}
+		fill(t.assertion, body)
 	}
 	return out, nil
 }

@@ -200,7 +200,7 @@ func GenerateKey() (Key, error) {
 func KeyFromEnv() (Key, error) {
 	raw := strings.TrimSpace(os.Getenv(KeyEnv))
 	if raw == "" {
-		return Key{}, fmt.Errorf("%w: set %s to %d hex-encoded bytes (aisre feed gcp --print-corpus-key "+
+		return Key{}, fmt.Errorf("%w: set %s to %d hex-encoded bytes (`openssl rand -hex 32` "+
 			"generates one); it is never committed (FR-135)", ErrNoKey, KeyEnv, KeyBytes)
 	}
 	material, err := hex.DecodeString(raw)

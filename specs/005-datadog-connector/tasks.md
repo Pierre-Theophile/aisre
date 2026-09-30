@@ -343,12 +343,53 @@ seeded canary fails the commit.
     canaries (person, free text; infrastructure where the pre-pass hashes it) never survive, a canary
     in a field the table would hash ends the run, and every committed Datadog fixture carries no
     people identifier and no canary token.
-- [ ] T082 [US7] Run the campaign against the organisation per quickstart §8: record, scan, sign, verify, parity — **blocked on a read-only key and a named signatory**; fixture: private corpus
-- [ ] T083 [US7] Commit the signed private corpus and run the same suite in private CI; record the live parity result (SC-009, SC-010) — **blocked on T082**; fixture: private corpus
+- [X] T082 [US7] Run the campaign against the organisation per quickstart §8: record, scan, sign, verify, parity — **blocked on a read-only key and a named signatory**; fixture: private corpus
+- [X] T083 [US7] Commit the signed private corpus and run the same suite in private CI; record the live parity result (SC-009, SC-010) — **blocked on T082**; fixture: private corpus
   - *Deferred 2026-09-29 (T082, T083):* the owner moves the campaign to a dedicated cloud session with
     access to a private repository made for the corpus, which never enters this open-source repository.
     The read-only key exists; the session names the signatory. The connector's live behaviour is
     covered meanwhile by the runs of 2026-09-27 and 2026-09-28 and by the twins built from their findings.
+  - *Done 2026-09-29 (T082, T083):* `campaign-2026-09-29` is in the private corpus repository. It covers
+    40 minutes of the organisation's 14 monitors and its one Datadog-held service in production and
+    staging, with the environment read from `@env`. The key is operator-asserted read-only and the
+    campaign is signed by the owner, its one named signatory. The recording holds 241 payloads,
+    sanitised in the connector (none refused), and 146 derived events, including 7 alert transitions
+    at Datadog's own instants. Five goldens cover two monitors and both sources.
+    - **Gates.** Replay, double delivery and shuffle pass. `sanitise` and `scan` find nothing in 249
+      files, and the scan is keyed, so a surviving canary would be attributed. The independent scan is
+      clean. No canary was planted: planting one needs a write to the organisation's Datadog, and a
+      read-only campaign makes none. A first recording was cut off by a container restart before its
+      manifest was written. The independent scan found it clean (FR-137 on an aborted run), and it was
+      deleted rather than committed.
+    - **What the campaign found.**
+      1. *Shuffle failed on the first live recording:* an order-dependence in the projector that the
+         twins missed. A later transition re-plans an alert's earlier segments from the log, and the
+         re-planned segments lost `sre.alert.unattached_watches`. For a monitor watching a service the
+         graph never learns, which segments carried the list depended on arrival order. Fixed in
+         `internal/projector` (`TestEverySegmentOfAnAlertNamesItsUnattachedTarget`).
+         `gcp-alert-transition-01`'s 14:30 golden had captured the bug and is re-recorded.
+      2. *The corpus CI's independent scan checked nothing.* `scripts/check-no-secrets.sh` cd'd to its
+         own repository before reading its roots, so the corpus, checked out beside the tooling,
+         matched no file and passed as clean. Fixed: named roots are resolved before the cd, a missing
+         root exits 2, and the self-test covers both cases.
+      3. *`fixture campaign record` could not write a Datadog scope.* Added `--datadog-site/-env/-watch/-index`.
+      4. *One monitor's WATCHES edge stays unattached.* Its tag says `env:prod` and the logs say
+         `@env:production`, so the alert names a service no source asserts. That is a tagging fix for the
+         owner: retag the monitor `env:production`.
+    - **SC-010 (graph parity).** The live graph is in real names and the recording in pseudonyms, so the
+      comparison is on the fields sanitisation leaves alone. All 7 recorded transitions equal the live
+      ones on monitor id, Datadog's instant, states, group, severity, sampling interval and origin link.
+      All 18 node and identity assertions (14 monitors, 2 sources, 2 correlations) equal on id, type,
+      valid instant, pointer count and property keys. The live side carries 4 more transitions: the
+      history the aborted first run delivered, all from before this recording began.
+    - **SC-009 (digest parity).** `TestLiveDigestParity` (`internal/backends/datadog`, run on request
+      only) runs each term live, then again over the recorded responses served back locally. It compares
+      the whole answer except its duration. All 7 terms are identical, and 6 are real digests:
+      `compare` ×3, `onset`, `errors_by_version`, `monitor_state`. `new_log_patterns` was still
+      rate-limited after five paced attempts against a logs-aggregate allowance of 2 calls per window.
+      Its parity on real content is therefore still open; the next run should give it its own window.
+    - **Still open.** The Datadog telemetry backend is imported by no command, so no server serves it
+      yet; the parity harness builds it directly.
 
 ---
 
