@@ -366,3 +366,10 @@ func (s *Sanitiser) Identifier(kind Kind, value string) (string, error) {
 	out, _, err := s.shaped(Rule{Kind: kind}, value)
 	return out, err
 }
+
+// Hex is the ShapeHex pseudonym of value under kind, or false where value is not hex. It is how a
+// commit written inside a string a table cannot address (a Datadog event's `git.commit.sha:<sha>` tag)
+// gets the SAME pseudonym the commit has in a field the table does address, so the two still join on it.
+func (s *Sanitiser) Hex(kind Kind, value string) (string, bool, error) {
+	return s.shaped(Rule{Kind: kind, Shape: ShapeHex}, value)
+}

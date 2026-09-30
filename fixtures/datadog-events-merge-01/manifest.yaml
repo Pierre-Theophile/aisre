@@ -1,0 +1,51 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: datadog-events-merge-01
+family: datadog-cross-source
+description: 'One rollout, whatever saw it. The cluster rolls payments out to revision 8 at 14:10, its pod template stating commit NEW under the trusted commit-sha key; the pipeline posted a deployment event to Datadog at 14:09:30 stating the same commit. C9 makes the watched log source and the workload one entity and C8 makes the two rollouts one change; the events read repeated over its overlap adds nothing. A failover event on an unwatched service is kept as another kind, unattached. Built from the published Events API shape, not yet verified against a live organisation. Synthetic structural twin: no identifier is derived from any organisation (contracts/sanitisation.md §7).'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: k8s:demo
+      kind: k8s
+      ordering: per_source_sequence
+      reordering_window: 1m0s
+    - source_id: datadog:twin
+      kind: datadog
+      ordering: none
+      reordering_window: 10m0s
+clock:
+    start: 2026-09-21T14:00:00Z
+    end: 2026-09-21T15:00:00Z
+
+queries:
+  # SC-014: what changed on payments in the hour? ONE rollout, carrying the cluster's instant and revision
+  # and Datadog's actor kind, because C9 made the log source and the workload one entity and C8 made the
+  # two observations one change. Not two.
+  - name: what-changed-on-payments
+    kind: diff
+    focus: k8s.deployment=shop/payments
+    t1: 2026-09-21T14:00:00Z
+    t2: 2026-09-21T15:00:00Z
+    reference_at: 2026-09-21T15:00:00Z
+    observed_at: 2026-09-21T20:00:00Z
+    hops: 1
+    direction: both
+  # Why: the rule, and the commit both stood on.
+  - name: why-the-datadog-event-is-the-cluster-rollout
+    kind: audit
+    ref_a: datadog.change=evt-4a7c19e0
+    ref_b: k8s.change=shop/payments@rev8
+    observed_at: 2026-09-21T20:00:00Z
+
+ground_truth:
+  cross_source_pairs:
+    - pair:
+        - datadog.change=evt-4a7c19e0
+        - k8s.change=shop/payments@rev8
+      same: true
+      rule: C8

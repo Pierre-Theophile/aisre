@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Pierre-Theophile/aisre/internal/sanitise"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
 // Recording a live run without writing an unsanitised byte (T080; FR-076a, FR-137).
@@ -96,8 +97,12 @@ func PreparePayload(san *sanitise.Sanitiser) func(kind string, raw []byte) ([]by
 			return prepareMonitors(san, raw)
 		case PayloadDiscovery:
 			return prepareDiscovery(san, raw)
-		case PayloadPoll:
+		case PayloadPoll, PayloadEventsPoll:
 			return raw, nil
+		case PayloadEvents:
+			return prepareEvents(san, raw)
+		case PayloadTopology:
+			return prepareTopology(san, raw)
 		default:
 			return nil, fmt.Errorf("datadog: no pre-pass for payload kind %q", kind)
 		}
@@ -206,6 +211,153 @@ func redactReason(reason string) string {
 	return "the read failed (reason withheld from the recording)"
 }
 
+// prepareEvents keeps only the fields the feeder reads from an event and rewrites what they hold:
+//
+//   - the title and the event's name are free text and are dropped, so the recorded change's summary is
+//     its kind and source (events.go);
+//   - a tag survives only if it is evidence the feeder reads. Identifier tags (service, env, host, team,
+//     the Kubernetes pair) are pseudonymised like a monitor's; the trigger tag and the kind tags are kept
+//     when they are in the published vocabulary; a commit is given the pseudonym the same commit has in
+//     the deploy feeders' payloads, so the two still join on it (C8). The tags that name the ACTOR are
+//     dropped, never hashed: a people identifier does not survive in any form, and the actor kind the
+//     feeder derives from the trigger tag and the source survives without it. An image reference is
+//     dropped — its registry path names an organisation — and so is every tag the feeder does not read,
+//     since a tag may carry anything;
+//   - an event source or kind outside the published vocabulary is the organisation's own word and is
+//     pseudonymised as a resource, consistently, so the recording still groups by it.
+func prepareEvents(san *sanitise.Sanitiser, raw []byte) ([]byte, error) {
+	var page EventPage
+	if err := json.Unmarshal(raw, &page); err != nil {
+		return nil, err
+	}
+	page.Meta = nil
+	for i := range page.Data {
+		ev := &page.Data[i]
+		tags, err := recordedEventTags(san, ev.allTags())
+		if err != nil {
+			return nil, err
+		}
+		ev.Attributes.Tags = tags
+		inner := &ev.Attributes.Attributes
+		inner.Tags, inner.Title, inner.Evt.Name = nil, "", ""
+		if inner.Service != "" {
+			service, err := san.Identifier(sanitise.KindService, string(inner.Service))
+			if err != nil {
+				return nil, err
+			}
+			inner.Service = text(service)
+		}
+		if inner.SourceTypeName, err = recordedVocabulary(san, string(inner.SourceTypeName), KnownEventSource); err != nil {
+			return nil, err
+		}
+		if inner.Evt.Type, err = recordedVocabulary(san, string(inner.Evt.Type), KnownVendorKind); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(page)
+}
+
+// prepareTopology pseudonymises every identifier a topology window names — the environment, each service
+// (as a service, a caller or a callee), each host and each operation — with the keyed pseudonym for its
+// kind, so the recording's edges join the recording's nodes and its log sources under the same tokens. A
+// version is kept: it is the join to the deploy feeders' changes. The failure reason is withheld, since
+// the vendor's words quote URLs and names.
+func prepareTopology(san *sanitise.Sanitiser, raw []byte) ([]byte, error) {
+	var p TopologyPayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, err
+	}
+	var err error
+	id := func(kind sanitise.Kind, value string) string {
+		if err != nil || value == "" {
+			return value
+		}
+		var out string
+		out, err = san.Identifier(kind, value)
+		return out
+	}
+	p.Env = id(sanitise.KindEnvironment, p.Env)
+	for i := range p.Services {
+		p.Services[i].Name = id(sanitise.KindService, p.Services[i].Name)
+		for j := range p.Services[i].Calls {
+			p.Services[i].Calls[j] = id(sanitise.KindService, p.Services[i].Calls[j])
+		}
+	}
+	for i := range p.Traffic {
+		p.Traffic[i].Caller, p.Traffic[i].Callee = id(sanitise.KindService, p.Traffic[i].Caller), id(sanitise.KindService, p.Traffic[i].Callee)
+	}
+	for i := range p.Versions {
+		p.Versions[i].Service = id(sanitise.KindService, p.Versions[i].Service)
+	}
+	for i := range p.Operations {
+		p.Operations[i].Service, p.Operations[i].Operation = id(sanitise.KindService, p.Operations[i].Service),
+			id(sanitise.KindResource, p.Operations[i].Operation)
+	}
+	for i := range p.Hosts {
+		p.Hosts[i].Service, p.Hosts[i].Host = id(sanitise.KindService, p.Hosts[i].Service), id(sanitise.KindHost, p.Hosts[i].Host)
+	}
+	if err != nil {
+		return nil, err
+	}
+	p.Reason = redactReason(p.Reason)
+	return json.Marshal(p)
+}
+
+// recordedVocabulary keeps a value the published vocabulary names and pseudonymises any other.
+func recordedVocabulary(san *sanitise.Sanitiser, value string, known func(string) bool) (text, error) {
+	if value == "" || known(value) {
+		return text(value), nil
+	}
+	out, err := san.Identifier(sanitise.KindResource, value)
+	return text(out), err
+}
+
+// recordedEventTag is what a recording keeps of one tag, and whether it keeps anything.
+func recordedEventTag(san *sanitise.Sanitiser, tag string) (string, bool, error) {
+	rawKey, value, ok := strings.Cut(tag, ":")
+	key := strings.ToLower(strings.TrimSpace(rawKey))
+	value = strings.TrimSpace(value)
+	if !ok || key == "" || value == "" {
+		return "", false, nil
+	}
+	switch {
+	case termKinds[key] != "":
+		clean, err := pseudonymiseTerms(san, key+":"+value)
+		return clean, err == nil, err
+	case containsString(triggerTagKeys, key):
+		return key + ":" + value, KnownTrigger(value), nil
+	case containsString(kindTagKeys, key):
+		kept, err := recordedVocabulary(san, value, KnownVendorKind)
+		return key + ":" + string(kept), err == nil, err
+	case containsString(commitTagKeys, key), containsString(releaseTagKeys, key):
+		if sha, isCommit := feeder.CommitSHA(value); isCommit {
+			clean, ok, err := san.Hex(sanitise.KindCommit, sha)
+			return key + ":" + clean, ok && err == nil, err
+		}
+		if containsString(commitTagKeys, key) {
+			return "", false, nil // a commit tag that is not a commit is not evidence of one
+		}
+		return key + ":" + value, true, nil // a release or version names a build
+	default:
+		// The actor tags, an image, and every tag the feeder does not read.
+		return "", false, nil
+	}
+}
+
+func recordedEventTags(san *sanitise.Sanitiser, tags []string) ([]string, error) {
+	var out []string
+	for _, tag := range tags {
+		clean, keep, err := recordedEventTag(san, tag)
+		if err != nil {
+			return nil, err
+		}
+		if keep {
+			out = append(out, clean)
+		}
+	}
+	return out, nil
+}
+
 // PseudonymousOptions maps a live run's options into the recording's vocabulary, for the shadow feeder
 // that derives the recording's events from its sanitised payloads.
 func PseudonymousOptions(san *sanitise.Sanitiser, opts Options) (Options, error) {
@@ -227,6 +379,33 @@ func PseudonymousOptions(san *sanitise.Sanitiser, opts Options) (Options, error)
 		clean, _ := ParseLogSource(spec)
 		clean.Index, clean.VersionAttribute = src.Index, src.VersionAttribute
 		out.LogSources = append(out.LogSources, clean)
+	}
+	// The change scope, in the recording's vocabulary. It is only ever stated in a checkpoint: the poller
+	// applied it before the payloads were recorded.
+	out.Changes = ChangeScope{}
+	for _, src := range opts.Changes.Sources {
+		clean, err := recordedVocabulary(san, src, KnownEventSource)
+		if err != nil {
+			return Options{}, err
+		}
+		out.Changes.Sources = append(out.Changes.Sources, string(clean))
+	}
+	for _, tag := range opts.Changes.Tags {
+		clean, keep, err := recordedEventTag(san, tag)
+		if err != nil {
+			return Options{}, err
+		}
+		if keep {
+			out.Changes.Tags = append(out.Changes.Tags, clean)
+		}
+	}
+	out.Topology = TopologyScope{RetractAfter: opts.Topology.RetractAfter}
+	for _, env := range opts.Topology.Envs {
+		clean, err := san.Identifier(sanitise.KindEnvironment, env)
+		if err != nil {
+			return Options{}, err
+		}
+		out.Topology.Envs = append(out.Topology.Envs, clean)
 	}
 	out.VersionOverrides = map[string]string{}
 	for key, v := range opts.VersionOverrides {

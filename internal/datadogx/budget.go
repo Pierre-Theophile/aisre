@@ -34,6 +34,8 @@ type Area = ddfeeder.Area
 const (
 	AreaMonitors      = ddfeeder.AreaMonitors
 	AreaDiscovery     = ddfeeder.AreaDiscovery
+	AreaChanges       = ddfeeder.AreaChanges
+	AreaTopology      = ddfeeder.AreaTopology
 	AreaRollouts      = ddfeeder.AreaRollouts
 	AreaInvestigation = ddfeeder.AreaInvestigation
 	AreaStartup       = ddfeeder.AreaStartup

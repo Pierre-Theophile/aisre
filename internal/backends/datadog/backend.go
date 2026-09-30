@@ -69,6 +69,17 @@ type Options struct {
 	// Site is the Datadog site, used only to build a human deep link to the app (FR-048c). It never
 	// enters a pointer or a digest field other than the link.
 	Site string
+	// APMTopology turns on the span and APM metric terms (the `apm_topology` capability). Off, which is
+	// the default, error_spans answers the typed NO_DATA naming the absent span source and compare
+	// refuses what a log count cannot state, exactly as before (FR-049b, SC-023, SC-024). The client
+	// must declare the capability's operations; one that does not fails the first APM term rather than
+	// answering without them.
+	APMTopology bool
+	// APMEnv is the environment an error_spans entity id that names none is read in.
+	APMEnv string
+	// EntityService, when set, reads a graph entity id as a Datadog service; without it an id is read as
+	// `<env>/<service>` (the way the feeder spells a service node) or a bare service in APMEnv.
+	EntityService func(entityID string) (ServiceRef, bool)
 }
 
 // Backend is the Datadog telemetry backend.
@@ -82,6 +93,10 @@ type Backend struct {
 	retention time.Duration
 	indexes   []string
 	site      string
+
+	apm           bool
+	apmEnv        string
+	entityService func(string) (ServiceRef, bool)
 }
 
 // New builds a backend, refusing Options that could not answer honestly.
@@ -114,6 +129,8 @@ func New(opts Options) (*Backend, error) {
 		retention: opts.LogRetention,
 		indexes:   append([]string(nil), opts.Indexes...),
 		site:      opts.Site,
+
+		apm: opts.APMTopology, apmEnv: opts.APMEnv, entityService: opts.EntityService,
 	}
 	if b.retention <= 0 {
 		b.retention = DefaultLogRetention
@@ -257,6 +274,9 @@ type answer struct {
 func (b *Backend) dispatch(ctx context.Context, req *engine.Request) (answer, error) {
 	switch t := req.GetTerm().GetTerm().(type) {
 	case *investigationv1.AlgebraTerm_ErrorSpans:
+		if b.apm {
+			return b.errorSpansAPM(ctx, t.ErrorSpans)
+		}
 		return b.errorSpans(t.ErrorSpans)
 	case *investigationv1.AlgebraTerm_ErrorsByVersion:
 		return b.errorsByVersion(ctx, t.ErrorsByVersion)
@@ -402,6 +422,17 @@ func (b *Backend) checkPointer(req *engine.Request, name string) (*engine.Respon
 	if name == sdk.TermMonitorState {
 		want = feeder.VocabDatadogMonitor
 	}
+	// With apm_topology on, compare also executes a METRIC pointer in the APM metric vocabulary; with it
+	// off the pointer is refused as any pointer minted for another surface is.
+	if name == sdk.TermCompare && b.apm && pointer.GetVocabulary() == feeder.VocabDatadogAPMMetric {
+		if pointer.GetKind() != graphv1.PointerKind_METRIC {
+			resp, err := b.refuse(req, investigationv1.FailureReason_UNSUPPORTED_POINTER, fmt.Sprintf(
+				"datadog: %s over %s needs a METRIC pointer and was given a %s pointer", name,
+				feeder.VocabDatadogAPMMetric, pointer.GetKind()))
+			return resp, true, err
+		}
+		return nil, false, nil
+	}
 	switch {
 	case pointer == nil:
 		resp, err := b.refuse(req, investigationv1.FailureReason_UNSUPPORTED_POINTER, fmt.Sprintf(
@@ -424,7 +455,12 @@ func (b *Backend) checkPointer(req *engine.Request, name string) (*engine.Respon
 // checkRetention refuses a window older than the indexes hold: OUTSIDE_RETENTION with the horizon,
 // never NO_DATA, which would say nothing happened during a window nobody could look at.
 func (b *Backend) checkRetention(req *engine.Request, name string) (*engine.Response, bool, error) {
-	if name == sdk.TermMonitorState || name == sdk.TermErrorSpans {
+	if name == sdk.TermMonitorState || (name == sdk.TermErrorSpans && !b.apm) {
+		return nil, false, nil
+	}
+	// A trace metric is kept far longer than a log index; its retention is Datadog's to state, so the
+	// window is not judged against the log indexes'.
+	if pointer, ok := termPointer(req.GetTerm()); ok && pointer.GetVocabulary() == feeder.VocabDatadogAPMMetric {
 		return nil, false, nil
 	}
 	horizon := b.now().UTC().Add(-b.retention)
@@ -464,6 +500,8 @@ func windowsOf(term *engine.Term) []*engine.Window {
 		return []*engine.Window{t.NewLogPatterns.GetWindow(), t.NewLogPatterns.GetBaselineWindow()}
 	case *investigationv1.AlgebraTerm_ErrorsByVersion:
 		return []*engine.Window{t.ErrorsByVersion.GetWindow()}
+	case *investigationv1.AlgebraTerm_ErrorSpans:
+		return []*engine.Window{t.ErrorSpans.GetWindow()}
 	default:
 		return nil
 	}

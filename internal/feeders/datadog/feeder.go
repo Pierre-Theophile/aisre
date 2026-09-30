@@ -82,6 +82,12 @@ type Options struct {
 	// OperatorAsserted is the gate's assertion, "operator_asserted by <name> at <instant>", when the
 	// start rested on one; every checkpoint records it (read-only-operations.md §3).
 	OperatorAsserted string
+	// Changes is which Datadog events are treated as changes (FR-029). Required when the `changes`
+	// capability is on, and recorded in every events checkpoint.
+	Changes ChangeScope
+	// Topology is which environments the apm_topology capability reads. Required when it is on, and
+	// recorded in every topology checkpoint.
+	Topology TopologyScope
 	// LogSources are the watched `<env>/<service>` log sources, used by a discovery tick that names
 	// none of its own.
 	LogSources []LogSource
@@ -121,6 +127,22 @@ func (o Options) Validate() error {
 			return fmt.Errorf("datadog: monitor tag %q is not a single `key:value`", tag)
 		}
 	}
+	if o.Capabilities.Enabled(CapChanges) {
+		if err := o.Changes.Validate(); err != nil {
+			return err
+		}
+	} else if len(o.Changes.Sources)+len(o.Changes.Tags) > 0 {
+		return fmt.Errorf("datadog: change sources or tags are configured and the changes capability is off; " +
+			"a scope nothing reads is a configuration that looks like a change source and is not (FR-008b)")
+	}
+	if o.Capabilities.Enabled(CapAPMTopology) {
+		if err := o.Topology.Validate(); err != nil {
+			return err
+		}
+	} else if len(o.Topology.Envs) > 0 {
+		return fmt.Errorf("datadog: APM environments are configured and the apm_topology capability is off; a " +
+			"scope nothing reads looks like topology being watched and is not (FR-008b)")
+	}
 	return nil
 }
 
@@ -152,6 +174,10 @@ type Feeder struct {
 	// verdicts is the digest of the last assertion of each measured log source.
 	verdicts       map[string]string
 	discoveryNotes []string
+	// changes is what the events windows stated rather than emitted (events.go).
+	changes changeStats
+	// topology is what the apm_topology capability remembers between windows (topology.go); nil while off.
+	topology *topoState
 	// warnedEnv are the environment warnings already logged: each is logged once per run, and stated in
 	// every checkpoint it applies to.
 	warnedEnv map[string]bool
@@ -259,6 +285,16 @@ func (f *Feeder) apply(ctx context.Context, em feeder.Emitter, payload feeder.Pa
 			return fmt.Errorf("datadog: decoding a %s payload: %w", payload.Kind, err)
 		}
 		return f.applyDiscovery(ctx, em, tick, payload.At)
+	case PayloadTopology:
+		return f.applyTopology(ctx, em, payload.Bytes, payload.At)
+	case PayloadEvents:
+		return f.applyEvents(ctx, em, payload.Bytes, payload.At)
+	case PayloadEventsPoll:
+		var marker EventsMarker
+		if err := json.Unmarshal(payload.Bytes, &marker); err != nil {
+			return fmt.Errorf("datadog: decoding a %s payload: %w", payload.Kind, err)
+		}
+		return f.applyEventsPoll(ctx, em, marker, payload.At)
 	case PayloadPoll:
 		var marker PollMarker
 		if err := json.Unmarshal(payload.Bytes, &marker); err != nil {
@@ -266,9 +302,9 @@ func (f *Feeder) apply(ctx context.Context, em feeder.Emitter, payload feeder.Pa
 		}
 		return f.applyPoll(ctx, em, marker, payload.At)
 	default:
-		return fmt.Errorf("datadog: payload kind %q is not one this feeder reads (%s, %s); a payload "+
-			"nobody handles is a fixture that silently tests less than it claims",
-			payload.Kind, PayloadMonitors, PayloadPoll+", "+PayloadDiscovery)
+		return fmt.Errorf("datadog: payload kind %q is not one this feeder reads (%s, %s, %s, %s, %s, %s); a "+
+			"payload nobody handles is a fixture that silently tests less than it claims",
+			payload.Kind, PayloadMonitors, PayloadPoll, PayloadDiscovery, PayloadEvents, PayloadEventsPoll, PayloadTopology)
 	}
 }
 
@@ -308,6 +344,10 @@ func (f *Feeder) applyDiscovery(ctx context.Context, em feeder.Emitter, tick Dis
 		for _, ev := range batch {
 			if ok && m.Failed == "" && tick.Window != nil && ev.GetUpsertNode() != nil {
 				continue // the measured assertion below replaces the plain one
+			}
+			if node := ev.GetUpsertNode(); node != nil {
+				f.noteLogNode(src.Ref().GetValue(), node)
+				f.decorateEvent(ev, src.Ref().GetValue(), src.Env, src.Service)
 			}
 			if err := emit(ctx, em, ev); err != nil {
 				return err

@@ -536,6 +536,66 @@ func ContractPolicy() *Policy {
 	keep("datadog.poll.usage", "the connector's usage report: its area names, Datadog's rate-limit bucket names "+
 		"(X-RateLimit-Name, a published vocabulary) and counts")
 
+	// The `changes` capability's payloads (005 T092). The pre-pass (recording.go, prepareEvents) keeps only
+	// the fields the feeder reads from an event, drops the title and the event's name (free text), rewrites
+	// the tags it keeps and drops the tags that name the actor: a people identifier does not survive in any
+	// form, so the actor's NAME is absent from a recording and only the actor kind survives, derived from
+	// the trigger tag and the source.
+	keep("datadog.events.data[].id", "an opaque identifier Datadog assigns to the event; it names no person, "+
+		"service or host, and the change's ref and idempotency key are built from it")
+	keep("datadog.events.data[].type", "a published vocabulary (`event`)")
+	keep("datadog.events.data[].attributes.timestamp", "the instant Datadog recorded, which dates the change")
+	keep("datadog.events.data[].attributes.tags[]", "evidence tags only, rewritten by the pre-pass: identifiers "+
+		"pseudonymised, actor tags dropped, any tag the feeder does not read dropped")
+	keep("datadog.events.data[].attributes.tags", "absent (null) when no tag survived the pre-pass")
+	keep("datadog.events.data[].attributes.attributes.source_type_name", "an event source from the published "+
+		"actor vocabulary, or the organisation's own word pseudonymised by the pre-pass")
+	keep("datadog.events.data[].attributes.attributes.service", "a service name, pseudonymised by the pre-pass "+
+		"with the same token the service tag gets, so the event still names the service the logs do")
+	keep("datadog.events.data[].attributes.attributes.evt.id", "an opaque identifier Datadog assigns")
+	keep("datadog.events.data[].attributes.attributes.evt.type", "a kind from the published change taxonomy, or "+
+		"the organisation's own word pseudonymised by the pre-pass")
+	keep("datadog.events-poll.outcome", "`complete` or `partial`")
+	keep("datadog.events-poll.window.*", "the window read")
+	for _, count := range []string{"pages", "read", "out_of_scope"} {
+		keep("datadog.events-poll."+count, "a count")
+	}
+	drop("datadog.events-poll.reason", "an error message, which quotes URLs and names")
+	keep("datadog.events-poll.stop_reason", "`quota` or `rate_limited`, the connector's own typed stop")
+	keep("datadog.events-poll.deferred[]", "area names from the published deferral order")
+	keep("datadog.events-poll.resume_at", "the instant Datadog's Retry-After ends")
+	keep("datadog.events-poll.usage", "the connector's usage report: its area names, Datadog's rate-limit "+
+		"bucket names and counts")
+
+	// The `apm_topology` capability's payload (005 T090). The pre-pass (recording.go, prepareTopology)
+	// pseudonymises every environment, service, host and operation name with the keyed pseudonym for its
+	// kind, so the recorded edges join the recorded nodes and the recorded log sources; a version is kept,
+	// for the join to the deploy feeders' changes; the vendor's failure reason is withheld.
+	keep("datadog.topology.env", "an environment, pseudonymised by the pre-pass")
+	keep("datadog.topology.window.*", "the window read; an edge's valid interval")
+	for _, part := range []string{"dependencies", "traffic", "versions", "operations", "hosts"} {
+		keep("datadog.topology.parts."+part, "`complete`, `partial` or `unread`")
+	}
+	keep("datadog.topology.services[].name", "a service, pseudonymised by the pre-pass")
+	keep("datadog.topology.services[].calls[]", "a callee, pseudonymised by the pre-pass like a service")
+	keep("datadog.topology.services[].calls", "absent (null) when the service calls nothing")
+	keep("datadog.topology.traffic[].caller", "a service, pseudonymised by the pre-pass")
+	keep("datadog.topology.traffic[].callee", "a service, pseudonymised by the pre-pass")
+	keep("datadog.topology.traffic[].hits", "a count of spans, turned into a weight class and never stored")
+	keep("datadog.topology.versions[].service", "a service, pseudonymised by the pre-pass")
+	keep("datadog.topology.versions[].version", "a deployed version (see `version`); the join to the deploy feeders' changes")
+	keep("datadog.topology.versions[].hits", "a count of spans that chooses the dominant version")
+	keep("datadog.topology.operations[].service", "a service, pseudonymised by the pre-pass")
+	keep("datadog.topology.operations[].operation", "an operation name, pseudonymised by the pre-pass as a resource")
+	keep("datadog.topology.operations[].hits", "a count of spans that chooses the busiest operation")
+	keep("datadog.topology.hosts[].service", "a service, pseudonymised by the pre-pass")
+	keep("datadog.topology.hosts[].host", "a host, pseudonymised by the pre-pass; never a container or a pod")
+	drop("datadog.topology.reason", "an error message, which quotes URLs and names")
+	keep("datadog.topology.stop_reason", "`quota` or `rate_limited`, the connector's own typed stop")
+	keep("datadog.topology.deferred[]", "area names from the published deferral order")
+	keep("datadog.topology.resume_at", "the instant Datadog's Retry-After ends")
+	keep("datadog.topology.usage", "the connector's usage report: its area names, Datadog's rate-limit bucket names and counts")
+
 	drop("envs[].contentHint.*", "vendor-defined and unbounded, and it names backing stores")
 	drop("envs[].comment", "free text somebody wrote next to a secret, which is where a value gets pasted")
 	drop("envs[].edgeConfigTokenId", "a token identifier")

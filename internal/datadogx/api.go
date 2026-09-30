@@ -241,3 +241,27 @@ func (c *Client) ListMonitors(ctx context.Context, tags string, page, pageSize i
 	}
 	return out, resp, nil
 }
+
+// EventsPageLimit is the most events one page may ask for.
+const EventsPageLimit = 1000
+
+// ListEvents reads one page of the event stream (the `changes` capability). NOTE: built from the
+// published Events API v2 shape and not yet verified against a live organisation.
+func (c *Client) ListEvents(ctx context.Context, q ddfeeder.EventsQuery) (*Response, error) {
+	if q.Limit <= 0 || q.Limit > EventsPageLimit {
+		return nil, fmt.Errorf("datadogx: an events page limit must be 1–%d, not %d", EventsPageLimit, q.Limit)
+	}
+	query := map[string]string{
+		"filter[from]": q.From.UTC().Format(time.RFC3339Nano),
+		"filter[to]":   q.To.UTC().Format(time.RFC3339Nano),
+		"sort":         "timestamp",
+		"page[limit]":  strconv.Itoa(q.Limit),
+	}
+	if q.Query != "" {
+		query["filter[query]"] = q.Query
+	}
+	if q.Cursor != "" {
+		query["page[cursor]"] = q.Cursor
+	}
+	return c.Do(ctx, ddfeeder.OpListEvents, "/api/v2/events", query, nil)
+}
