@@ -552,9 +552,10 @@ applicable and SC-024 is asserted instead.
 - **Phase 3 (US5)**, **Phase 4 (US2)** and **Phase 5 (US4)** depend only on Phase 2 and can run in
   parallel; T041 (O1) precedes T042.
 - **Phase 6** depends on Phases 3 and 5 (the version groups and the log-source nodes).
-- **Phases 7–9** depend on Phase 2 and the transports of Phases 3–4; T082–T083 and T099 are blocked
-  on the organisation.
-- **Phases 10–11** are deferrable and depend on nothing after Phase 2 except T089/T091.
+- **Phases 7–9** depend on Phase 2 and the transports of Phases 3–4; T082–T083 and T099 needed the
+  organisation (done 2026-09-28 and 2026-09-29).
+- **Phases 10–11** depend on nothing after Phase 2 except T089/T091; built 2026-09-29 (T090, T092),
+  off by default and not yet verified against a live organisation.
 - **Phase 12** depends on every story being built.
 
 ## Parallel opportunities
@@ -572,15 +573,16 @@ Datadog service is a log source, and the investigation engine can question it on
 
 Then Phases 4 and 5 (monitors, and a node for every log source), then Phase 6 — which is what makes a
 service on an unfed platform show its deploys — then the P2 stories, the guide and the quickstart run.
-Phases 10 and 11 wait for an organisation that needs them.
+Phases 10 and 11 were built against Datadog's published API shapes; they wait for an organisation
+with tracing and deploy events to be verified live.
 
-## What is blocked on the organisation
+## What was blocked on the organisation
 
-| task | needs |
-|---|---|
-| T041 | a read-only key, for one aggregate call per case (or the owner's approval to run it through the read-only Datadog tools as on 2026-09-27) |
-| T082, T083 | a read-only Datadog key and a **named human signatory** on the manifest (FR-076) |
-| T099 | the read-only key |
-| — | the version stamp on the organisation's own service, per `docs/connectors/version-stamping.md` — until then its verdict reads "no stamp", which is the correct answer |
+| task | needed | resolved |
+|---|---|---|
+| T041 | a read-only key, for one aggregate call per case | 2026-09-29 |
+| T082, T083 | a read-only Datadog key and a **named human signatory** on the manifest (FR-076) | 2026-09-29 |
+| T099 | the read-only key | 2026-09-28 |
+| — | the version stamp on the organisation's own service, per `docs/connectors/version-stamping.md` — until then its verdict reads "no stamp", which is the correct answer | open, on the organisation's side |
 
-Everything else is buildable now.
+Every task is done; the version stamp is the organisation's to add.
