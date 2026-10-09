@@ -3,6 +3,7 @@
 package feeder
 
 import (
+	"encoding/json"
 	"maps"
 	"strings"
 	"time"
@@ -216,6 +217,46 @@ func (p *Props) Strs(key string, values ...string) *Props {
 		items = append(items, structpb.NewStringValue(v))
 	}
 	return p.set(key, structpb.NewListValue(&structpb.ListValue{Values: items}))
+}
+
+// MaxPropertyBytes is the graph's limit on one property, measured as its JSON encoding. An event
+// carrying a larger one is refused whole (internal/log): store a pointer, not the payload.
+const MaxPropertyBytes = 4096
+
+// boundedListBytes is what StrsBounded fills to: under MaxPropertyBytes with room for the whitespace a
+// protobuf JSON encoder may add, which is not stable between encoders.
+const boundedListBytes = MaxPropertyBytes - 256
+
+// OmittedSuffix names the count StrsBounded records beside a list it had to shorten.
+const OmittedSuffix = "_omitted"
+
+// StrsBounded sets a list property that may be too large for one property: whole values are kept, in
+// the order given, up to the graph's limit, and the number left out is recorded as `<key>_omitted`.
+//
+// It is for lists whose length is the platform's to choose — a service's environment entries, a
+// diff's changed names — where a real estate can exceed the limit and the ingest would otherwise
+// refuse the whole event. A value is never cut mid-way, and the count makes a shortened list say so
+// rather than read as complete.
+func (p *Props) StrsBounded(key string, values ...string) *Props {
+	kept := values
+	size := 2 // the brackets
+	for i, v := range values {
+		encoded, _ := json.Marshal(v)
+		extra := len(encoded)
+		if i > 0 {
+			extra++ // the comma
+		}
+		if size+extra > boundedListBytes {
+			kept = values[:i]
+			break
+		}
+		size += extra
+	}
+	p = p.Strs(key, kept...)
+	if omitted := len(values) - len(kept); omitted > 0 {
+		p = p.Int(key+OmittedSuffix, int64(omitted))
+	}
+	return p
 }
 
 // Int sets an integer property: a replica count, a port, a node count, a window in seconds.

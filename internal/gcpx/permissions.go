@@ -190,6 +190,8 @@ func UnverifiableAreas() []string {
 			"at all, so this gap cannot be closed by enumerating harder",
 		"cloudsql.flags.list: not an IAM permission — the flags endpoint is project-less and gated " +
 			"purely by OAuth scope, which is layer 2's business",
+		"Cloud SQL Admin's OAuth scope: the API publishes no read-only scope, so its client alone holds " +
+			"cloud-platform, and only IAM (the custom role) bounds what that token may do",
 		"deny policies: whether testIamPermissions subtracts them is undocumented. This fails SAFE " +
 			"— a deny-blocked write may still be reported as held, so the integration refuses to " +
 			"start: a false positive, not a false negative",

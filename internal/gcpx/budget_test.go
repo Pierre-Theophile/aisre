@@ -268,3 +268,19 @@ func TestAColdStartMaySpendItsShareAndNotTheLimit(t *testing.T) {
 		t.Error("the usage report says the reserve was spent during the cold start")
 	}
 }
+
+// The one row that binds must match the published file exactly: the human reserve on logging.read
+// is FR-147's floor, and a code default that drifted from it would spend calls the file promises
+// nobody spends.
+func TestPublishedLimitsCarryTheLoggingReserve(t *testing.T) {
+	t.Parallel()
+	for _, limit := range gcpx.PublishedLimits() {
+		if limit.Class == gcpx.ClassLoggingRead {
+			if limit != loggingLimit() {
+				t.Errorf("logging.read = %+v, want the published %+v", limit, loggingLimit())
+			}
+			return
+		}
+	}
+	t.Fatal("logging.read, the class every rule in the budget follows from, is not published")
+}

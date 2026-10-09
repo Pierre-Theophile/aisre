@@ -74,6 +74,29 @@ includedPermissions:
 
 `operations.list` needs no permission of its own beyond `cloudsql.instances.get`.
 
+### The OAuth scopes, and the one API that has no read-only scope
+
+IAM decides what the principal may do; the OAuth scope decides what a token may be used for. Both
+must be read-only, and `cloud-platform.read-only` is **not** accepted everywhere. The first live run
+(2026-10-09) found that Cloud Run, GKE and Compute Engine answer `ACCESS_TOKEN_SCOPE_INSUFFICIENT` to a
+token carrying only it, and Cloud Monitoring never accepted it. Each API's discovery document lists
+what it takes, and the credential now asks for each one's read-only scope:
+
+| API | scope requested | why |
+|---|---|---|
+| Cloud Logging, Cloud DNS, Resource Manager | `cloud-platform.read-only` (and `logging.read`) | they accept the umbrella read-only scope |
+| Cloud Monitoring | `monitoring.read` | it does not accept the umbrella one |
+| Cloud Run | `run.readonly` | the same |
+| GKE | `container.read-only` | the same |
+| Compute Engine (load balancers) | `compute.readonly` | the same |
+| **Cloud SQL Admin** | **`cloud-platform`, on that client only** | the API publishes **no** read-only scope: `cloud-platform` and `sqlservice.admin` are all it accepts |
+
+So the Cloud SQL client alone holds a token whose scope does not bound it, and **only IAM bounds
+it**: the custom role above, which grants `cloudsql.instances.list` and `.get` and nothing else.
+Layer 1 tests that the principal holds no Cloud SQL write permission, and the gate lists this as an
+area it cannot verify by scope, so the operator asserts it with the others. The wider token reaches
+that one client and no other.
+
 ## 2. The published read-only operation list
 
 Every operation this connector may issue, by name. An operation absent from this list is refused by

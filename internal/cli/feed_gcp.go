@@ -4,7 +4,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -59,6 +62,10 @@ type feedGCPOptions struct {
 	// handoff names an alert — a policy resource name, or one with `#<group>` appended — whose
 	// handoff is printed after the run (FR-053).
 	handoff string
+	// interval, cycles and auditLookback pace the live poller (T185).
+	interval      time.Duration
+	cycles        int
+	auditLookback time.Duration
 }
 
 func newFeedGCPCommand(global *globalOptions) *cobra.Command {
@@ -111,6 +118,12 @@ func newFeedGCPCommand(global *globalOptions) *cobra.Command {
 			"one with #<group> appended for a grouped policy. It carries the alert, what it "+
 			"watches, the transition instant to reason from and the pointers to execute — and no "+
 			"telemetry (FR-053)")
+	flags.DurationVar(&opts.interval, "interval", gcpfeeder.DefaultPollInterval,
+		"time between live poll cycles. With --alert-incidents it is also the alert cadence, so it may "+
+			"not exceed "+gcpfeeder.MaxAlertPollInterval.String()+" (SC-004)")
+	flags.IntVar(&opts.cycles, "cycles", 0, "live poll cycles to run; 0 runs until interrupted")
+	flags.DurationVar(&opts.auditLookback, "audit-lookback", gcpfeeder.DefaultAuditLookback,
+		"how far back the first cycle reads the admin-activity audit stream")
 	return cmd
 }
 
@@ -167,6 +180,16 @@ func runFeedGCP(ctx context.Context, global *globalOptions, opts *feedGCPOptions
 		return exitErrorf(ExitUsage, "feed gcp: --org is required; it is the suffix of the source id, "+
 			"and an empty one makes every organisation's events one source")
 	}
+	if opts.replayDir == "" && opts.alertIncidents {
+		// The live poller reads every area at one cadence, so with transitions on, the poll interval IS
+		// the sampling interval recorded on each one, and SC-004 bounds it.
+		if opts.interval > gcpfeeder.MaxAlertPollInterval {
+			return exitErrorf(ExitUsage, "feed gcp: --alert-incidents reads transitions at the poll "+
+				"interval, and %s is past the published %s ceiling (SC-004); pass --interval %s or less",
+				opts.interval, gcpfeeder.MaxAlertPollInterval, gcpfeeder.MaxAlertPollInterval)
+		}
+		opts.alertPollInterval = opts.interval
+	}
 
 	feederOpts := gcpfeeder.Options{
 		OrgSlug:          opts.orgSlug,
@@ -191,20 +214,22 @@ func runFeedGCP(ctx context.Context, global *globalOptions, opts *feedGCPOptions
 		f.Gate = &gcpGate{projects: opts.projects, assertBy: opts.assertBy}
 	}
 
-	// The live poller lands with the area tasks. Until it does, a live run says so rather than
-	// starting, emitting nothing and exiting zero — which is the failure mode that makes an empty
-	// graph look like a working connector.
+	var src feeder.Source
+	var usage *gcpx.Usage
 	if opts.replayDir == "" {
-		return exitErrorf(ExitUsage, "feed gcp: the live poller is not wired yet; use --dry-run to "+
-			"run the read-only gate, or --replay <dir> to feed from a recording. A live run that "+
-			"emitted nothing and exited zero would look like a working connector")
+		poller, live, err := newLiveGCPPoller(opts, f.Gate.(*gcpGate),
+			slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil)))
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed gcp: %v", err)
+		}
+		src, usage = poller, live
+	} else {
+		fileSource, err := source.NewFileSource(opts.replayDir)
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed gcp: %v", err)
+		}
+		src = fileSource
 	}
-
-	fileSource, err := source.NewFileSource(opts.replayDir)
-	if err != nil {
-		return exitErrorf(ExitUsage, "feed gcp: %v", err)
-	}
-	var src feeder.Source = fileSource
 
 	connect, err := emit.NewConnectEmitter(global.Server, global.Token, f.Describe(),
 		emit.WithBatchSize(opts.batchSize))
@@ -224,7 +249,15 @@ func runFeedGCP(ctx context.Context, global *globalOptions, opts *feedGCPOptions
 		defer writeGCPManifest(cmd, opts, f.Describe(), payloads, events)
 	}
 
-	if err := f.Run(ctx, src, em); err != nil {
+	runErr := f.Run(ctx, src, em)
+	if usage != nil {
+		reportGCPRequests(cmd, usage)
+	}
+	if err := runErr; err != nil {
+		// An operator stopping a live run is how a live run ends, not a failure.
+		if opts.replayDir == "" && errors.Is(err, context.Canceled) {
+			return nil
+		}
 		return exitErrorf(ExitTransport, "feed gcp: %v", err)
 	}
 	if opts.handoff != "" {
@@ -355,10 +388,12 @@ func runFeedGCPDryRun(ctx context.Context, opts *feedGCPOptions, cmd *cobra.Comm
 	return nil
 }
 
-// gcpGate adapts gcpx.Gate to the feeder's Gate interface.
+// gcpGate adapts gcpx.Gate to the feeder's Gate interface, and keeps the credential it proved: the
+// live poller's area clients are built from that one credential and no other, after the gate passed.
 type gcpGate struct {
 	projects []string
 	assertBy string
+	proved   *gcpx.Credential
 }
 
 func (g *gcpGate) Prove(ctx context.Context) (*gcpx.Credential, error) {
@@ -370,5 +405,71 @@ func (g *gcpGate) Prove(ctx context.Context) (*gcpx.Credential, error) {
 			Acknowledged: gcpx.UnverifiableAreas(),
 		}
 	}
-	return gcpx.Gate(ctx, opts)
+	creds, err := gcpx.Gate(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	g.proved = creds
+	return creds, nil
+}
+
+// newLiveGCPPoller builds the live source (T185). The transport is connected on the poller's first
+// read, from the credential the gate proved: Feeder.Run proves the gate before it asks the source for
+// anything, so a client built here before the gate ran is not a path that exists.
+func newLiveGCPPoller(opts *feedGCPOptions, gate *gcpGate, logger *slog.Logger) (*gcpfeeder.Poller, *gcpx.Usage, error) {
+	usage := gcpx.NewUsage(gcpx.ConsumerFeeder)
+	budget := gcpx.NewBudget(gcpx.PublishedLimits(), usage)
+	connect := func(ctx context.Context) (*gcpfeeder.Transport, error) {
+		if gate.proved == nil {
+			return nil, errors.New("the read-only gate has not passed, so there is no credential to read with")
+		}
+		transport, err := gcpfeeder.NewLiveTransport(ctx, gate.proved, budget)
+		if err != nil {
+			return nil, err
+		}
+		if opts.alertIncidents {
+			incidents, err := gcpfeeder.NewLiveAlertIncidentReader(ctx, gate.proved, budget)
+			if err != nil {
+				return nil, err
+			}
+			transport.AlertIncidents = incidents
+		}
+		return transport, nil
+	}
+	poller, err := gcpfeeder.NewPoller(gcpfeeder.PollerOptions{
+		Connect:       connect,
+		Scope:         gcpfeeder.Scope{Projects: opts.projects, Regions: opts.regions},
+		Interval:      opts.interval,
+		Cycles:        opts.cycles,
+		AuditLookback: opts.auditLookback,
+		AuditOverlap:  opts.window,
+		Logger:        logger,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return poller, usage, nil
+}
+
+// reportGCPRequests prints what the run issued, from its own request log (SC-020): every operation is
+// on the published read-only list, and the only state change permitted anywhere is the doorbell's.
+func reportGCPRequests(cmd *cobra.Command, usage *gcpx.Usage) {
+	out := cmd.ErrOrStderr()
+	rows := usage.Requests()
+	counts := map[string]int{}
+	total := 0
+	for _, row := range rows {
+		counts[string(row.Operation)] += row.Calls
+		total += row.Calls
+	}
+	ops := make([]string, 0, len(counts))
+	for op := range counts {
+		ops = append(ops, op)
+	}
+	slices.Sort(ops)
+	fmt.Fprintf(out, "gcp request log: %d call(s) issued, %d blocked, %d state change(s); read-only honoured: %t\n",
+		total, len(usage.BlockedRequests()), len(usage.StateChanges()), usage.ReadOnlyHonoured())
+	for _, op := range ops {
+		fmt.Fprintf(out, "  %-40s %d\n", op, counts[op])
+	}
 }

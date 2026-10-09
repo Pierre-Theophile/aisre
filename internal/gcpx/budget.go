@@ -434,3 +434,28 @@ func minFloat(a, b float64) float64 {
 	}
 	return b
 }
+
+// PublishedLimits are config/gcp-budget.yaml's endpoint classes as a budget takes them: the figure
+// Google documents where it documents one, and the published share and reserve on the two classes
+// shared with the humans of the organisation. A class whose limit nobody published is listed with
+// Limit zero, which the budget meters and reports and never treats as unlimited.
+//
+// monitoring.query carries the file's fallback figure, marked not Discovered: the usage report then
+// says "fallback", and DiscoverMonitoringLimit replaces it where the vendor reports one.
+func PublishedLimits() []ClassLimit {
+	return []ClassLimit{
+		{Class: ClassLoggingRead, Limit: 60, Period: time.Minute, Scope: ScopeProject,
+			SteadyStateShare: 0.40, HumanReserve: 0.30},
+		{Class: ClassMonitoringQuery, Limit: 60, Period: time.Minute, Scope: ScopeProject,
+			SteadyStateShare: 0.50, HumanReserve: 0.25},
+		{Class: ClassRunRead, Limit: 3000, Period: time.Minute, Scope: ScopeProjectRegion},
+		// Published as per user per region, which has no bucket scope of its own. One bucket for the
+		// whole run is the conservative reading: per-project buckets would let several projects spend
+		// the one user's pool several times over.
+		{Class: ClassSQLAdminRead, Limit: 500, Period: time.Minute, Scope: ScopeGlobal},
+		{Class: ClassMonitoringPolicies, Period: time.Minute, Scope: ScopeProject},
+		{Class: ClassContainerRead, Period: time.Minute, Scope: ScopeProject},
+		{Class: ClassComputeRead, Period: time.Minute, Scope: ScopeProject},
+		{Class: ClassDNSRead, Period: time.Minute, Scope: ScopeProject},
+	}
+}

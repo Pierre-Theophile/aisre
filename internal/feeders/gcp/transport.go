@@ -202,7 +202,13 @@ func NewLiveTransport(ctx context.Context, creds *gcpx.Credential, budget *gcpx.
 	if err != nil {
 		return nil, err
 	}
-	sqlClient, err := sqladmin.NewService(ctx, opts...)
+	// Cloud SQL Admin publishes no read-only OAuth scope, so its client alone is built on the
+	// cloud-platform token, bounded by IAM rather than scope (gcpx.Credential.CloudSQLTokenSource).
+	sqlToken, err := creds.CloudSQLTokenSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sqlClient, err := sqladmin.NewService(ctx, option.WithTokenSource(sqlToken))
 	if err != nil {
 		return nil, err
 	}
@@ -361,10 +367,10 @@ type liveAuditLogs struct {
 // after the FIRST ITEM, not the first page, because the token becomes non-empty as soon as the
 // iterator buffers a page. That would have metered one call and issued one per entry.
 //
-// pageSize 0 asks the server for its default. The maximum is undocumented — the widely-cited
-// 1,000-entry cap appears nowhere in Google's reference (research §6) — so this requests no
-// specific size and reads whatever came back rather than designing against a number nobody
-// published.
+// The page size is the documented maximum. An earlier version passed 0, meaning "the server's
+// default", and NewPager refuses 0 outright ("page size must be positive"), so the audit stream read
+// nothing until the first live run said so (2026-10-09). The `entries.list` reference does publish
+// the bound: default 50, and a value "negative or exceeding 1000" is rejected.
 func (a *liveAuditLogs) ListEntries(ctx context.Context, req *loggingpb.ListLogEntriesRequest) ([]*loggingpb.LogEntry, string, error) {
 	project := ""
 	if len(req.GetResourceNames()) > 0 {
@@ -374,7 +380,7 @@ func (a *liveAuditLogs) ListEntries(ctx context.Context, req *loggingpb.ListLogE
 		return nil, "", err
 	}
 	it := a.client.ListLogEntries(ctx, req)
-	pager := iterator.NewPager(it, 0, req.GetPageToken())
+	pager := iterator.NewPager(it, auditEntriesPageSize, req.GetPageToken())
 	var page []*loggingpb.LogEntry
 	next, err := pager.NextPage(&page)
 	if err != nil {
@@ -382,6 +388,9 @@ func (a *liveAuditLogs) ListEntries(ctx context.Context, req *loggingpb.ListLogE
 	}
 	return page, next, nil
 }
+
+// auditEntriesPageSize is `entries.list`'s documented maximum page.
+const auditEntriesPageSize = 1000
 
 // ---- Cloud Monitoring ------------------------------------------------------------------------
 
@@ -500,15 +509,7 @@ func (a *liveAlertIncidents) ListAlerts(ctx context.Context, project string, sta
 	if err := a.lt.budget.Issue(ctx, gcpx.OpMonitoringAlertsList, project, ""); err != nil {
 		return nil, err
 	}
-	call := a.svc.Projects.Alerts.List("projects/" + project).
-		OrderBy("open_time desc").
-		PageSize(alertIncidentPageSize).
-		Context(ctx)
-	if !start.IsZero() && !end.IsZero() {
-		call = call.Filter(fmt.Sprintf(`open_time >= "%s" AND open_time < "%s"`,
-			start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339)))
-	}
-	resp, err := call.Do()
+	resp, err := alertsCall(a.svc.Projects.Alerts.List("projects/"+project), start, end).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
@@ -521,6 +522,39 @@ func (a *liveAlertIncidents) ListAlerts(ctx context.Context, project string, sta
 		out = append(out, incident)
 	}
 	return out, nil
+}
+
+// ListAlertsJSON reads the same window and returns each incident as the API's own JSON, which is what
+// the live poller writes as the `alerts` payload (poller.go): the feeder then decodes it with the one
+// decoder a replay uses, so live and recorded cannot diverge.
+func (a *liveAlertIncidents) ListAlertsJSON(ctx context.Context, project string, start, end time.Time) ([]json.RawMessage, error) {
+	if err := a.lt.budget.Issue(ctx, gcpx.OpMonitoringAlertsList, project, ""); err != nil {
+		return nil, err
+	}
+	resp, err := alertsCall(a.svc.Projects.Alerts.List("projects/"+project), start, end).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]json.RawMessage, 0, len(resp.Alerts))
+	for _, alert := range resp.Alerts {
+		raw, err := alert.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, raw)
+	}
+	return out, nil
+}
+
+// alertsCall shapes one window's request: newest first, the documented maximum page, and the window
+// as a filter on `open_time`, the field the API orders by and the only one that bounds the read.
+func alertsCall(call *monitoringv3.ProjectsAlertsListCall, start, end time.Time) *monitoringv3.ProjectsAlertsListCall {
+	call = call.OrderBy("open_time desc").PageSize(alertIncidentPageSize)
+	if !start.IsZero() && !end.IsZero() {
+		call = call.Filter(fmt.Sprintf(`open_time >= "%s" AND open_time < "%s"`,
+			start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339)))
+	}
+	return call
 }
 
 // alertIncidentPageSize is the API's documented maximum. Unlike `entries.list`, this one IS

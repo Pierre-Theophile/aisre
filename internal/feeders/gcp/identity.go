@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -263,9 +264,12 @@ func (s Service) Claims(otelServiceName string, envVarNames []string) []Claim {
 	// on the name. It goes on the addressing claims rather than only on the declared-name claim
 	// because P4 pairs the *service* with a Cloud SQL instance, and the declared name is a claim
 	// about a telemetry identifier.
-	if joined := strings.Join(sortedUniqueNames(envVarNames), " "); joined != "" {
+	if joined, omitted := boundedEnvVarNames(envVarNames); joined != "" {
 		for i := range claims {
 			claims[i].Attrs = map[string]string{AttrEnvVarNames: joined}
+			if omitted > 0 {
+				claims[i].Attrs[AttrEnvVarNamesOmitted] = strconv.Itoa(omitted)
+			}
 		}
 	}
 	if name := strings.TrimSpace(otelServiceName); name != "" {
@@ -297,7 +301,40 @@ const (
 	// AttrEnvVarNames is the set of environment-variable names a service defines, joined by
 	// spaces — names only, never values (P4, FR-034).
 	AttrEnvVarNames = "sre.gcp.env_var_names"
+	// AttrEnvVarNamesOmitted counts the names left out of AttrEnvVarNames to keep it under the graph's
+	// property limit. Present only when some were (boundedEnvVarNames).
+	AttrEnvVarNamesOmitted = "sre.gcp.env_var_names_omitted"
 )
+
+// MaxEnvVarNamesBytes bounds the joined names, under the graph's 4,096-byte property limit with room
+// for the encoding. A real staging service exceeded the limit on the first live run (2026-10-09), and
+// the ingest refused the whole run over it.
+const MaxEnvVarNamesBytes = 4000
+
+// boundedEnvVarNames joins the sorted, de-duplicated names, keeping whole names up to
+// MaxEnvVarNamesBytes and counting the rest.
+//
+// Truncating is safe for the one rule that reads them because P4 is a PROBABLE rule: a name left out
+// can only cost a suggestion, never make a wrong merge. The count is carried so that a missing
+// suggestion is explicable rather than silent.
+func boundedEnvVarNames(names []string) (string, int) {
+	sorted := sortedUniqueNames(names)
+	var b strings.Builder
+	for i, name := range sorted {
+		extra := len(name)
+		if b.Len() > 0 {
+			extra++
+		}
+		if b.Len()+extra > MaxEnvVarNamesBytes {
+			return b.String(), len(sorted) - i
+		}
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(name)
+	}
+	return b.String(), 0
+}
 
 // sortedUniqueNames trims, de-duplicates and sorts, so that a claim does not change because a
 // container's environment was declared in a different order.
