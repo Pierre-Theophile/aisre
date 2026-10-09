@@ -265,6 +265,13 @@ func TestAnUntestableAreaProducesAnAssertionRequirementRatherThanAnAssumption(t 
 	if err := full.Validate(areas); err != nil {
 		t.Errorf("a complete assertion was refused: %v", err)
 	}
+
+	// And so does the full text, which is what `feed gcp --assert-read-only-by` passes. Only the
+	// short phrase was tested, and the full text matched nothing, so the flag never worked.
+	verbatim := &gcpx.Assertion{By: "dana@example.com", Acknowledged: gcpx.UnverifiableAreas()}
+	if err := verbatim.Validate(gcpx.UnverifiableAreas()); err != nil {
+		t.Errorf("the CLI's verbatim acknowledgement was refused: %v", err)
+	}
 }
 
 func contains(haystack []string, needle string) bool {
