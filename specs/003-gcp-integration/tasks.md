@@ -581,6 +581,10 @@ at `0232fb1`, against the CI runs attached to this branch's commits.
 
 Recorded beside the closure record because an unlisted follow-up is a follow-up nobody does.
 
+Items 1–4 wait on the organisation. What to grant, who grants it and which variable carries it is
+[docs/campaigns/003-004-access-request.md](../../docs/campaigns/003-004-access-request.md);
+`scripts/campaign-preflight.sh 003` reports what is still missing and runs each connector's read-only gate.
+
 | # | item | why it is open |
 |---|---|---|
 | 1 | **US7, T156 and T157** — running the campaign and committing the corpus | Needs a real GCP credential, mailbox access authorised by an owner, and a **named human signatory** on the manifest (FR-140) — the last of which no automation can supply, by design. T153–T155 and T158–T160 are done: `fixture campaign` is implemented and the private repository's commit gates run. |
