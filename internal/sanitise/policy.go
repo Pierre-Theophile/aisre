@@ -236,8 +236,10 @@ func (p *Policy) Validate() error {
 			case rule.Disposition != Pseudonym && (rule.Shape != ShapeToken || rule.Template != ""):
 				return fmt.Errorf("sanitise: %s is %s but names a pseudonym shape", path, rule.Disposition)
 			case rule.Shape == ShapeTemplate:
-				if _, err := compileTemplate(rule.Template); err != nil {
-					return err
+				for _, pattern := range strings.Split(rule.Template, TemplateAlternatives) {
+					if _, err := compileTemplate(pattern); err != nil {
+						return err
+					}
 				}
 			case rule.Template != "":
 				return fmt.Errorf("sanitise: %s carries a template but is not ShapeTemplate", path)
@@ -783,5 +785,6 @@ func ContractPolicy() *Policy {
 	// table.
 	p.labels["version"] = Rule{Disposition: Verbatim, Why: "ADR-0005 D4's join; the residual name-in-a-version risk is the scan's (FR-138)"}
 
+	addGCPPayloadRows(p)
 	return p
 }
