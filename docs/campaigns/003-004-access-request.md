@@ -58,6 +58,7 @@ done
 | `GCP_SERVICE_ACCOUNT_JSON` | the service account key's JSON contents, or set `GOOGLE_APPLICATION_CREDENTIALS` to a path where the session has one |
 | `GCP_PROJECTS` | comma-separated project ids in scope |
 | `GCP_REGIONS` | comma-separated regions in scope |
+| `GCP_ASSERT_READ_ONLY_BY` | the person who asserts read-only for the seven areas no GCP API can check (child-resource bindings, deny and conditional policies, VPC-SC, and the rest the gate lists). Not a secret; it is passed as `--assert-read-only-by` and recorded |
 
 Where the organisation's policy forbids service account keys
 (`iam.disableServiceAccountKeyCreation`), run the campaign from a machine of the organisation's

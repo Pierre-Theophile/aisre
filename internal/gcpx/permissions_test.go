@@ -275,3 +275,20 @@ func contains(haystack []string, needle string) bool {
 	}
 	return false
 }
+
+// Every name in the tested set must be an IAM permission, not a REST method. testIamPermissions
+// refuses the WHOLE request over one name it does not know, so a single wrong name turns the gate into
+// one that cannot run against real GCP at all — while every fake in this file accepts it. That is how
+// three Compute Engine names spelt with the REST verb `.insert` survived until the first live run
+// (2026-10-09, project-level queryTestablePermissions): IAM spells creation `.create`, and `.patch`
+// is `.update`, in every service.
+func TestTheTestedSetUsesIAMVerbsNotRESTMethods(t *testing.T) {
+	t.Parallel()
+	for _, perm := range gcpx.WritePermissions() {
+		for _, rest := range []string{".insert", ".patch"} {
+			if strings.HasSuffix(perm, rest) {
+				t.Errorf("%s is a REST method name; testIamPermissions rejects it and the gate cannot run", perm)
+			}
+		}
+	}
+}

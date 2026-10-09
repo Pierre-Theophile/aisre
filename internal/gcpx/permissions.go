@@ -157,10 +157,10 @@ func WritePermissions() []string {
 		"pubsub.subscriptions.create", "pubsub.subscriptions.update", "pubsub.subscriptions.delete",
 
 		// Compute and DNS, read only where enabled at all (FR-057).
-		"compute.urlMaps.insert", "compute.urlMaps.update", "compute.urlMaps.delete",
-		"compute.backendServices.insert", "compute.backendServices.update",
+		"compute.urlMaps.create", "compute.urlMaps.update", "compute.urlMaps.delete",
+		"compute.backendServices.create", "compute.backendServices.update",
 		"compute.backendServices.delete",
-		"compute.forwardingRules.insert", "compute.forwardingRules.delete",
+		"compute.forwardingRules.create", "compute.forwardingRules.delete",
 		"dns.managedZones.create", "dns.managedZones.update", "dns.managedZones.delete",
 		"dns.changes.create", "dns.resourceRecordSets.create", "dns.resourceRecordSets.update",
 		"dns.resourceRecordSets.delete",

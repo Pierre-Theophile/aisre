@@ -20,7 +20,8 @@
 #   both      SRE_AGENT_ORG, SRE_AGENT_CORPUS_KEY, SRE_AGENT_SIGNATORY
 #   003       GOOGLE_APPLICATION_CREDENTIALS (a path) or GCP_SERVICE_ACCOUNT_JSON (the key's
 #             contents, written to a private temporary file for the gate and removed on exit),
-#             GCP_PROJECTS, GCP_REGIONS, and at least one mailbox in $VENDORS_CONFIG
+#             GCP_PROJECTS, GCP_REGIONS, GCP_ASSERT_READ_ONLY_BY (the named person asserting read-only
+#             for the seven areas no API can check, layer 3 of docs/connectors/gcp.md), and at least one mailbox in $VENDORS_CONFIG
 #             (default config/vendors.yaml) whose password_env / token_env is set
 #   004       GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_INSTALLATION_ID, VERCEL_TOKEN;
 #             VERCEL_TEAM where the token is a personal one
@@ -80,9 +81,11 @@ if [[ "$which" == 003 || "$which" == all ]]; then
 	fi
 	need GCP_PROJECTS "comma-separated projects in scope; no code assumes one (FR-131)" "T156"
 	need GCP_REGIONS "comma-separated regions in scope" "T156"
+	need GCP_ASSERT_READ_ONLY_BY "the named person asserting read-only where no API can check (gate layer 3, FR-004)" "T156"
 	if [[ -n "$creds" && -n "${GCP_PROJECTS:-}" && -n "${GCP_REGIONS:-}" && -n "${SRE_AGENT_ORG:-}" ]]; then
 		gate "feed gcp" env GOOGLE_APPLICATION_CREDENTIALS="$creds" "$bin" feed gcp \
-			--org "$SRE_AGENT_ORG" --projects "$GCP_PROJECTS" --regions "$GCP_REGIONS" --dry-run
+			--org "$SRE_AGENT_ORG" --projects "$GCP_PROJECTS" --regions "$GCP_REGIONS" \
+			${GCP_ASSERT_READ_ONLY_BY:+--assert-read-only-by "$GCP_ASSERT_READ_ONLY_BY"} --dry-run
 	fi
 
 	# The mailbox's credential is named in the allowlist and read from the environment; the
