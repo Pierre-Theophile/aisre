@@ -114,6 +114,17 @@ func runFeedVendorNotice(ctx context.Context, global *globalOptions, opts *feedV
 		return runFeedVendorNoticeDryRun(cfg, opts, cmd)
 	}
 
+	// Recording a LIVE run is refused until it is routed through a sanitiser (FR-137), for the
+	// reason feed gcp gives: `record.Wrap` writes the payload it is handed, and a live payload here is
+	// a vendor's mail and status pages as fetched, people identifiers included. The sanitiser has to
+	// run before the bytes reach disk, during a failed or aborted run too, so nothing afterwards can
+	// stand in for it. A replay may still be re-recorded: its payloads are a fixture already.
+	if opts.recordDir != "" && opts.replayDir == "" {
+		return exitErrorf(ExitUsage, "feed vendor-notice: --record on a live run is refused: the "+
+			"recording would write mail and fetched pages to disk unsanitised, which FR-137 forbids at "+
+			"any point, including during a failed or aborted run")
+	}
+
 	list, err := cfg.Allowlist()
 	if err != nil {
 		return exitErrorf(ExitUsage, "feed vendor-notice: %v", err)

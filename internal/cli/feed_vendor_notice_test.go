@@ -86,6 +86,11 @@ func TestFeedVendorNoticeUsageErrors(t *testing.T) {
 		"record and replay together": {
 			"feed", "vendor-notice", "--allowlist", "x.yaml", "--record", "a", "--replay", "b",
 		},
+		// FR-137: a live recording would write mail to disk before any sanitiser saw it.
+		"record on a live run": {
+			"feed", "vendor-notice", "--allowlist", "../../config/vendors.yaml", "--org", "acme",
+			"--record", "out",
+		},
 		"a configuration that does not exist": {
 			"feed", "vendor-notice", "--allowlist", filepath.Join(t.TempDir(), "absent.yaml"),
 		},
