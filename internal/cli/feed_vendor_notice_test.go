@@ -86,11 +86,6 @@ func TestFeedVendorNoticeUsageErrors(t *testing.T) {
 		"record and replay together": {
 			"feed", "vendor-notice", "--allowlist", "x.yaml", "--record", "a", "--replay", "b",
 		},
-		// FR-137: a live recording would write mail to disk before any sanitiser saw it.
-		"record on a live run": {
-			"feed", "vendor-notice", "--allowlist", "../../config/vendors.yaml", "--org", "acme",
-			"--record", "out",
-		},
 		"a configuration that does not exist": {
 			"feed", "vendor-notice", "--allowlist", filepath.Join(t.TempDir(), "absent.yaml"),
 		},
@@ -103,6 +98,21 @@ func TestFeedVendorNoticeUsageErrors(t *testing.T) {
 				t.Fatalf("exit code = %d, want %d (stderr: %s)", code, ExitUsage, stderr)
 			}
 		})
+	}
+}
+
+// A live recording is sanitised in the connector (T188, FR-137), so without the corpus key it cannot
+// start, and it is refused before a directory exists or a mailbox is opened.
+func TestFeedVendorNoticeLiveRecordingNeedsTheCorpusKey(t *testing.T) {
+	t.Setenv("SRE_AGENT_CORPUS_KEY", "")
+	dir := filepath.Join(t.TempDir(), "recording")
+	_, stderr, code := run(t, t.Context(), "feed", "vendor-notice", "--allowlist", "../../config/vendors.yaml",
+		"--org", "acme", "--record", dir)
+	if code != ExitUsage || !strings.Contains(stderr, "FR-137") {
+		t.Fatalf("exit %d, stderr %q; want a usage refusal naming FR-137", code, stderr)
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Errorf("%s exists after a refused recording; the refusal must come before anything touches disk", dir)
 	}
 }
 

@@ -786,5 +786,6 @@ func ContractPolicy() *Policy {
 	p.labels["version"] = Rule{Disposition: Verbatim, Why: "ADR-0005 D4's join; the residual name-in-a-version risk is the scan's (FR-138)"}
 
 	addGCPPayloadRows(p)
+	addVendorNoticeRows(p)
 	return p
 }

@@ -9,10 +9,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Pierre-Theophile/aisre/internal/feeders/deployrecord"
 	vendornotice "github.com/Pierre-Theophile/aisre/internal/feeders/vendornotice"
+	"github.com/Pierre-Theophile/aisre/internal/sanitise"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/emit"
-	"github.com/Pierre-Theophile/aisre/pkg/feeder/record"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/source"
 )
 
@@ -75,7 +76,9 @@ func newFeedVendorNoticeCommand(global *globalOptions) *cobra.Command {
 		"organisation slug, overriding the file's; the source id is vendor-notice:<org>")
 	flags.BoolVar(&opts.dryRun, "dry-run", false,
 		"validate the configuration, report what would be polled, and read nothing")
-	flags.StringVar(&opts.recordDir, "record", "", "also write every payload and event to this fixture directory")
+	flags.StringVar(&opts.recordDir, "record", "", "also record the run to this fixture directory, "+
+		"sanitised in the connector before anything touches disk under the contract table and the corpus "+
+		"key in $SRE_AGENT_CORPUS_KEY (FR-137); the recording's events are derived from its sanitised payloads")
 	flags.StringVar(&opts.replayDir, "replay", "", "read payloads from this fixture directory instead of the vendors")
 	flags.IntVar(&opts.cycles, "cycles", 1, "how many poll cycles to run; 0 runs until interrupted")
 	flags.IntVar(&opts.batchSize, "batch", 256, "events per ingest batch")
@@ -114,22 +117,24 @@ func runFeedVendorNotice(ctx context.Context, global *globalOptions, opts *feedV
 		return runFeedVendorNoticeDryRun(cfg, opts, cmd)
 	}
 
-	// Recording a LIVE run is refused until it is routed through a sanitiser (FR-137), for the
-	// reason feed gcp gives: `record.Wrap` writes the payload it is handed, and a live payload here is
-	// a vendor's mail and status pages as fetched, people identifiers included. The sanitiser has to
-	// run before the bytes reach disk, during a failed or aborted run too, so nothing afterwards can
-	// stand in for it. A replay may still be re-recorded: its payloads are a fixture already.
+	// A live recording is sanitised in the connector before anything touches disk (T188, FR-137): the
+	// sanitiser is built first, and without the corpus key the run is refused here, before a
+	// directory exists and before a mailbox is opened.
+	var san *sanitise.Sanitiser
 	if opts.recordDir != "" && opts.replayDir == "" {
-		return exitErrorf(ExitUsage, "feed vendor-notice: --record on a live run is refused: the "+
-			"recording would write mail and fetched pages to disk unsanitised, which FR-137 forbids at "+
-			"any point, including during a failed or aborted run")
+		built, err := recordingSanitiser()
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed vendor-notice: --record on a live run is sanitised in the "+
+				"connector before anything touches disk (FR-137), and it cannot start: %v", err)
+		}
+		san = built
 	}
 
 	list, err := cfg.Allowlist()
 	if err != nil {
 		return exitErrorf(ExitUsage, "feed vendor-notice: %v", err)
 	}
-	f, err := vendornotice.New(vendornotice.Options{
+	feederOpts := vendornotice.Options{
 		OrgSlug:          cfg.Org,
 		Allowlist:        list,
 		ReorderingWindow: cfg.ReorderingWindow,
@@ -137,12 +142,14 @@ func runFeedVendorNotice(ctx context.Context, global *globalOptions, opts *feedV
 		// recording silence as evidence (FR-132b). A replay is exempt: a fixture of a quiet cycle is
 		// a legitimate fixture.
 		RefuseEmptyNoticeStream: opts.replayDir == "",
-	})
+	}
+	f, err := vendornotice.New(feederOpts)
 	if err != nil {
 		return exitErrorf(ExitUsage, "feed vendor-notice: %v", err)
 	}
 
 	var src feeder.Source
+	var recording *deployrecord.Tee
 	if opts.replayDir != "" {
 		fileSource, err := source.NewFileSource(opts.replayDir)
 		if err != nil {
@@ -162,6 +169,14 @@ func runFeedVendorNotice(ctx context.Context, global *globalOptions, opts *feedV
 			return exitErrorf(ExitUsage, "feed vendor-notice: %v", err)
 		}
 		src = poller
+		if san != nil {
+			tee, err := deployrecord.NewTee(poller, "vendornotice", san, opts.recordDir)
+			if err != nil {
+				return exitErrorf(ExitUsage, "feed vendor-notice: %v", err)
+			}
+			recording = tee.WithPrepare(vendornotice.PreparePayload)
+			src = recording
+		}
 	}
 
 	connect, err := emit.NewConnectEmitter(global.Server, global.Token, f.Describe(),
@@ -170,15 +185,26 @@ func runFeedVendorNotice(ctx context.Context, global *globalOptions, opts *feedV
 		return exitErrorf(ExitTransport, "feed vendor-notice: %v", err)
 	}
 	var em feeder.Emitter = connect
-
-	if opts.recordDir != "" {
-		payloads := record.Wrap(src, opts.recordDir)
-		events := record.Emitter(em, opts.recordDir)
-		src, em = payloads, events
-		defer writeVendorNoticeManifest(cmd, opts, f.Describe(), payloads, events)
+	runErr := f.Run(ctx, src, em)
+	if recording != nil {
+		// The shadow derives the recording's events from its sanitised payloads. Its allowlist is the
+		// live one unchanged, because vendor and product are recorded verbatim; an empty stream is
+		// not refused, since the live run already said whatever there was to say about it.
+		shadowOpts := feederOpts
+		shadowOpts.RefuseEmptyNoticeStream = false
+		shadow, err := vendornotice.New(shadowOpts)
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed vendor-notice: %v", err)
+		}
+		events, err := recording.Finish(context.WithoutCancel(ctx), opts.recordDir, "vendor-notice", shadow)
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "feed vendor-notice: the recording was not completed: %v\n", err)
+		} else {
+			fmt.Fprintf(cmd.ErrOrStderr(), "recorded %d sanitised payload(s) and %d derived event(s) to %s; refused: %v\n",
+				recording.Written(), events, opts.recordDir, recording.Dropped())
+		}
 	}
-
-	if err := f.Run(ctx, src, em); err != nil {
+	if err := runErr; err != nil {
 		return exitErrorf(ExitTransport, "feed vendor-notice: %v", err)
 	}
 	// The per-cycle report is the point of the whole thing (FR-078): "the graph knows about no
@@ -215,29 +241,4 @@ func runFeedVendorNoticeDryRun(cfg vendornotice.Config, opts *feedVendorNoticeOp
 	_ = opts
 	_ = time.Now
 	return nil
-}
-
-// writeVendorNoticeManifest completes a recording so that `--record` leaves a fixture directory.
-func writeVendorNoticeManifest(cmd *cobra.Command, opts *feedVendorNoticeOptions, desc feeder.Description,
-	payloads *record.PayloadRecorder, events *record.EventRecorder,
-) {
-	out := cmd.ErrOrStderr()
-	if err := payloads.Err(); err != nil {
-		fmt.Fprintf(out, "vendor-notice: recording payloads failed: %v\n", err)
-	}
-	if err := events.Err(); err != nil {
-		fmt.Fprintf(out, "vendor-notice: recording events failed: %v\n", err)
-	}
-	if err := record.WriteManifest(opts.recordDir, record.Manifest{
-		Family: "vendor-notice",
-		Description: fmt.Sprintf("%d vendor-notice payloads recorded by `feed vendor-notice`. "+
-			"Add a queries: list and record the goldens before committing.", payloads.Count()),
-		Sources:        []record.ManifestSource{record.SourceOf(desc)},
-		ExpectRejected: events.Rejections(),
-	}); err != nil {
-		fmt.Fprintf(out, "vendor-notice: writing the fixture manifest failed: %v\n", err)
-		return
-	}
-	fmt.Fprintf(out, "recorded %d payloads and %d events to %s\n",
-		payloads.Count(), events.Accepted(), opts.recordDir)
 }

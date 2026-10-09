@@ -224,7 +224,7 @@ bin/aisre feed vendor-notice --allowlist config/vendors.yaml --record fixtures-p
 > a sanitised recording with no identifier in it, and graph parity with two named losses. `--record`
 > needs `SRE_AGENT_CORPUS_KEY` and is refused without it before anything is written. The live parity
 > check is `GCP_LIVE_PARITY=1 go test ./internal/feeders/gcp/ -run LiveGraphParity`; its comment lists
-> the variables. `feed vendor-notice --record` is still refused on a live run (T188).
+> the variables. `feed vendor-notice --record` is sanitised the same way (T188).
 
 Note the **two separate commands with two separate credentials** (FR-002). They share no credential,
 no cadence, no budget and no checkpoint; a mailbox outage must not look like a topology gap.
