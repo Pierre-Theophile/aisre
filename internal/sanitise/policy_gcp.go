@@ -31,9 +31,9 @@ import "strings"
 //     platform's geography and the connector validates it by shape.
 //   - A commit takes ShapeHex under KindCommit, the shape the deploy feeders give the same commit, so
 //     C8 still merges a Cloud Run rollout with the GitHub deployment that shipped it.
-//   - Monitoring filters are dropped, and that costs something: an alert policy's watched resources
-//     are read out of its filter text, so a recorded policy watches nothing. Pseudonymising inside a
-//     filter is a pre-pass like Datadog's query rewrite, and is recorded as the open item it is.
+//   - Monitoring filters are kept REDUCED: the GCP pre-pass keeps only the equality clauses the feeder
+//     reads, with every identifier pseudonymised, so a recorded alert policy still watches the
+//     recorded service. An investigation starts from what an alert watches.
 func addGCPPayloadRows(p *Policy) {
 	set := func(path string, rule Rule) { p.fields[CanonicalField(path)] = rule }
 	drop := func(path, why string) { set(path, Rule{Disposition: Dropped, Why: why}) }
@@ -180,9 +180,17 @@ func addGCPPayloadRows(p *Policy) {
 	drop(a+".displayname", "a display name: the contract treats every one as possibly naming a person")
 	tmpl(a+".conditions[].name", policy+"/conditions/{resource}", "a condition's resource name")
 	drop(a+".conditions[].displayname", "a display name, the same")
-	drop(a+".conditions[].conditionthreshold.filter", "a monitoring filter: free text naming resources (see the file comment)")
-	drop(a+".conditions[].conditionthreshold.denominatorfilter", "the same")
-	drop(a+".conditions[].conditionmatchedlog.filter", "a log filter, the same")
+	// The filters arrive REDUCED by the GCP pre-pass (gcpfeeder.RecordingPrepare): only equality clauses
+	// on the fields the feeder reads and closed vocabularies, every identifier already pseudonymised as
+	// this table pseudonymises it elsewhere. Kept, because an investigation starts from what a policy
+	// watches. The Datadog monitor query is the precedent (sanitise/datadog.go).
+	for _, block := range []string{"conditionthreshold", "conditionmatchedlog", "conditionabsent"} {
+		keep(a+".conditions[]."+block+".filter", "a filter the pre-pass reduced to pseudonymised equality clauses")
+		keep(a+".conditions[]."+block+".denominatorfilter", "the same")
+	}
+	keepAll(a+".conditions[].conditionabsent", whyEnum, "duration", "trigger.count", "trigger.percent",
+		"aggregations[].alignmentperiod", "aggregations[].crossseriesreducer", "aggregations[].perseriesaligner",
+		"aggregations[].groupbyfields[]")
 	drop(a+".conditions[].conditionmonitoringquerylanguage.query", "a query, the same")
 	drop(a+".conditions[].conditionprometheusqueryLanguage.query", "a query, the same")
 	keepAll(a+".conditions[].conditionthreshold", whyEnum, "comparison", "duration", "thresholdvalue", "trigger.count",

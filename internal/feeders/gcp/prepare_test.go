@@ -7,8 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	"time"
+
+	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	gcpfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/gcp"
 	"github.com/Pierre-Theophile/aisre/internal/sanitise"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder/emit"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder/source"
 )
 
 // A recorded poll marker keeps a reason, because a partial checkpoint without one is refused, and the
@@ -21,7 +27,10 @@ func TestARecordedPollReasonNamesOperationsOnly(t *testing.T) {
 			"cloudsql.instances.list acme-prod: denied; run.revisions.list acme-prod/us-east1: timeout",
 		Projects: []string{"acme-prod"},
 	})
-	out, err := gcpfeeder.PreparePayload(gcpfeeder.PayloadPollMarker, raw)
+	key, _ := sanitise.NewKey([]byte(strings.Repeat("k", 32)))
+	san, _ := sanitise.New(sanitise.ContractPolicy(), key)
+	prepare := gcpfeeder.RecordingPrepare(san)
+	out, err := prepare(gcpfeeder.PayloadPollMarker, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +48,7 @@ func TestARecordedPollReasonNamesOperationsOnly(t *testing.T) {
 		t.Error("the pre-pass touched a field it is not about; the table pseudonymises projects")
 	}
 	other := []byte(`{"services":[]}`)
-	if got, _ := gcpfeeder.PreparePayload(gcpfeeder.PayloadServices, other); string(got) != string(other) {
+	if got, _ := prepare(gcpfeeder.PayloadSQLFlags, other); string(got) != string(other) {
 		t.Error("the pre-pass changed a payload that is not a poll marker")
 	}
 }
@@ -84,7 +93,7 @@ func TestARecordedEnvValueKeepsOnlyItsConnectionName(t *testing.T) {
 			raw, _ := json.Marshal(map[string]any{"revisions": []any{map[string]any{
 				"containers": []any{map[string]any{"env": []any{map[string]any{"name": "DATABASE_URL", "value": tc.value}}}},
 			}}})
-			prepared, err := gcpfeeder.PreparePayload(gcpfeeder.PayloadRevisions, raw)
+			prepared, err := gcpfeeder.RecordingPrepare(san)(gcpfeeder.PayloadRevisions, raw)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -126,7 +135,7 @@ func TestARecordedConnectionNameMatchesTheVolumeField(t *testing.T) {
 	san, _ := sanitise.New(sanitise.ContractPolicy(), key)
 	raw := []byte(`{"revisions":[{"containers":[{"env":[{"name":"INSTANCE_CONNECTION_NAME","value":"acme-prod:europe-west1:orders-db"}]}],` +
 		`"volumes":[{"name":"cloudsql","cloudSqlInstance":{"instances":["acme-prod:europe-west1:orders-db"]}}]}]}`)
-	prepared, err := gcpfeeder.PreparePayload(gcpfeeder.PayloadRevisions, raw)
+	prepared, err := gcpfeeder.RecordingPrepare(san)(gcpfeeder.PayloadRevisions, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,5 +160,94 @@ func TestARecordedConnectionNameMatchesTheVolumeField(t *testing.T) {
 	volume := decoded.Revisions[0].Volumes[0].CloudSQLInstance.Instances[0]
 	if env == "" || env != volume {
 		t.Errorf("env %q and volume %q pseudonymise differently; the two derivations would name two instances", env, volume)
+	}
+}
+
+// A recorded alert policy still watches what it watched live, in the recording's vocabulary — the
+// thing a replayed investigation starts from — and nothing else of its filter survives: not a
+// customer id in a metric label, not an OR branch, not a substring match, not a real name.
+func TestARecordedAlertFilterKeepsItsWatchesAndNothingElse(t *testing.T) {
+	t.Parallel()
+	key, _ := sanitise.NewKey([]byte(strings.Repeat("k", 32)))
+	san, _ := sanitise.New(sanitise.ContractPolicy(), key)
+	const live = `resource.type = "cloud_run_revision" AND resource.labels.project_id = "acme-prod-123" AND ` +
+		`resource.labels.location = "europe-west1" AND resource.labels.service_name = "canary-checkout-7f3" AND ` +
+		`metric.type = "run.googleapis.com/request_count" AND metric.labels.customer_id = "cust-991" AND ` +
+		`metric.labels.response_code_class = "5xx" AND (metric.labels.tenant = "other-svc" OR ` +
+		`resource.labels.service_name != "x") AND resource.labels.revision_name = has_substring("v2")`
+	sqlFilter := `resource.type = "cloudsql_database" AND resource.labels.database_id = "acme-prod-123:orders-db" ` +
+		`AND resource.labels.region = "europe-west1"`
+	raw, _ := json.Marshal(map[string]any{"alertPolicies": []any{map[string]any{
+		"name": "projects/acme-prod-123/alertPolicies/42",
+		"conditions": []any{
+			map[string]any{"conditionThreshold": map[string]any{"filter": live, "comparison": "COMPARISON_GT"}},
+			map[string]any{"conditionThreshold": map[string]any{"filter": sqlFilter}},
+			map[string]any{"conditionMatchedLog": map[string]any{"filter": `jsonPayload.user = "alice@acme.example"`}},
+			map[string]any{"conditionMatchedLog": map[string]any{"filter": `"Timed out talking to acme-billing"`}},
+			map[string]any{"conditionThreshold": map[string]any{"filter": `metric.type="logging.googleapis.com/user/AcmeBillingErrors"`}},
+			map[string]any{"conditionThreshold": map[string]any{"filter": `metric.type="monitoring.googleapis.com/uptime_check/check_passed" AND metric.label.check_id="acme-home-check"`}},
+		},
+	}}})
+	prepared, err := gcpfeeder.RecordingPrepare(san)(gcpfeeder.PayloadAlertPolicies, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := san.JSON("gcp."+gcpfeeder.PayloadAlertPolicies, prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded := string(out)
+	for _, kept := range []string{"logging.googleapis.com/user/px_res_", "monitoring.googleapis.com/uptime_check/check_passed",
+		`metric.label.check_id=\"px_res_`} {
+		if !strings.Contains(recorded, kept) {
+			t.Errorf("%q is missing from the recorded policy: %s", kept, recorded)
+		}
+	}
+	if n := strings.Count(recorded, `"filter":`); n != 6 {
+		t.Errorf("%d filters recorded, want all 6: a condition that loses its filter loses its pointer", n)
+	}
+	for _, leak := range []string{"acme", "Acme", "canary-checkout", "Timed out", "cust-991", "customer_id", "other-svc", "has_substring",
+		"alice", "jsonPayload", " OR ", "orders-db"} {
+		if strings.Contains(recorded, leak) {
+			t.Errorf("%q survived in the recorded policy: %s", leak, recorded)
+		}
+	}
+
+	// The structural half: fed to the feeder beside the recorded service, the recorded policy watches
+	// the recorded service's ref and the recorded instance, exactly as the live one watched the live ones.
+	project, _ := san.LabelIdentifier(sanitise.KindProject, "acme-prod-123")
+	svc, _ := san.Identifier(sanitise.KindService, "canary-checkout-7f3")
+	instance, _ := san.LabelIdentifier(sanitise.KindInstance, "orders-db")
+	f, err := gcpfeeder.New(gcpfeeder.Options{
+		OrgSlug: "twin",
+		Scope:   gcpfeeder.Scope{Projects: []string{project}, Regions: []string{"europe-west1"}},
+		Horizon: gcpfeeder.Horizon{Earliest: pollStart.Add(-24 * time.Hour), Reason: gcpfeeder.HorizonConfigured},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory := emit.NewMemoryEmitter(f.Describe())
+	payloads := []feeder.Payload{
+		{Kind: gcpfeeder.PayloadAlertPolicies, At: pollStart, Bytes: out},
+		{Kind: gcpfeeder.PayloadPollMarker, At: pollStart, Bytes: []byte(`{"outcome":"complete","projects":["` + project + `"],"regions":["europe-west1"]}`)},
+	}
+	if err := f.Run(t.Context(), source.NewSliceSource(payloads), memory); err != nil {
+		t.Fatal(err)
+	}
+	var watches []string
+	for _, ev := range memory.Events() {
+		if n := ev.GetUpsertNode(); n != nil && n.GetType() == graphv1.NodeType_ALERT {
+			for _, v := range n.GetProps().GetFields()[gcpfeeder.PropAlertWatches].GetListValue().GetValues() {
+				watches = append(watches, v.GetStringValue())
+			}
+		}
+	}
+	joined := strings.Join(watches, " ")
+	wantService := gcpfeeder.Service{Project: project, Region: "europe-west1", Name: svc}.Ref().GetValue()
+	if !strings.Contains(joined, wantService) {
+		t.Errorf("the recorded policy does not watch the recorded service %q; watches: %v", wantService, watches)
+	}
+	if !strings.Contains(joined, instance) {
+		t.Errorf("the recorded policy does not watch the recorded Cloud SQL instance %q; watches: %v", instance, watches)
 	}
 }

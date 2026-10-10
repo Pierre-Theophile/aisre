@@ -94,7 +94,7 @@ func TestLiveGraphParity(t *testing.T) {
 	}
 	var clean []feeder.Payload
 	for _, p := range raw {
-		prepared, err := gcpfeeder.PreparePayload(p.Kind, p.Bytes)
+		prepared, err := gcpfeeder.RecordingPrepare(san)(p.Kind, p.Bytes)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -177,7 +177,11 @@ func eventShape(ev *graphv1.EventEnvelope) string {
 	switch body := ev.GetBody().(type) {
 	case *graphv1.EventEnvelope_UpsertNode:
 		n := body.UpsertNode
-		return fmt.Sprintf("node %s %s", n.GetType(), at(n.GetValidAt(), n.GetValidFromUnknown()))
+		// An alert's watches are counted, because an investigation starts from them, and a recording
+		// that kept the policy but lost what it watches has the same node count and no starting point.
+		watches := len(n.GetProps().GetFields()[gcpfeeder.PropAlertWatches].GetListValue().GetValues())
+		return fmt.Sprintf("node %s watches=%d pointers=%d %s", n.GetType(), watches, len(n.GetPointers()),
+			at(n.GetValidAt(), n.GetValidFromUnknown()))
 	case *graphv1.EventEnvelope_UpsertEdge:
 		e := body.UpsertEdge
 		return fmt.Sprintf("edge %s %s", e.GetType(), at(e.GetValidAt(), e.GetValidFromUnknown()))

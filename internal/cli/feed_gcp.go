@@ -215,7 +215,7 @@ func runFeedGCP(ctx context.Context, global *globalOptions, opts *feedGCPOptions
 			if err != nil {
 				return exitErrorf(ExitUsage, "feed gcp: %v", err)
 			}
-			recording = tee.WithPrepare(gcpfeeder.PreparePayload)
+			recording = tee.WithPrepare(gcpfeeder.RecordingPrepare(san))
 			src = recording
 		}
 	} else {

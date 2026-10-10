@@ -56,7 +56,7 @@ func TestALiveRecordingLeavesNoIdentifierOnDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tee = tee.WithPrepare(gcpfeeder.PreparePayload)
+	tee = tee.WithPrepare(gcpfeeder.RecordingPrepare(san))
 	drain(t, tee)
 	if dropped := tee.Dropped(); len(dropped) > 0 {
 		t.Fatalf("payloads were refused rather than recorded: %v", dropped)
