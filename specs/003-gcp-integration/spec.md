@@ -827,7 +827,12 @@ relations and change nodes to the golden output.
   them changes between revisions, with a `changed-by` edge to the service and the revision.
 - **FR-034**: The feeder MUST NOT store secret material, and MUST NOT store the value of any
   configuration entry that the published rules classify as sensitive. It MUST record only that the
-  entry changed, and the version reference it moved to.
+  entry changed, and the version reference it moved to. *(Amended 2026-10-09, T189.)* A **recording** MAY keep, from
+  an environment variable's value, the single Cloud SQL instance connection name the `env_var_value`
+  derivation reads from it (FR-028), pseudonymised exactly as the `cloudSqlInstance` volume field is.
+  No other part of the value is recorded, in any form: a connection name is an identifier (FR-035,
+  FR-135), not configuration, and without it a service configured through `INSTANCE_CONNECTION_NAME`
+  loses its database dependency in every replay.
 - **FR-035**: The feeder MUST emit identity claims for the instance connection name and every other
   identifier another source could also know about an instance, so that a Cloud SQL instance seen by
   two sources resolves into one entity by the published rules.

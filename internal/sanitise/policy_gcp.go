@@ -18,9 +18,11 @@ import "strings"
 //     audit stream. They are never hashed (FR-135).
 //   - Free text is dropped: condition messages, a policy's documentation, a poll's failure detail,
 //     container arguments, annotations.
-//   - Configuration VALUES are dropped (FR-034, FR-038): an environment variable's value, a request
-//     or response body in the audit stream. Their NAMES are kept, as the deploy feeders keep a
-//     variable's key: the name is the configuration change's subject.
+//   - Configuration VALUES are dropped (FR-034): a request or response body in the audit stream, and an
+//     environment variable's value — except the single Cloud SQL connection name the GCP pre-pass
+//     reduces a value to, which is an identifier rather than a value and is pseudonymised as the
+//     volume field is. Variable NAMES are kept, as the deploy feeders keep a key: the name is the
+//     configuration change's subject.
 //   - Identifiers are pseudonymised in the shape their field is parsed in. Projects and Cloud SQL
 //     instances take ShapeLabel, because a connection name `<project>:<region>:<instance>` is parsed
 //     by a pattern a token's underscores fail. Services, revisions and the rest take the token, which
@@ -83,7 +85,9 @@ func addGCPPayloadRows(p *Policy) {
 			"and a tag is a release token. A registry or path shape not listed is dropped")
 		pseudo(c+".name", KindResource, ShapeToken, "a container name, usually the service's")
 		keep(c+".env[].name", "a variable's NAME: the configuration change's subject, as the deploy feeders keep a key")
-		drop(c+".env[].value", "an environment variable's value (FR-038)")
+		tmpl(c+".env[].value", connection, "the one Cloud SQL connection name the pre-pass reduced the value to, "+
+			"pseudonymised as the volume field is; FR-028's env_var_value edge rests on it. Any other value never "+
+			"reaches this table (FR-034 as amended)")
 		pseudo(c+".env[].valuesource.secretkeyref.secret", KindResource, ShapeToken, "a secret's name; joined to the secret version it reads")
 		keep(c+".env[].valuesource.secretkeyref.version", "a secret version number or `latest`")
 		for _, probe := range []string{"livenessprobe", "startupprobe", "readinessprobe"} {

@@ -139,9 +139,6 @@ func expectedLoss(shape string) (string, bool) {
 	case strings.HasPrefix(shape, "claim "+gcpfeeder.NSAlertPolicy+" on "+gcpfeeder.NSAlertPolicy):
 		return "a policy's display name is one of its claims, and the contract drops every display " +
 			"name as possibly naming a person (FR-135)", true
-	case strings.HasPrefix(shape, "edge DEPENDS_ON"):
-		return "the env_var_value derivation reads a variable's value, and FR-038 drops values in " +
-			"every form; the cloudsql_volume derivation is unaffected", true
 	}
 	return "", false
 }

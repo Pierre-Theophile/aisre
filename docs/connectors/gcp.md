@@ -414,6 +414,11 @@ deriving evidence is recorded on the edge (FR-028):
 | `cloudsql_volume` | `template.volumes[].cloudSqlInstance.instances` | an operator attached the instance and Cloud Run acts on it: the proxy is mounted, the socket exists |
 | `env_var_value` | an environment variable whose **value is** a connection name | the operator put the instance's dialling string into the service's configuration |
 
+In a **recording**, the second keeps exactly one thing from the value: the connection name it read,
+reduced by the feeder's own rule and pseudonymised as the volume field is (FR-034 as amended,
+`internal/feeders/gcp/prepare.go`). A password beside the socket path in a DSN, the user, the database
+and the host never reach disk; a value with no connection name is not recorded at all.
+
 The second reads a value and records none: what reaches the graph is "the dependency was derived from
 the value of `DATABASE_URL`" — the fact, the evidence, and no value. The search for a connection name
 inside a value is a **whole-token match against a strict shape** (three parts, the middle one shaped

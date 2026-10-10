@@ -645,3 +645,7 @@ func ConfigChangeProps(before, after ConfigObservation, diff ConfigDiff, actor A
 	}
 	return props
 }
+
+// ConnectionNameIn is connectionNameIn for the recording pre-pass (prepare.go): the one connection name
+// the `env_var_value` derivation would read from a value, by the same whole-token rule, or false.
+func ConnectionNameIn(value string) (string, bool) { return connectionNameIn(value) }
