@@ -304,6 +304,8 @@ type recordedAnnouncement struct {
 	NoticeID           string   `json:"notice_id,omitempty"`
 	Pointer            string   `json:"pointer"`
 	Source             string   `json:"source"`
+	AlternateProducts  []string `json:"alternate_products,omitempty"`
+	Locations          []string `json:"locations,omitempty"`
 	// State is the announcement state this reading carries: empty means `announced`. A correction
 	// payload sets `cancelled` or `superseded`.
 	State string `json:"state,omitempty"`
@@ -453,7 +455,7 @@ func (f *Feeder) applyAnnouncement(ctx context.Context, desc feeder.Description,
 		return err
 	}
 
-	decision := f.opts.Allowlist.Decide(a.Vendor, a.Product, a.Pointer)
+	decision := f.opts.Allowlist.DecideAnnouncement(a)
 	if !decision.InScope {
 		f.mu.Lock()
 		f.cycle.DroppedByAllowlist++
@@ -550,6 +552,8 @@ func (r recordedAnnouncement) announcement() (Announcement, error) {
 		NoticeID:          r.NoticeID,
 		Pointer:           r.Pointer,
 		Source:            SourceKind(strings.ToLower(strings.TrimSpace(r.Source))),
+		AlternateProducts: r.AlternateProducts,
+		Locations:         r.Locations,
 	}
 	a.Window.StartUnknown = r.WindowStartUnknown
 	if r.WindowStart != "" {

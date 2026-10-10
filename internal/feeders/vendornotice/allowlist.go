@@ -46,6 +46,10 @@ type Vendor struct {
 	// Senders are the addresses that carry this vendor's notices. They are matching *configuration*
 	// and are never stored: a sender address is a people identifier (FR-072).
 	Senders []string
+	// Locations are the vendor locations this organisation runs in, as the vendor spells them. Empty
+	// means every location. An announcement stating locations, none of them listed, is dropped
+	// (DropLocationNotAllowlisted); one stating none is kept, because most mail states none.
+	Locations []string
 	// HostProducts maps a host name to the product it serves, for the one case a header cannot
 	// answer: a `Deprecation` or `Sunset` on `api.acme-gpu.test` says when, and says nothing about
 	// which product. Where a vendor has several allowlisted products, this is how an operator states
@@ -186,6 +190,12 @@ const (
 	// feeder cannot tell whether it is in scope. It is dropped rather than assumed in scope: a
 	// vendor-wide announcement attributed to every product would put the same window on everything.
 	DropNoProductStated DropReason = "no_product_stated"
+	// DropLocationNotAllowlisted means vendor and product are in scope and every location the
+	// announcement states is one this organisation does not run in. A vendor outage in us-central1 of a
+	// product used only in europe-west1 is the commonest case, and it is noise in every investigation:
+	// a vendor change is ranked on time alone once its vendor is in reach, so precision has to come
+	// from here.
+	DropLocationNotAllowlisted DropReason = "location_not_allowlisted"
 )
 
 // Drop is one dropped announcement, as the per-cycle report carries it.
@@ -240,6 +250,39 @@ func (a *Allowlist) Decide(vendorSlug, product, pointer string) Decision {
 	}
 	return Decision{Drop: Drop{
 		Reason: DropProductNotAllowlisted, Vendor: slug, Product: wanted, Pointer: pointer,
+	}}
+}
+
+// DecideAnnouncement applies the allowlist to an announcement: its product, then each alternate
+// product in the vendor's order, and then, once a product is in scope, its locations.
+//
+// The alternates are tried only when the primary product is not allowlisted, and the decision keeps
+// the product that matched, so the change is attributed to the product this organisation uses rather
+// than to the heading the vendor filed it under.
+func (a *Allowlist) DecideAnnouncement(announcement Announcement) Decision {
+	decision := a.Decide(announcement.Vendor, announcement.Product, announcement.Pointer)
+	productMissed := decision.Drop.Reason == DropProductNotAllowlisted || decision.Drop.Reason == DropNoProductStated
+	if !decision.InScope && productMissed {
+		for _, alternate := range announcement.AlternateProducts {
+			if alt := a.Decide(announcement.Vendor, alternate, announcement.Pointer); alt.InScope {
+				decision = alt
+				break
+			}
+		}
+	}
+	if !decision.InScope || len(decision.Vendor.Locations) == 0 || len(announcement.Locations) == 0 {
+		return decision
+	}
+	for _, stated := range announcement.Locations {
+		for _, listed := range decision.Vendor.Locations {
+			if strings.EqualFold(strings.TrimSpace(stated), strings.TrimSpace(listed)) {
+				return decision
+			}
+		}
+	}
+	return Decision{Drop: Drop{
+		Reason: DropLocationNotAllowlisted, Vendor: decision.Vendor.Slug, Product: decision.Product,
+		Pointer: announcement.Pointer,
 	}}
 }
 

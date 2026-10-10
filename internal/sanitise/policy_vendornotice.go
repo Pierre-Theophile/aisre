@@ -39,6 +39,9 @@ func addVendorNoticeRows(p *Policy) {
 		set(a+".affected_resources[]", Rule{Disposition: Pseudonym, Kind: KindResource, Shape: ShapeTemplate,
 			Template: "{region}" + TemplateAlternatives + "{resource}",
 			Why:      "a location kept, so it joins the GCP region; anything else pseudonymised; a value with a path in it dropped"})
+		keep(a+".alternate_products[]", "the vendor's own product titles, from its public feed; matched against the allowlist")
+		set(a+".locations[]", Rule{Disposition: Pseudonym, Kind: KindResource, Shape: ShapeTemplate, Template: "{region}",
+			Why: "a vendor location id; kept when shaped like one, dropped otherwise"})
 		pseudo(a+".notice_id", KindNoticeID, "the vendor's own notice identifier")
 		pseudo(a+".pointer", KindNoticeID, "a message id or feed entry; stable within the recording, which is all a replay needs")
 		u := root + ".unextracted[]"

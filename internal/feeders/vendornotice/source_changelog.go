@@ -451,6 +451,45 @@ type gcpIncident struct {
 		Status string `json:"status"`
 	} `json:"most_recent_update"`
 	URI string `json:"uri"`
+	// AffectedProducts are the products the incident affects. `service_name` is one heading — "Multiple
+	// Products" for most outages — and this is where the products are named.
+	AffectedProducts []struct {
+		Title string `json:"title"`
+	} `json:"affected_products"`
+	CurrentlyAffectedLocations  []gcpLocation `json:"currently_affected_locations"`
+	PreviouslyAffectedLocations []gcpLocation `json:"previously_affected_locations"`
+}
+
+type gcpLocation struct {
+	ID string `json:"id"`
+}
+
+// products returns the affected products' titles, in the feed's order, without duplicates or blanks.
+func (i gcpIncident) products() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, product := range i.AffectedProducts {
+		title := strings.TrimSpace(product.Title)
+		if title != "" && !seen[title] {
+			seen[title] = true
+			out = append(out, title)
+		}
+	}
+	return out
+}
+
+// locations returns every location the incident affected, now or earlier, without duplicates.
+func (i gcpIncident) locations() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, l := range append(append([]gcpLocation(nil), i.CurrentlyAffectedLocations...), i.PreviouslyAffectedLocations...) {
+		id := strings.TrimSpace(l.ID)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // readGCPIncidents reads the vendor-native document, which needs no stated rules because it states its
@@ -471,7 +510,12 @@ func (c *Changelog) readGCPIncidents(body []byte) (Batch, error) {
 			})
 			continue
 		}
-		if strings.TrimSpace(incident.ServiceName) == "" {
+		product := strings.TrimSpace(incident.ServiceName)
+		alternates := incident.products()
+		if product == "" && len(alternates) > 0 {
+			product, alternates = alternates[0], alternates[1:]
+		}
+		if product == "" {
 			batch.Unextracted = append(batch.Unextracted, Unextracted{
 				Reason: UnextractedNoProduct, Field: "service_name", Pointer: pointer,
 				Source: SourceChangelog,
@@ -484,10 +528,15 @@ func (c *Changelog) readGCPIncidents(body []byte) (Batch, error) {
 		if end, ok := parseInstant(incident.End); ok {
 			window.End = end
 		}
+		locations := incident.locations()
 		batch.Announcements = append(batch.Announcements, Announcement{
-			Vendor: c.vendor, Product: incident.ServiceName, Kind: KindIncident,
+			Vendor: c.vendor, Product: product, Kind: KindIncident,
 			Window: window, NoticeID: firstNonEmpty(incident.ID, incident.Number),
 			Pointer: pointer, Source: SourceChangelog,
+			AlternateProducts: alternates, Locations: locations,
+			// The locations are also what the notice names: a region an investigation's service runs
+			// in resolves against them (FR-061).
+			AffectedResources: locations,
 		})
 	}
 	return batch, nil

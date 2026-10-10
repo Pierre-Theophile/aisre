@@ -118,6 +118,8 @@ type VendorConfig struct {
 	// Senders are the addresses that carry this vendor's notices. Matching configuration, never
 	// stored: a sender address is a people identifier (FR-072, FR-134).
 	Senders []string `yaml:"senders"`
+	// Locations are the vendor locations this organisation runs in (Vendor.Locations).
+	Locations []string `yaml:"locations"`
 	// HostProducts maps a host to the product it serves, for a `Deprecation` header that says when and
 	// cannot say which product.
 	HostProducts map[string]string `yaml:"host_products"`
@@ -409,6 +411,7 @@ func (c Config) Allowlist() (*Allowlist, error) {
 		vendors = append(vendors, Vendor{
 			Slug: vendor.Slug, Name: vendor.Name, Products: vendor.Products,
 			Hosts: vendor.Hosts, Senders: senders, HostProducts: vendor.HostProducts,
+			Locations: vendor.Locations,
 		})
 	}
 	return NewAllowlist(vendors)
