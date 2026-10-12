@@ -145,7 +145,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           # .golangci.yml is v2 format; pin the same version `make tools` installs
-          version: v2.13.2
+          version: v2.14.0
           args: --timeout=5m
 
       # Fixtures are recordings of real clusters, and a recording is committed before anyone
