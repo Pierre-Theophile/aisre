@@ -96,6 +96,11 @@ const (
 
 	// The doorbell, off by default: the ONE declared state change anywhere (FR-006).
 	OpPubSubSubscriptionsPull Operation = "pubsub.subscriptions.pull"
+
+	// The structured notices (T190–T192): Google's own announcements about this project.
+	OpFunctionsRuntimesList               Operation = "cloudfunctions.runtimes.list"
+	OpMaintenanceResourceMaintenancesList Operation = "maintenance.resourceMaintenances.list"
+	OpServiceHealthEventsList             Operation = "servicehealth.events.list"
 )
 
 // OperationSpec is what the published page says about one operation.
@@ -146,6 +151,10 @@ var readOnlyOperations = map[Operation]OperationSpec{
 
 	OpDNSManagedZonesList:      {Area: "Cloud DNS (P3)", Class: ClassDNSRead},
 	OpDNSResourceRecordSetList: {Area: "Cloud DNS (P3)", Class: ClassDNSRead},
+
+	OpFunctionsRuntimesList:               {Area: "Cloud Functions runtimes", Class: ClassFunctionsRead},
+	OpMaintenanceResourceMaintenancesList: {Area: "Unified Maintenance", Class: ClassMaintenanceRead},
+	OpServiceHealthEventsList:             {Area: "Service Health", Class: ClassServiceHealthRead},
 
 	OpPubSubSubscriptionsPull: {
 		Area:        "the doorbell (off by default)",

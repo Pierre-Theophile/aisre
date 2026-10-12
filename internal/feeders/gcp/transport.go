@@ -24,6 +24,13 @@ import (
 	sqladmin "google.golang.org/api/sqladmin/v1"
 	metricpb "google.golang.org/genproto/googleapis/api/metric"
 
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"golang.org/x/oauth2"
+
 	"github.com/Pierre-Theophile/aisre/internal/gcpx"
 )
 
@@ -156,6 +163,9 @@ type Transport struct {
 	// GKE reads cluster metadata. Nil is a stated scope: an organisation with no cluster, or a
 	// credential without container.clusters.get.
 	GKE GKEReader
+	// Notices reads Google's structured announcements about the project: Cloud Functions runtime
+	// lifecycle and Service Health events (T191, T192). Nil is a stated scope.
+	Notices NoticeReader
 	// Exposure reads load balancers and Cloud DNS. Nil is the ordinary case, not an exception: these
 	// are P3 and the first surface the deferral order drops (FR-057), so a nil here is a scope
 	// statement the checkpoint carries — and every other requirement holds unchanged.
@@ -714,4 +724,107 @@ func (e *liveExposure) ListDNSRecordSets(ctx context.Context, project, zone stri
 		return nil, err
 	}
 	return resp.Rrsets, nil
+}
+
+// ---- Structured notices (T191, T192) ---------------------------------------------------------
+
+// NoticeReader reads Google's own announcements about a project, as the API's JSON: the payloads are
+// what the feeder decodes, live and replayed alike, so nothing here interprets them.
+type NoticeReader interface {
+	// ListFunctionRuntimes reads the Cloud Functions runtime catalogue for one region, with each
+	// runtime's stage and its deprecation and decommission dates.
+	ListFunctionRuntimes(ctx context.Context, project, region string) ([]json.RawMessage, error)
+	// ListHealthEvents reads the Service Health events Google relates to the project.
+	ListHealthEvents(ctx context.Context, project string) ([]json.RawMessage, error)
+}
+
+// noticePageLimit bounds a paged read, for the same reason MaxSQLOperationPages does.
+const noticePageLimit = 20
+
+// NewLiveNoticeReader builds the notice reader. The runtimes list accepts only `cloud-platform`, so it
+// is called on the credential's IAM-bounded wide token (gcpx.Credential.CloudSQLTokenSource), and
+// needs no IAM permission at all: it is Google's catalogue. Service Health has a read-only scope of
+// its own, which the credential requests.
+func NewLiveNoticeReader(ctx context.Context, creds *gcpx.Credential, budget *gcpx.Budget) (NoticeReader, error) {
+	if creds == nil {
+		return nil, gcpx.ErrNoCredential
+	}
+	wide, err := creds.CloudSQLTokenSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &liveNotices{
+		lt:     &liveTransport{creds: creds, budget: budget},
+		wide:   oauth2.NewClient(ctx, wide),
+		narrow: oauth2.NewClient(ctx, creds.TokenSource()),
+	}, nil
+}
+
+type liveNotices struct {
+	lt           *liveTransport
+	wide, narrow *http.Client
+}
+
+func (n *liveNotices) ListFunctionRuntimes(ctx context.Context, project, region string) ([]json.RawMessage, error) {
+	if err := n.lt.budget.Issue(ctx, gcpx.OpFunctionsRuntimesList, project, region); err != nil {
+		return nil, err
+	}
+	return pagedJSON(ctx, n.wide, "https://cloudfunctions.googleapis.com/v2/projects/"+url.PathEscape(project)+
+		"/locations/"+url.PathEscape(region)+"/runtimes", "runtimes")
+}
+
+func (n *liveNotices) ListHealthEvents(ctx context.Context, project string) ([]json.RawMessage, error) {
+	if err := n.lt.budget.Issue(ctx, gcpx.OpServiceHealthEventsList, project, ""); err != nil {
+		return nil, err
+	}
+	return pagedJSON(ctx, n.narrow, "https://servicehealth.googleapis.com/v1/projects/"+url.PathEscape(project)+
+		"/locations/global/events", "events")
+}
+
+// pagedJSON drains a list endpoint, bounded, returning the items of field.
+func pagedJSON(ctx context.Context, client *http.Client, endpoint, field string) ([]json.RawMessage, error) {
+	var out []json.RawMessage
+	token := ""
+	for page := 0; page < noticePageLimit; page++ {
+		target := endpoint
+		if token != "" {
+			target += "?pageToken=" + url.QueryEscape(token)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("gcp: %s answered %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(body[:min(len(body), 300)])))
+		}
+		var decoded map[string]json.RawMessage
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			return nil, fmt.Errorf("gcp: decoding %s: %w", endpoint, err)
+		}
+		var items []json.RawMessage
+		if raw, ok := decoded[field]; ok {
+			if err := json.Unmarshal(raw, &items); err != nil {
+				return nil, fmt.Errorf("gcp: decoding %s.%s: %w", endpoint, field, err)
+			}
+		}
+		out = append(out, items...)
+		var next string
+		if raw, ok := decoded["nextPageToken"]; ok {
+			_ = json.Unmarshal(raw, &next)
+		}
+		if next == "" {
+			return out, nil
+		}
+		token = next
+	}
+	return out, fmt.Errorf("gcp: %s did not finish within %d pages", endpoint, noticePageLimit)
 }

@@ -112,6 +112,9 @@ Every operation this connector may issue, by name. An operation absent from this
 | GKE | `container.clusters.list`, `container.clusters.get` | `container.read` |
 | load balancers (P3) | `compute.forwardingRules.list`, `compute.urlMaps.list`, `compute.backendServices.list`, `compute.networkEndpointGroups.list` | `compute.read` |
 | Cloud DNS (P3) | `dns.managedZones.list`, `dns.resourceRecordSets.list` | `dns.read` |
+| Cloud Functions runtimes | `cloudfunctions.runtimes.list` | `functions.read` |
+| Unified Maintenance | `maintenance.resourceMaintenances.list` | `maintenance.read` |
+| Service Health | `servicehealth.events.list` | `servicehealth.read` |
 | the doorbell (off by default) | `pubsub.subscriptions.pull` | `pubsub.pull` |
 
 Every one of them is a **list or a get**. There is no `create`, no `update`, no `patch`, no `delete`

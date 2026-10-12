@@ -325,6 +325,25 @@ func (p *Poller) cycle(ctx context.Context) error {
 			}
 		}
 	}
+	// The runtime catalogue after the services, so the feeder already knows which runtime each
+	// function-backed service runs when the lifecycle arrives (runtimes.go).
+	if t.Notices != nil {
+		for _, project := range scope.Projects {
+			for _, region := range scope.Regions {
+				runtimes, err := paced(c, func() ([]json.RawMessage, error) {
+					return t.Notices.ListFunctionRuntimes(ctx, project, region)
+				})
+				if err := c.failed("cloudfunctions.runtimes.list "+project+"/"+region, err); err != nil {
+					return err
+				}
+				if err == nil {
+					if err := c.pushJSON(PayloadFunctionRuntimes, map[string]any{"runtimes": runtimes}); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
 	if t.Monitoring != nil {
 		for _, project := range scope.Projects {
 			policies, err := paced(c, func() ([]*monitoringpb.AlertPolicy, error) {

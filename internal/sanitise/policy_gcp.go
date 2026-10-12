@@ -72,6 +72,7 @@ func addGCPPayloadRows(p *Policy) {
 			set(prefix+".labels."+key, rule)
 		}
 		pseudo(prefix+".labels.commit-sha", KindCommit, ShapeHex, "a commit; hex, as the deploy feeders shape it, so C8 still joins")
+		keep(prefix+".labels.goog-cloudfunctions-runtime", "a runtime id from Google's closed catalogue; the runtime lifecycle join reads it (T192)")
 		drop(prefix+".annotations.*", "free text, and keyed by whoever set it")
 	}
 
@@ -350,6 +351,13 @@ func addGCPPayloadRows(p *Policy) {
 	drop(e+".spanid", "the same")
 	drop(e+".sourcelocation.*", "source code locations")
 	drop(e+".httprequest.*", "a request's addresses and agent")
+
+	// --- gcp.function_runtimes: Google's runtime catalogue (T192) --------------------------------
+	keepAll("gcp.function_runtimes.runtimes[]", "Google's public runtime catalogue, the same for every customer",
+		"name", "stage", "environment", "warnings[]",
+		"deprecationDate.year", "deprecationDate.month", "deprecationDate.day",
+		"decommissionDate.year", "decommissionDate.month", "decommissionDate.day")
+	drop("gcp.function_runtimes.runtimes[].displayName", "a display name; the contract drops every one (FR-135), and the runtime id says the same")
 
 	// --- gcp.poll: the poller's own marker -------------------------------------------------------
 	keepAll("gcp.poll", "the poll's outcome and the closed vocabularies its checkpoint carries", "outcome", "stop_reason", "deferred[]")

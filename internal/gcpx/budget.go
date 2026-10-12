@@ -62,6 +62,11 @@ const (
 	ClassContainerRead EndpointClass = "container.read"
 	ClassDNSRead       EndpointClass = "dns.read"
 	ClassPubSubPull    EndpointClass = "pubsub.pull"
+	// The structured notices (T190–T192). Low volume, one call per project per poll, and no limit
+	// published for any of them, so they are metered and never treated as unlimited.
+	ClassFunctionsRead     EndpointClass = "functions.read"
+	ClassMaintenanceRead   EndpointClass = "maintenance.read"
+	ClassServiceHealthRead EndpointClass = "servicehealth.read"
 )
 
 // ClassLimit is one class's published limit and shares.
@@ -457,5 +462,8 @@ func PublishedLimits() []ClassLimit {
 		{Class: ClassContainerRead, Period: time.Minute, Scope: ScopeProject},
 		{Class: ClassComputeRead, Period: time.Minute, Scope: ScopeProject},
 		{Class: ClassDNSRead, Period: time.Minute, Scope: ScopeProject},
+		{Class: ClassFunctionsRead, Period: time.Minute, Scope: ScopeProjectRegion},
+		{Class: ClassMaintenanceRead, Period: time.Minute, Scope: ScopeProject},
+		{Class: ClassServiceHealthRead, Period: time.Minute, Scope: ScopeProject},
 	}
 }

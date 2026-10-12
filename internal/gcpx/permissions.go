@@ -165,6 +165,13 @@ func WritePermissions() []string {
 		"dns.changes.create", "dns.resourceRecordSets.create", "dns.resourceRecordSets.update",
 		"dns.resourceRecordSets.delete",
 
+		// Cloud Functions: the runtimes list needs no permission, but a principal that can deploy a
+		// function can run code, so it is not read-only. Names from the project's own
+		// queryTestablePermissions. Unified Maintenance and Service Health publish no write
+		// permission at all, so there is nothing of theirs to test.
+		"cloudfunctions.functions.create", "cloudfunctions.functions.update", "cloudfunctions.functions.delete",
+		"cloudfunctions.functions.setIamPolicy", "cloudfunctions.functions.sourceCodeSet",
+
 		// GKE metadata only; the workloads belong to the 001 Kubernetes feeder (FR-030).
 		"container.clusters.create", "container.clusters.update", "container.clusters.delete",
 

@@ -61,7 +61,12 @@ func TestLiveGraphParity(t *testing.T) {
 	budget := gcpx.NewBudget(gcpx.PublishedLimits(), usage)
 	poller, err := gcpfeeder.NewPoller(gcpfeeder.PollerOptions{
 		Connect: func(ctx context.Context) (*gcpfeeder.Transport, error) {
-			return gcpfeeder.NewLiveTransport(ctx, creds, budget)
+			transport, err := gcpfeeder.NewLiveTransport(ctx, creds, budget)
+			if err != nil {
+				return nil, err
+			}
+			transport.Notices, err = gcpfeeder.NewLiveNoticeReader(ctx, creds, budget)
+			return transport, err
 		},
 		Scope:  gcpfeeder.Scope{Projects: []string{project}, Regions: []string{region}},
 		Cycles: 1,

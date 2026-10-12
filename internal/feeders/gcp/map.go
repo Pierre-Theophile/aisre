@@ -69,6 +69,7 @@ func (f *Feeder) emitService(ctx context.Context, desc feeder.Description, em fe
 	if err != nil {
 		return err
 	}
+	f.recordFunctionRuntime(obs.Service, svc.GetLabels())
 
 	// The recreation check runs *before* the node assertion, because a recreated service is a
 	// different entity and asserting the node first would attach the new service's properties to

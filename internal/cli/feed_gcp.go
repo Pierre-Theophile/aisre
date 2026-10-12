@@ -422,6 +422,11 @@ func newLiveGCPPoller(opts *feedGCPOptions, gate *gcpGate, logger *slog.Logger) 
 		if err != nil {
 			return nil, err
 		}
+		notices, err := gcpfeeder.NewLiveNoticeReader(ctx, gate.proved, budget)
+		if err != nil {
+			return nil, err
+		}
+		transport.Notices = notices
 		if opts.alertIncidents {
 			incidents, err := gcpfeeder.NewLiveAlertIncidentReader(ctx, gate.proved, budget)
 			if err != nil {
