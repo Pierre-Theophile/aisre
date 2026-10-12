@@ -74,15 +74,24 @@ func (a *Assertion) Validate(unverifiable []string) error {
 // acknowledges matches on the area's leading phrase — the text before the first colon — so that
 // rewording the explanation in UnverifiableAreas() does not invalidate every operator's config,
 // while adding a NEW area still does.
+//
+// The phrase is taken from BOTH sides. An acknowledgement may be the short phrase an operator writes
+// in configuration or the full text the CLI passes from UnverifiableAreas(); comparing a full text
+// against a phrase matched nothing, so until 2026-10-09 every `--assert-read-only-by` was refused
+// as acknowledging none of the areas.
 func acknowledges(acked []string, area string) bool {
-	key := area
-	if i := strings.Index(area, ":"); i > 0 {
-		key = area[:i]
-	}
+	key := leadingPhrase(area)
 	for _, a := range acked {
-		if strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(key)) {
+		if strings.EqualFold(leadingPhrase(a), key) {
 			return true
 		}
 	}
 	return false
+}
+
+func leadingPhrase(s string) string {
+	if i := strings.Index(s, ":"); i > 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
 }

@@ -145,7 +145,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           # .golangci.yml is v2 format; pin the same version `make tools` installs
-          version: v2.13.2
+          version: v2.14.0
           args: --timeout=5m
 
       # Fixtures are recordings of real clusters, and a recording is committed before anyone
@@ -159,6 +159,11 @@ jobs:
       # line — and fails if any rule stays silent (T116).
       - name: the guard itself catches a planted secret
         run: ./scripts/check-no-secrets_test.sh
+
+      # The GitHub App credential helper the 004 campaign runs at every token renewal: a JWT that
+      # GitHub would reject fails the campaign at its first renewal, an hour into the run.
+      - name: the GitHub App JWT helper signs a token GitHub accepts
+        run: ./scripts/github-app-jwt_test.sh
 
       # The spec-artifact guard and its planted-violation test run in specs.yml, which also runs
       # when only specs/ changed — the case this workflow skips.

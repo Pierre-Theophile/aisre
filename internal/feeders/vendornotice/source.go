@@ -348,7 +348,7 @@ func recordAnnouncement(a Announcement, state string) (recordedAnnouncement, err
 		WindowStartUnknown: a.Window.StartUnknown,
 		AffectedResources:  a.AffectedResources,
 		NoticeID:           a.NoticeID, Pointer: a.Pointer, Source: string(a.Source),
-		State: state,
+		State: state, AlternateProducts: a.AlternateProducts, Locations: a.Locations,
 	}
 	if !a.Window.StartUnknown {
 		out.WindowStart = a.Window.Start.UTC().Format(time.RFC3339)

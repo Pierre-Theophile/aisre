@@ -157,13 +157,20 @@ func WritePermissions() []string {
 		"pubsub.subscriptions.create", "pubsub.subscriptions.update", "pubsub.subscriptions.delete",
 
 		// Compute and DNS, read only where enabled at all (FR-057).
-		"compute.urlMaps.insert", "compute.urlMaps.update", "compute.urlMaps.delete",
-		"compute.backendServices.insert", "compute.backendServices.update",
+		"compute.urlMaps.create", "compute.urlMaps.update", "compute.urlMaps.delete",
+		"compute.backendServices.create", "compute.backendServices.update",
 		"compute.backendServices.delete",
-		"compute.forwardingRules.insert", "compute.forwardingRules.delete",
+		"compute.forwardingRules.create", "compute.forwardingRules.delete",
 		"dns.managedZones.create", "dns.managedZones.update", "dns.managedZones.delete",
 		"dns.changes.create", "dns.resourceRecordSets.create", "dns.resourceRecordSets.update",
 		"dns.resourceRecordSets.delete",
+
+		// Cloud Functions: the runtimes list needs no permission, but a principal that can deploy a
+		// function can run code, so it is not read-only. Names from the project's own
+		// queryTestablePermissions. Unified Maintenance and Service Health publish no write
+		// permission at all, so there is nothing of theirs to test.
+		"cloudfunctions.functions.create", "cloudfunctions.functions.update", "cloudfunctions.functions.delete",
+		"cloudfunctions.functions.setIamPolicy", "cloudfunctions.functions.sourceCodeSet",
 
 		// GKE metadata only; the workloads belong to the 001 Kubernetes feeder (FR-030).
 		"container.clusters.create", "container.clusters.update", "container.clusters.delete",
@@ -190,6 +197,8 @@ func UnverifiableAreas() []string {
 			"at all, so this gap cannot be closed by enumerating harder",
 		"cloudsql.flags.list: not an IAM permission — the flags endpoint is project-less and gated " +
 			"purely by OAuth scope, which is layer 2's business",
+		"Cloud SQL Admin's OAuth scope: the API publishes no read-only scope, so its client alone holds " +
+			"cloud-platform, and only IAM (the custom role) bounds what that token may do",
 		"deny policies: whether testIamPermissions subtracts them is undocumented. This fails SAFE " +
 			"— a deny-blocked write may still be reported as held, so the integration refuses to " +
 			"start: a false positive, not a false negative",

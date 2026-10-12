@@ -199,6 +199,11 @@ type Feeder struct {
 	splits map[string]TrafficSplit
 	// identities is the last observed uid per service, for the recreation rule (FR-025).
 	identities map[string]Identity
+	// functionRuntimes is which runtime each function-backed service runs, keyed service+runtime,
+	// for the runtime lifecycle join (runtimes.go).
+	functionRuntimes map[string]Service
+	// vendorEmitted is whether the google-cloud vendor node has been emitted this run (health.go).
+	vendorEmitted bool
 	// states is the last state this run asserted of each re-read node kind, so a changed state gets
 	// an event id of its own (nodestate.go, 003 T183).
 	states map[string]assertedState
@@ -472,6 +477,10 @@ func (f *Feeder) apply(ctx context.Context, desc feeder.Description, em feeder.E
 		return f.applyNEGs(payload.Bytes)
 	case PayloadDNSRecordSets:
 		return f.applyDNSRecordSets(payload.Bytes, payload.At)
+	case PayloadFunctionRuntimes:
+		return f.applyFunctionRuntimes(ctx, desc, em, payload.Bytes, payload.At)
+	case PayloadHealthEvents:
+		return f.applyHealthEvents(ctx, desc, em, payload.Bytes, payload.At)
 	default:
 		return fmt.Errorf("gcp: payload kind %q is not one this feeder reads (%s); a payload nobody "+
 			"handles is a fixture that silently tests less than it claims",
@@ -479,7 +488,7 @@ func (f *Feeder) apply(ctx context.Context, desc feeder.Description, em feeder.E
 				PayloadAlertPolicies, PayloadAlerts, PayloadSQLInstances, PayloadSQLOperations,
 				PayloadSQLFlags, PayloadGKEClusters, PayloadForwardingRules, PayloadURLMaps,
 				PayloadBackendServices, PayloadNetworkEndpointGroups, PayloadDNSRecordSets,
-				PayloadPollMarker}, ", "))
+				PayloadFunctionRuntimes, PayloadHealthEvents, PayloadPollMarker}, ", "))
 	}
 }
 

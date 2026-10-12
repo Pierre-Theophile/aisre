@@ -416,8 +416,10 @@ US5.
 
 | task | needs |
 |---|---|
-| T034 | confirmation of whether a Vercel token can be project-scoped (research §5.3) |
+| T034 | a **project-scoped** Vercel token to read back: research §5.3 settled that one can exist, but not how its scope is spelt in `token.scopes[].type` |
 | T114, T115, T116 | a read-only GitHub App installation, a Vercel token, and a **named human signatory** on the manifest (FR-064) |
 | T127 | T114, for the corpus half |
 
-Everything else is buildable now.
+Everything else is buildable now. What to grant, who grants it and which variable carries it is
+[docs/campaigns/003-004-access-request.md](../../docs/campaigns/003-004-access-request.md);
+`scripts/campaign-preflight.sh 004` reports what is still missing and runs each connector's read-only gate.

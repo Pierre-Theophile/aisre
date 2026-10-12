@@ -4,17 +4,21 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/Pierre-Theophile/aisre/internal/feeders/deployrecord"
 	gcpfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/gcp"
 	"github.com/Pierre-Theophile/aisre/internal/gcpx"
+	"github.com/Pierre-Theophile/aisre/internal/sanitise"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/emit"
-	"github.com/Pierre-Theophile/aisre/pkg/feeder/record"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/source"
 )
 
@@ -59,6 +63,10 @@ type feedGCPOptions struct {
 	// handoff names an alert — a policy resource name, or one with `#<group>` appended — whose
 	// handoff is printed after the run (FR-053).
 	handoff string
+	// interval, cycles and auditLookback pace the live poller (T185).
+	interval      time.Duration
+	cycles        int
+	auditLookback time.Duration
 }
 
 func newFeedGCPCommand(global *globalOptions) *cobra.Command {
@@ -87,9 +95,9 @@ func newFeedGCPCommand(global *globalOptions) *cobra.Command {
 	flags.StringSliceVar(&opts.regions, "regions", nil, "regions in scope (required)")
 	flags.BoolVar(&opts.dryRun, "dry-run", false,
 		"perform the startup read-only gate and nothing else: no area call, no event, no server connection")
-	flags.StringVar(&opts.recordDir, "record", "", "also write every payload and event to this fixture "+
-		"directory. Refused on a live run until the sanitised recording path is wired: recording a "+
-		"real GCP response would write it to disk unsanitised (FR-137, US7 T153-T155)")
+	flags.StringVar(&opts.recordDir, "record", "", "also record the run to this fixture directory, "+
+		"sanitised in the connector before anything touches disk under the contract table and the corpus "+
+		"key in $SRE_AGENT_CORPUS_KEY (FR-137); the recording's events are derived from its sanitised payloads")
 	flags.StringVar(&opts.replayDir, "replay", "", "read payloads from this fixture directory instead of GCP")
 	flags.DurationVar(&opts.window, "reordering-window", gcpfeeder.DefaultReorderingWindow,
 		"declared reordering window; measured, not assumed (contracts/gcp-feeder.md §5.2)")
@@ -111,6 +119,12 @@ func newFeedGCPCommand(global *globalOptions) *cobra.Command {
 			"one with #<group> appended for a grouped policy. It carries the alert, what it "+
 			"watches, the transition instant to reason from and the pointers to execute — and no "+
 			"telemetry (FR-053)")
+	flags.DurationVar(&opts.interval, "interval", gcpfeeder.DefaultPollInterval,
+		"time between live poll cycles. With --alert-incidents it is also the alert cadence, so it may "+
+			"not exceed "+gcpfeeder.MaxAlertPollInterval.String()+" (SC-004)")
+	flags.IntVar(&opts.cycles, "cycles", 0, "live poll cycles to run; 0 runs until interrupted")
+	flags.DurationVar(&opts.auditLookback, "audit-lookback", gcpfeeder.DefaultAuditLookback,
+		"how far back the first cycle reads the admin-activity audit stream")
 	return cmd
 }
 
@@ -128,33 +142,18 @@ func runFeedGCP(ctx context.Context, global *globalOptions, opts *feedGCPOptions
 		return exitErrorf(ExitUsage, "feed gcp: --record and --replay are mutually exclusive; "+
 			"re-recording a replay would produce a fixture of a fixture")
 	}
-	// Recording a LIVE run is refused until the sanitised recording path is wired (FR-137, US7
-	// T153–T155).
-	//
-	// This guard is here rather than beside the live-poller refusal below, and the order matters.
-	// Today a live run is refused anyway because the poller is not wired, so `--record` is
-	// unreachable and the hazard cannot occur — which is exactly the situation in which it would be
-	// forgotten. FR-137 is a property of RECORDING, not of the poller being ready, so the refusal
-	// belongs to the flag that asks for a recording.
-	//
-	// What is missing is not the boundary. `internal/feeders/gcp.SanitisedRecorder` is the boundary,
-	// it cannot be constructed without a Sanitiser, and it is the only route from this connector to a
-	// Sink. What is missing is that nothing routes `--record` through it: `record.Wrap` writes the
-	// payload it was handed. For the synthetic twins that is harmless, because the twins are already
-	// clean by construction. For a real GCP response it would write the response to disk, which is
-	// the one thing FR-137 forbids — and it forbids it *including during a failed or aborted run*,
-	// which is why no commit hook can stand in: by the time a hook runs the bytes have been on a
-	// laptop's disk.
-	//
-	// So whoever wires the live poller meets this refusal and has to wire the sanitiser with it. That
-	// is the point of putting it here while it is unreachable.
-	if opts.recordDir != "" && opts.replayDir == "" {
-		return exitErrorf(ExitUsage, "feed gcp: --record on a live run is refused: the sanitised "+
-			"recording path is not wired yet, and recording a live GCP response would write it to "+
-			"disk unsanitised, which FR-137 forbids at any point including during a failed or "+
-			"aborted run. A recording taken without the sanitiser cannot be cleaned afterwards — "+
-			"the bytes were already written. See internal/feeders/gcp/record.go for the boundary "+
-			"this must be routed through, and US7 T153-T155 for the task that routes it")
+	// A live recording is sanitised in the connector before anything touches disk (T187, FR-137): the
+	// sanitiser is built first, from the contract table and the corpus key, and without the key the run
+	// is refused here — before a directory exists and before anything is read. A failed or aborted run
+	// therefore leaves sanitised bytes or none.
+	var san *sanitise.Sanitiser
+	if opts.recordDir != "" && opts.replayDir == "" && !opts.dryRun {
+		built, err := recordingSanitiser()
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed gcp: --record on a live run is sanitised in the connector "+
+				"before anything touches disk (FR-137), and it cannot start: %v", err)
+		}
+		san = built
 	}
 
 	// --dry-run is the gate and nothing else. It returns before anything constructs an area client
@@ -166,6 +165,16 @@ func runFeedGCP(ctx context.Context, global *globalOptions, opts *feedGCPOptions
 	if opts.orgSlug == "" {
 		return exitErrorf(ExitUsage, "feed gcp: --org is required; it is the suffix of the source id, "+
 			"and an empty one makes every organisation's events one source")
+	}
+	if opts.replayDir == "" && opts.alertIncidents {
+		// The live poller reads every area at one cadence, so with transitions on, the poll interval IS
+		// the sampling interval recorded on each one, and SC-004 bounds it.
+		if opts.interval > gcpfeeder.MaxAlertPollInterval {
+			return exitErrorf(ExitUsage, "feed gcp: --alert-incidents reads transitions at the poll "+
+				"interval, and %s is past the published %s ceiling (SC-004); pass --interval %s or less",
+				opts.interval, gcpfeeder.MaxAlertPollInterval, gcpfeeder.MaxAlertPollInterval)
+		}
+		opts.alertPollInterval = opts.interval
 	}
 
 	feederOpts := gcpfeeder.Options{
@@ -191,20 +200,31 @@ func runFeedGCP(ctx context.Context, global *globalOptions, opts *feedGCPOptions
 		f.Gate = &gcpGate{projects: opts.projects, assertBy: opts.assertBy}
 	}
 
-	// The live poller lands with the area tasks. Until it does, a live run says so rather than
-	// starting, emitting nothing and exiting zero — which is the failure mode that makes an empty
-	// graph look like a working connector.
+	var src feeder.Source
+	var usage *gcpx.Usage
+	var recording *deployrecord.Tee
 	if opts.replayDir == "" {
-		return exitErrorf(ExitUsage, "feed gcp: the live poller is not wired yet; use --dry-run to "+
-			"run the read-only gate, or --replay <dir> to feed from a recording. A live run that "+
-			"emitted nothing and exited zero would look like a working connector")
+		poller, live, err := newLiveGCPPoller(opts, f.Gate.(*gcpGate),
+			slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil)))
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed gcp: %v", err)
+		}
+		src, usage = poller, live
+		if san != nil {
+			tee, err := deployrecord.NewTee(poller, "gcp", san, opts.recordDir)
+			if err != nil {
+				return exitErrorf(ExitUsage, "feed gcp: %v", err)
+			}
+			recording = tee.WithPrepare(gcpfeeder.RecordingPrepare(san))
+			src = recording
+		}
+	} else {
+		fileSource, err := source.NewFileSource(opts.replayDir)
+		if err != nil {
+			return exitErrorf(ExitUsage, "feed gcp: %v", err)
+		}
+		src = fileSource
 	}
-
-	fileSource, err := source.NewFileSource(opts.replayDir)
-	if err != nil {
-		return exitErrorf(ExitUsage, "feed gcp: %v", err)
-	}
-	var src feeder.Source = fileSource
 
 	connect, err := emit.NewConnectEmitter(global.Server, global.Token, f.Describe(),
 		emit.WithBatchSize(opts.batchSize))
@@ -213,18 +233,18 @@ func runFeedGCP(ctx context.Context, global *globalOptions, opts *feedGCPOptions
 	}
 	var em feeder.Emitter = connect
 
-	// --record leaves a directory `fixture verify` can take. It wraps both ends of the feeder rather
-	// than only the payloads, because a recording that stored what went in but not what came out
-	// would need the feeder re-run to be verified — and then the fixture would test whatever the
-	// feeder does today rather than what it did when the recording was made.
-	if opts.recordDir != "" {
-		payloads := record.Wrap(src, opts.recordDir)
-		events := record.Emitter(em, opts.recordDir)
-		src, em = payloads, events
-		defer writeGCPManifest(cmd, opts, f.Describe(), payloads, events)
+	runErr := f.Run(ctx, src, em)
+	if usage != nil {
+		reportGCPRequests(cmd, usage)
 	}
-
-	if err := f.Run(ctx, src, em); err != nil {
+	if recording != nil {
+		finishGCPRecording(ctx, cmd, opts, san, recording)
+	}
+	if err := runErr; err != nil {
+		// An operator stopping a live run is how a live run ends, not a failure.
+		if opts.replayDir == "" && errors.Is(err, context.Canceled) {
+			return nil
+		}
 		return exitErrorf(ExitTransport, "feed gcp: %v", err)
 	}
 	if opts.handoff != "" {
@@ -295,37 +315,6 @@ func renderAlertHandoff(cmd *cobra.Command, global *globalOptions, f *gcpfeeder.
 	return p.writeRaw(b.String())
 }
 
-// writeGCPManifest completes a recording so that `--record` leaves a fixture directory.
-//
-// The description is deliberately unfinished: it says what was recorded and then says what a human
-// must still do. A manifest that read as complete would invite committing a fixture with no queries,
-// which verifies nothing and looks like coverage.
-func writeGCPManifest(cmd *cobra.Command, opts *feedGCPOptions, desc feeder.Description,
-	payloads *record.PayloadRecorder, events *record.EventRecorder,
-) {
-	out := cmd.ErrOrStderr()
-	if err := payloads.Err(); err != nil {
-		fmt.Fprintf(out, "gcp: recording payloads failed: %v\n", err)
-	}
-	if err := events.Err(); err != nil {
-		fmt.Fprintf(out, "gcp: recording events failed: %v\n", err)
-	}
-	if err := record.WriteManifest(opts.recordDir, record.Manifest{
-		Family: "gcp-topology",
-		Description: fmt.Sprintf(
-			"%d GCP payloads recorded by `feed gcp` over projects %s. "+
-				"Add a queries: list and record the goldens before committing.",
-			payloads.Count(), strings.Join(opts.projects, ",")),
-		Sources:        []record.ManifestSource{record.SourceOf(desc)},
-		ExpectRejected: events.Rejections(),
-	}); err != nil {
-		fmt.Fprintf(out, "gcp: writing the fixture manifest failed: %v\n", err)
-		return
-	}
-	fmt.Fprintf(out, "recorded %d payloads and %d events to %s\n",
-		payloads.Count(), events.Accepted(), opts.recordDir)
-}
-
 func runFeedGCPDryRun(ctx context.Context, opts *feedGCPOptions, cmd *cobra.Command) error {
 	gateOpts := gcpx.GateOptions{Projects: opts.projects}
 	if opts.assertBy != "" {
@@ -355,10 +344,51 @@ func runFeedGCPDryRun(ctx context.Context, opts *feedGCPOptions, cmd *cobra.Comm
 	return nil
 }
 
-// gcpGate adapts gcpx.Gate to the feeder's Gate interface.
+// finishGCPRecording completes a live recording whatever ended the run: the payloads already on disk
+// are sanitised, and the events are derived from them by a second feeder whose scope names the
+// projects the way the payloads now do (deployrecord). Projects take the label shape the table gives
+// them; regions are kept, as the table keeps them.
+func finishGCPRecording(ctx context.Context, cmd *cobra.Command, opts *feedGCPOptions, san *sanitise.Sanitiser, recording *deployrecord.Tee) {
+	errOut := cmd.ErrOrStderr()
+	projects := make([]string, 0, len(opts.projects))
+	for _, project := range opts.projects {
+		pseudonym, err := san.LabelIdentifier(sanitise.KindProject, project)
+		if err != nil {
+			fmt.Fprintf(errOut, "feed gcp: the recording was not completed: %v\n", err)
+			return
+		}
+		projects = append(projects, pseudonym)
+	}
+	shadow, err := gcpfeeder.New(gcpfeeder.Options{
+		OrgSlug:          opts.orgSlug,
+		Scope:            gcpfeeder.Scope{Projects: projects, Regions: opts.regions},
+		ReorderingWindow: opts.window,
+		Labels:           gcpfeeder.DefaultLabelPolicy(),
+		Horizon: gcpfeeder.Horizon{
+			Earliest: time.Now().UTC().Add(-opts.horizon),
+			Reason:   gcpfeeder.HorizonConfigured,
+		},
+		AlertPollInterval: opts.alertPollInterval,
+	})
+	if err != nil {
+		fmt.Fprintf(errOut, "feed gcp: the recording was not completed: %v\n", err)
+		return
+	}
+	events, err := recording.Finish(context.WithoutCancel(ctx), opts.recordDir, "gcp-topology", shadow)
+	if err != nil {
+		fmt.Fprintf(errOut, "feed gcp: the recording was not completed: %v\n", err)
+		return
+	}
+	fmt.Fprintf(errOut, "recorded %d sanitised payload(s) and %d derived event(s) to %s; refused: %v\n",
+		recording.Written(), events, opts.recordDir, recording.Dropped())
+}
+
+// gcpGate adapts gcpx.Gate to the feeder's Gate interface, and keeps the credential it proved: the
+// live poller's area clients are built from that one credential and no other, after the gate passed.
 type gcpGate struct {
 	projects []string
 	assertBy string
+	proved   *gcpx.Credential
 }
 
 func (g *gcpGate) Prove(ctx context.Context) (*gcpx.Credential, error) {
@@ -370,5 +400,76 @@ func (g *gcpGate) Prove(ctx context.Context) (*gcpx.Credential, error) {
 			Acknowledged: gcpx.UnverifiableAreas(),
 		}
 	}
-	return gcpx.Gate(ctx, opts)
+	creds, err := gcpx.Gate(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	g.proved = creds
+	return creds, nil
+}
+
+// newLiveGCPPoller builds the live source (T185). The transport is connected on the poller's first
+// read, from the credential the gate proved: Feeder.Run proves the gate before it asks the source for
+// anything, so a client built here before the gate ran is not a path that exists.
+func newLiveGCPPoller(opts *feedGCPOptions, gate *gcpGate, logger *slog.Logger) (*gcpfeeder.Poller, *gcpx.Usage, error) {
+	usage := gcpx.NewUsage(gcpx.ConsumerFeeder)
+	budget := gcpx.NewBudget(gcpx.PublishedLimits(), usage)
+	connect := func(ctx context.Context) (*gcpfeeder.Transport, error) {
+		if gate.proved == nil {
+			return nil, errors.New("the read-only gate has not passed, so there is no credential to read with")
+		}
+		transport, err := gcpfeeder.NewLiveTransport(ctx, gate.proved, budget)
+		if err != nil {
+			return nil, err
+		}
+		notices, err := gcpfeeder.NewLiveNoticeReader(ctx, gate.proved, budget)
+		if err != nil {
+			return nil, err
+		}
+		transport.Notices = notices
+		if opts.alertIncidents {
+			incidents, err := gcpfeeder.NewLiveAlertIncidentReader(ctx, gate.proved, budget)
+			if err != nil {
+				return nil, err
+			}
+			transport.AlertIncidents = incidents
+		}
+		return transport, nil
+	}
+	poller, err := gcpfeeder.NewPoller(gcpfeeder.PollerOptions{
+		Connect:       connect,
+		Scope:         gcpfeeder.Scope{Projects: opts.projects, Regions: opts.regions},
+		Interval:      opts.interval,
+		Cycles:        opts.cycles,
+		AuditLookback: opts.auditLookback,
+		AuditOverlap:  opts.window,
+		Logger:        logger,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return poller, usage, nil
+}
+
+// reportGCPRequests prints what the run issued, from its own request log (SC-020): every operation is
+// on the published read-only list, and the only state change permitted anywhere is the doorbell's.
+func reportGCPRequests(cmd *cobra.Command, usage *gcpx.Usage) {
+	out := cmd.ErrOrStderr()
+	rows := usage.Requests()
+	counts := map[string]int{}
+	total := 0
+	for _, row := range rows {
+		counts[string(row.Operation)] += row.Calls
+		total += row.Calls
+	}
+	ops := make([]string, 0, len(counts))
+	for op := range counts {
+		ops = append(ops, op)
+	}
+	slices.Sort(ops)
+	fmt.Fprintf(out, "gcp request log: %d call(s) issued, %d blocked, %d state change(s); read-only honoured: %t\n",
+		total, len(usage.BlockedRequests()), len(usage.StateChanges()), usage.ReadOnlyHonoured())
+	for _, op := range ops {
+		fmt.Fprintf(out, "  %-40s %d\n", op, counts[op])
+	}
 }

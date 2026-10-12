@@ -377,16 +377,16 @@ func (o ConfigObservation) Props() *feeder.Props {
 		Str(PropConfigOf, o.Revision.Service.Value()).
 		Str(PropConfigRevision, o.Revision.Revision)
 	if entries := o.EnvEntries(); len(entries) > 0 {
-		props = props.Strs(PropConfigEnvEntries, entries...)
+		props = props.StrsBounded(PropConfigEnvEntries, entries...)
 	}
 	if len(o.SecretRefs) > 0 {
-		props = props.Strs(PropConfigSecretRefs, o.SecretRefs...)
+		props = props.StrsBounded(PropConfigSecretRefs, o.SecretRefs...)
 	}
 	if len(o.Mounts) > 0 {
-		props = props.Strs(PropConfigMounts, o.Mounts...)
+		props = props.StrsBounded(PropConfigMounts, o.Mounts...)
 	}
 	if len(o.CloudSQLInstances) > 0 {
-		props = props.Strs(PropConfigCloudSQLInstances, o.CloudSQLInstances...)
+		props = props.StrsBounded(PropConfigCloudSQLInstances, o.CloudSQLInstances...)
 	}
 	if o.ServiceAccount != "" {
 		props = props.Str(PropConfigServiceAccount, o.ServiceAccount)
@@ -623,13 +623,13 @@ func ConfigChangeProps(before, after ConfigObservation, diff ConfigDiff, actor A
 		Str(PropConfigFrom, before.Revision.Revision).
 		Str(PropActorRung, actor.Rung)
 	if len(diff.Added) > 0 {
-		props = props.Strs(PropConfigAddedEntries, diff.Added...)
+		props = props.StrsBounded(PropConfigAddedEntries, diff.Added...)
 	}
 	if len(diff.Removed) > 0 {
-		props = props.Strs(PropConfigRemovedEntries, diff.Removed...)
+		props = props.StrsBounded(PropConfigRemovedEntries, diff.Removed...)
 	}
 	if len(diff.Changed) > 0 {
-		props = props.Strs(PropConfigChangedEntries, diff.Changed...)
+		props = props.StrsBounded(PropConfigChangedEntries, diff.Changed...)
 	}
 	if len(diff.RotatedSecrets) > 0 {
 		props = props.Strs(PropConfigRotatedSecrets, diff.RotatedSecrets...)
@@ -645,3 +645,7 @@ func ConfigChangeProps(before, after ConfigObservation, diff ConfigDiff, actor A
 	}
 	return props
 }
+
+// ConnectionNameIn is connectionNameIn for the recording pre-pass (prepare.go): the one connection name
+// the `env_var_value` derivation would read from a value, by the same whole-token rule, or false.
+func ConnectionNameIn(value string) (string, bool) { return connectionNameIn(value) }

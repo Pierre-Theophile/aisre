@@ -121,6 +121,16 @@ type Announcement struct {
 	// Source names which of the three sources read it, for the per-cycle report and for the
 	// deterministic ref when the vendor states no identifier.
 	Source SourceKind
+	// AlternateProducts are the other products the vendor says the announcement affects, in the
+	// vendor's order. Google's incident feed names one `service_name` — "Multiple Products" for most
+	// outages — and lists the real ones in `affected_products`; the allowlist tries these when the
+	// primary product is not one this organisation uses, so an outage of a product it does use is not
+	// dropped because it was filed under a heading.
+	AlternateProducts []string
+	// Locations are the locations the vendor says the announcement affects, as the vendor's ids
+	// (`europe-west1`, `global`). Empty when it states none; a vendor's location allowlist drops an
+	// announcement only when it states locations and none of them is listed.
+	Locations []string
 }
 
 // SourceKind is which of the three sources an announcement came from.

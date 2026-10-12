@@ -74,6 +74,29 @@ includedPermissions:
 
 `operations.list` needs no permission of its own beyond `cloudsql.instances.get`.
 
+### The OAuth scopes, and the one API that has no read-only scope
+
+IAM decides what the principal may do; the OAuth scope decides what a token may be used for. Both
+must be read-only, and `cloud-platform.read-only` is **not** accepted everywhere. The first live run
+(2026-10-09) found that Cloud Run, GKE and Compute Engine answer `ACCESS_TOKEN_SCOPE_INSUFFICIENT` to a
+token carrying only it, and Cloud Monitoring never accepted it. Each API's discovery document lists
+what it takes, and the credential now asks for each one's read-only scope:
+
+| API | scope requested | why |
+|---|---|---|
+| Cloud Logging, Cloud DNS, Resource Manager | `cloud-platform.read-only` (and `logging.read`) | they accept the umbrella read-only scope |
+| Cloud Monitoring | `monitoring.read` | it does not accept the umbrella one |
+| Cloud Run | `run.readonly` | the same |
+| GKE | `container.read-only` | the same |
+| Compute Engine (load balancers) | `compute.readonly` | the same |
+| **Cloud SQL Admin** | **`cloud-platform`, on that client only** | the API publishes **no** read-only scope: `cloud-platform` and `sqlservice.admin` are all it accepts |
+
+So the Cloud SQL client alone holds a token whose scope does not bound it, and **only IAM bounds
+it**: the custom role above, which grants `cloudsql.instances.list` and `.get` and nothing else.
+Layer 1 tests that the principal holds no Cloud SQL write permission, and the gate lists this as an
+area it cannot verify by scope, so the operator asserts it with the others. The wider token reaches
+that one client and no other.
+
 ## 2. The published read-only operation list
 
 Every operation this connector may issue, by name. An operation absent from this list is refused by
@@ -89,6 +112,9 @@ Every operation this connector may issue, by name. An operation absent from this
 | GKE | `container.clusters.list`, `container.clusters.get` | `container.read` |
 | load balancers (P3) | `compute.forwardingRules.list`, `compute.urlMaps.list`, `compute.backendServices.list`, `compute.networkEndpointGroups.list` | `compute.read` |
 | Cloud DNS (P3) | `dns.managedZones.list`, `dns.resourceRecordSets.list` | `dns.read` |
+| Cloud Functions runtimes | `cloudfunctions.runtimes.list` | `functions.read` |
+| Unified Maintenance | `maintenance.resourceMaintenances.list` | `maintenance.read` |
+| Service Health | `servicehealth.events.list` | `servicehealth.read` |
 | the doorbell (off by default) | `pubsub.subscriptions.pull` | `pubsub.pull` |
 
 Every one of them is a **list or a get**. There is no `create`, no `update`, no `patch`, no `delete`
@@ -390,6 +416,11 @@ deriving evidence is recorded on the edge (FR-028):
 |---|---|---|
 | `cloudsql_volume` | `template.volumes[].cloudSqlInstance.instances` | an operator attached the instance and Cloud Run acts on it: the proxy is mounted, the socket exists |
 | `env_var_value` | an environment variable whose **value is** a connection name | the operator put the instance's dialling string into the service's configuration |
+
+In a **recording**, the second keeps exactly one thing from the value: the connection name it read,
+reduced by the feeder's own rule and pseudonymised as the volume field is (FR-034 as amended,
+`internal/feeders/gcp/prepare.go`). A password beside the socket path in a DSN, the user, the database
+and the host never reach disk; a value with no connection name is not recorded at all.
 
 The second reads a value and records none: what reaches the graph is "the dependency was derived from
 the value of `DATABASE_URL`" — the fact, the evidence, and no value. The search for a connection name

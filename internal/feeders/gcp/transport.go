@@ -24,6 +24,13 @@ import (
 	sqladmin "google.golang.org/api/sqladmin/v1"
 	metricpb "google.golang.org/genproto/googleapis/api/metric"
 
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"golang.org/x/oauth2"
+
 	"github.com/Pierre-Theophile/aisre/internal/gcpx"
 )
 
@@ -156,6 +163,9 @@ type Transport struct {
 	// GKE reads cluster metadata. Nil is a stated scope: an organisation with no cluster, or a
 	// credential without container.clusters.get.
 	GKE GKEReader
+	// Notices reads Google's structured announcements about the project: Cloud Functions runtime
+	// lifecycle and Service Health events (T191, T192). Nil is a stated scope.
+	Notices NoticeReader
 	// Exposure reads load balancers and Cloud DNS. Nil is the ordinary case, not an exception: these
 	// are P3 and the first surface the deferral order drops (FR-057), so a nil here is a scope
 	// statement the checkpoint carries — and every other requirement holds unchanged.
@@ -202,7 +212,13 @@ func NewLiveTransport(ctx context.Context, creds *gcpx.Credential, budget *gcpx.
 	if err != nil {
 		return nil, err
 	}
-	sqlClient, err := sqladmin.NewService(ctx, opts...)
+	// Cloud SQL Admin publishes no read-only OAuth scope, so its client alone is built on the
+	// cloud-platform token, bounded by IAM rather than scope (gcpx.Credential.CloudSQLTokenSource).
+	sqlToken, err := creds.CloudSQLTokenSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sqlClient, err := sqladmin.NewService(ctx, option.WithTokenSource(sqlToken))
 	if err != nil {
 		return nil, err
 	}
@@ -361,10 +377,10 @@ type liveAuditLogs struct {
 // after the FIRST ITEM, not the first page, because the token becomes non-empty as soon as the
 // iterator buffers a page. That would have metered one call and issued one per entry.
 //
-// pageSize 0 asks the server for its default. The maximum is undocumented — the widely-cited
-// 1,000-entry cap appears nowhere in Google's reference (research §6) — so this requests no
-// specific size and reads whatever came back rather than designing against a number nobody
-// published.
+// The page size is the documented maximum. An earlier version passed 0, meaning "the server's
+// default", and NewPager refuses 0 outright ("page size must be positive"), so the audit stream read
+// nothing until the first live run said so (2026-10-09). The `entries.list` reference does publish
+// the bound: default 50, and a value "negative or exceeding 1000" is rejected.
 func (a *liveAuditLogs) ListEntries(ctx context.Context, req *loggingpb.ListLogEntriesRequest) ([]*loggingpb.LogEntry, string, error) {
 	project := ""
 	if len(req.GetResourceNames()) > 0 {
@@ -374,7 +390,7 @@ func (a *liveAuditLogs) ListEntries(ctx context.Context, req *loggingpb.ListLogE
 		return nil, "", err
 	}
 	it := a.client.ListLogEntries(ctx, req)
-	pager := iterator.NewPager(it, 0, req.GetPageToken())
+	pager := iterator.NewPager(it, auditEntriesPageSize, req.GetPageToken())
 	var page []*loggingpb.LogEntry
 	next, err := pager.NextPage(&page)
 	if err != nil {
@@ -382,6 +398,9 @@ func (a *liveAuditLogs) ListEntries(ctx context.Context, req *loggingpb.ListLogE
 	}
 	return page, next, nil
 }
+
+// auditEntriesPageSize is `entries.list`'s documented maximum page.
+const auditEntriesPageSize = 1000
 
 // ---- Cloud Monitoring ------------------------------------------------------------------------
 
@@ -500,15 +519,7 @@ func (a *liveAlertIncidents) ListAlerts(ctx context.Context, project string, sta
 	if err := a.lt.budget.Issue(ctx, gcpx.OpMonitoringAlertsList, project, ""); err != nil {
 		return nil, err
 	}
-	call := a.svc.Projects.Alerts.List("projects/" + project).
-		OrderBy("open_time desc").
-		PageSize(alertIncidentPageSize).
-		Context(ctx)
-	if !start.IsZero() && !end.IsZero() {
-		call = call.Filter(fmt.Sprintf(`open_time >= "%s" AND open_time < "%s"`,
-			start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339)))
-	}
-	resp, err := call.Do()
+	resp, err := alertsCall(a.svc.Projects.Alerts.List("projects/"+project), start, end).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
@@ -521,6 +532,39 @@ func (a *liveAlertIncidents) ListAlerts(ctx context.Context, project string, sta
 		out = append(out, incident)
 	}
 	return out, nil
+}
+
+// ListAlertsJSON reads the same window and returns each incident as the API's own JSON, which is what
+// the live poller writes as the `alerts` payload (poller.go): the feeder then decodes it with the one
+// decoder a replay uses, so live and recorded cannot diverge.
+func (a *liveAlertIncidents) ListAlertsJSON(ctx context.Context, project string, start, end time.Time) ([]json.RawMessage, error) {
+	if err := a.lt.budget.Issue(ctx, gcpx.OpMonitoringAlertsList, project, ""); err != nil {
+		return nil, err
+	}
+	resp, err := alertsCall(a.svc.Projects.Alerts.List("projects/"+project), start, end).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]json.RawMessage, 0, len(resp.Alerts))
+	for _, alert := range resp.Alerts {
+		raw, err := alert.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, raw)
+	}
+	return out, nil
+}
+
+// alertsCall shapes one window's request: newest first, the documented maximum page, and the window
+// as a filter on `open_time`, the field the API orders by and the only one that bounds the read.
+func alertsCall(call *monitoringv3.ProjectsAlertsListCall, start, end time.Time) *monitoringv3.ProjectsAlertsListCall {
+	call = call.OrderBy("open_time desc").PageSize(alertIncidentPageSize)
+	if !start.IsZero() && !end.IsZero() {
+		call = call.Filter(fmt.Sprintf(`open_time >= "%s" AND open_time < "%s"`,
+			start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339)))
+	}
+	return call
 }
 
 // alertIncidentPageSize is the API's documented maximum. Unlike `entries.list`, this one IS
@@ -680,4 +724,119 @@ func (e *liveExposure) ListDNSRecordSets(ctx context.Context, project, zone stri
 		return nil, err
 	}
 	return resp.Rrsets, nil
+}
+
+// ---- Structured notices (T191, T192) ---------------------------------------------------------
+
+// NoticeReader reads Google's own announcements about a project, as the API's JSON: the payloads are
+// what the feeder decodes, live and replayed alike, so nothing here interprets them.
+type NoticeReader interface {
+	// ListFunctionRuntimes reads the Cloud Functions runtime catalogue for one region, with each
+	// runtime's stage and its deprecation and decommission dates.
+	ListFunctionRuntimes(ctx context.Context, project, region string) ([]json.RawMessage, error)
+	// ListHealthEvents reads the Service Health events Google relates to the project, updated at or
+	// after since.
+	ListHealthEvents(ctx context.Context, project string, since time.Time) ([]json.RawMessage, error)
+}
+
+// noticePageLimit bounds a paged read, for the same reason MaxSQLOperationPages does.
+const noticePageLimit = 20
+
+// NewLiveNoticeReader builds the notice reader. The runtimes list accepts only `cloud-platform`, so it
+// is called on the credential's IAM-bounded wide token (gcpx.Credential.CloudSQLTokenSource), and
+// needs no IAM permission at all: it is Google's catalogue. Service Health has a read-only scope of
+// its own, which the credential requests.
+func NewLiveNoticeReader(ctx context.Context, creds *gcpx.Credential, budget *gcpx.Budget) (NoticeReader, error) {
+	if creds == nil {
+		return nil, gcpx.ErrNoCredential
+	}
+	wide, err := creds.CloudSQLTokenSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &liveNotices{
+		lt:     &liveTransport{creds: creds, budget: budget},
+		wide:   oauth2.NewClient(ctx, wide),
+		narrow: oauth2.NewClient(ctx, creds.TokenSource()),
+	}, nil
+}
+
+type liveNotices struct {
+	lt           *liveTransport
+	wide, narrow *http.Client
+}
+
+func (n *liveNotices) ListFunctionRuntimes(ctx context.Context, project, region string) ([]json.RawMessage, error) {
+	if err := n.lt.budget.Issue(ctx, gcpx.OpFunctionsRuntimesList, project, region); err != nil {
+		return nil, err
+	}
+	return pagedJSON(ctx, n.wide, "https://cloudfunctions.googleapis.com/v2/projects/"+url.PathEscape(project)+
+		"/locations/"+url.PathEscape(region)+"/runtimes", "runtimes")
+}
+
+// ListHealthEvents asks for the documented maximum page (100) and filters on `update_time`, the one
+// time field the API filters by: a project's history runs to hundreds of events, ten to a page by
+// default, and an unfiltered read is one no poll finishes.
+func (n *liveNotices) ListHealthEvents(ctx context.Context, project string, since time.Time) ([]json.RawMessage, error) {
+	if err := n.lt.budget.Issue(ctx, gcpx.OpServiceHealthEventsList, project, ""); err != nil {
+		return nil, err
+	}
+	query := url.Values{
+		"pageSize": {"100"},
+		"filter":   {`update_time>="` + since.UTC().Format(time.RFC3339) + `"`},
+	}
+	return pagedJSON(ctx, n.narrow, "https://servicehealth.googleapis.com/v1/projects/"+url.PathEscape(project)+
+		"/locations/global/events?"+query.Encode(), "events")
+}
+
+// pagedJSON drains a list endpoint, bounded, returning the items of field.
+func pagedJSON(ctx context.Context, client *http.Client, endpoint, field string) ([]json.RawMessage, error) {
+	var out []json.RawMessage
+	token := ""
+	for page := 0; page < noticePageLimit; page++ {
+		target := endpoint
+		if token != "" {
+			separator := "?"
+			if strings.Contains(endpoint, "?") {
+				separator = "&"
+			}
+			target += separator + "pageToken=" + url.QueryEscape(token)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("gcp: %s answered %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(body[:min(len(body), 300)])))
+		}
+		var decoded map[string]json.RawMessage
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			return nil, fmt.Errorf("gcp: decoding %s: %w", endpoint, err)
+		}
+		var items []json.RawMessage
+		if raw, ok := decoded[field]; ok {
+			if err := json.Unmarshal(raw, &items); err != nil {
+				return nil, fmt.Errorf("gcp: decoding %s.%s: %w", endpoint, field, err)
+			}
+		}
+		out = append(out, items...)
+		var next string
+		if raw, ok := decoded["nextPageToken"]; ok {
+			_ = json.Unmarshal(raw, &next)
+		}
+		if next == "" {
+			return out, nil
+		}
+		token = next
+	}
+	return out, fmt.Errorf("gcp: %s did not finish within %d pages", endpoint, noticePageLimit)
 }

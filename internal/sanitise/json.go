@@ -60,7 +60,32 @@ const (
 	// ShapeTemplate rewrites a URL or a path against Rule.Template. A value that does not match the
 	// template is dropped: a URL of an unexpected shape is one whose identifiers nobody has located.
 	ShapeTemplate
+	// ShapeLabel is `px-<tag>-<base32>`, lower-case letters, digits and hyphens only: the shape of a
+	// GCP project id, a Cloud SQL instance name and a Cloud Run service. A token's underscores fail the
+	// patterns a GCP connection name is parsed by (`<project>:<region>:<instance>`), so a recording
+	// that pseudonymised them as tokens would silently lose the database edges built from them.
+	ShapeLabel
 )
+
+// LabelPrefix opens every ShapeLabel pseudonym.
+const LabelPrefix = "px-"
+
+// Label returns the ShapeLabel pseudonym of value: the same keyed digest as Pseudonym, written in a
+// DNS label's alphabet. Applying it twice is a no-op.
+func (k Key) Label(kind Kind, value string) (string, error) {
+	if value == "" || strings.HasPrefix(value, LabelPrefix) {
+		return value, nil
+	}
+	if !kind.Valid() {
+		return "", fmt.Errorf("%w: %q", ErrUnknownKind, kind)
+	}
+	sum, err := k.mac(kind, value)
+	if err != nil {
+		return "", err
+	}
+	token := strings.ToLower(tokenEncoding.EncodeToString(sum))
+	return LabelPrefix + kindTag[kind] + "-" + token[:PseudonymDigits], nil
+}
 
 // mac is the HMAC every shape is cut from, domain-separated by kind exactly as Pseudonym is.
 func (k Key) mac(kind Kind, value string) ([]byte, error) {
@@ -116,10 +141,26 @@ type template struct {
 type templateField struct {
 	kind  Kind
 	shape Shape
+	// keep, when set, keeps the segment verbatim if it matches, and fails the template if not.
+	keep *regexp.Regexp
 }
 
-// placeholder is `{kind}` or `{kind:digits}` / `{kind:hex}`.
-var placeholder = regexp.MustCompile(`\{([a-z_]+)(?::(digits|hex))?\}`)
+// placeholder is `{kind}` or `{kind:digits}` / `{kind:hex}` / `{kind:label}`, or `{region}`.
+var placeholder = regexp.MustCompile(`\{([a-z_]+)(?::(digits|hex|label))?\}`)
+
+// regionPlaceholder keeps a GCP location verbatim: a region (`europe-west1`), a zone
+// (`europe-west1-b`), a multi-region (`europe`, `us`) or `global`. A location is the platform's
+// geography, not anybody's identifier, and the connector validates it by shape — a pseudonymised
+// region would fail every parse that reads one. A segment that is NOT a location fails the template,
+// so the field is dropped rather than an identifier being kept under the region's name.
+const regionPlaceholder = "region"
+
+var locationShape = regexp.MustCompile(`^(?:[a-z]+(?:-[a-z]+[0-9]+(?:-[a-z])?)?)$`)
+
+// TemplateAlternatives separates alternative patterns in one Rule.Template. The first that matches
+// rewrites the value; a field whose values come in several shapes — an audit entry's resource name
+// is a service, a revision, an instance or a project — is otherwise dropped in all but one.
+const TemplateAlternatives = " | "
 
 // compileTemplate parses a pattern. Literal text is matched exactly; each placeholder matches one
 // path segment (no `/`, `?` or `#`), and the whole value must match.
@@ -131,6 +172,15 @@ func compileTemplate(pattern string) (*template, error) {
 	for _, loc := range placeholder.FindAllStringSubmatchIndex(pattern, -1) {
 		re.WriteString(regexp.QuoteMeta(pattern[last:loc[0]]))
 		kind := Kind(pattern[loc[2]:loc[3]])
+		if kind == regionPlaceholder {
+			if loc[4] >= 0 {
+				return nil, fmt.Errorf("sanitise: template %q gives {region} a shape; a kept segment has none", pattern)
+			}
+			fields = append(fields, templateField{keep: locationShape})
+			re.WriteString(`([^/?#:]+)`)
+			last = loc[1]
+			continue
+		}
 		if !kind.Valid() {
 			return nil, fmt.Errorf("sanitise: template %q names kind %q, which is not published", pattern, kind)
 		}
@@ -141,10 +191,12 @@ func compileTemplate(pattern string) (*template, error) {
 				shape = ShapeDigits
 			case "hex":
 				shape = ShapeHex
+			case "label":
+				shape = ShapeLabel
 			}
 		}
 		fields = append(fields, templateField{kind: kind, shape: shape})
-		re.WriteString(`([^/?#]+)`)
+		re.WriteString(`([^/?#:@]+)`)
 		last = loc[1]
 	}
 	re.WriteString(regexp.QuoteMeta(pattern[last:]))
@@ -171,29 +223,17 @@ func (s *Sanitiser) shaped(rule Rule, value string) (string, bool, error) {
 		return out, err == nil, err
 	case ShapeHex:
 		return s.key.HexOf(rule.Kind, value)
+	case ShapeLabel:
+		out, err := s.key.Label(rule.Kind, value)
+		return out, err == nil, err
 	case ShapeTemplate:
-		t, err := compileTemplate(rule.Template)
-		if err != nil {
-			return "", false, err
-		}
-		match := t.re.FindStringSubmatchIndex(value)
-		if match == nil {
-			return "", false, nil
-		}
-		var out strings.Builder
-		last := 0
-		for i, field := range t.fields {
-			start, end := match[2*(i+1)], match[2*(i+1)+1]
-			out.WriteString(value[last:start])
-			segment, ok, err := s.shaped(Rule{Kind: field.kind, Shape: field.shape}, value[start:end])
-			if err != nil || !ok {
-				return "", false, err
+		for _, pattern := range strings.Split(rule.Template, TemplateAlternatives) {
+			out, ok, err := s.applyTemplate(pattern, value)
+			if err != nil || ok {
+				return out, ok, err
 			}
-			out.WriteString(segment)
-			last = end
 		}
-		out.WriteString(value[last:])
-		return out.String(), true, nil
+		return "", false, nil
 	default:
 		if caseFolded[rule.Kind] {
 			value = strings.ToLower(value)
@@ -201,6 +241,41 @@ func (s *Sanitiser) shaped(rule Rule, value string) (string, bool, error) {
 		out, err := s.key.Pseudonym(rule.Kind, value)
 		return out, err == nil, err
 	}
+}
+
+// applyTemplate rewrites value against one pattern; ok=false when it does not match.
+func (s *Sanitiser) applyTemplate(pattern, value string) (string, bool, error) {
+	t, err := compileTemplate(pattern)
+	if err != nil {
+		return "", false, err
+	}
+	match := t.re.FindStringSubmatchIndex(value)
+	if match == nil {
+		return "", false, nil
+	}
+	var out strings.Builder
+	last := 0
+	for i, field := range t.fields {
+		start, end := match[2*(i+1)], match[2*(i+1)+1]
+		out.WriteString(value[last:start])
+		segment := value[start:end]
+		if field.keep != nil {
+			if !field.keep.MatchString(segment) {
+				return "", false, nil
+			}
+			out.WriteString(segment)
+			last = end
+			continue
+		}
+		shapedSegment, ok, err := s.shaped(Rule{Kind: field.kind, Shape: field.shape}, segment)
+		if err != nil || !ok {
+			return "", false, err
+		}
+		out.WriteString(shapedSegment)
+		last = end
+	}
+	out.WriteString(value[last:])
+	return out.String(), true, nil
 }
 
 // caseFolded are the kinds whose names the platform compares without case: GitHub treats `Acme` and
@@ -365,6 +440,13 @@ func (p *Policy) hasRowUnder(prefix string) bool {
 func (s *Sanitiser) Identifier(kind Kind, value string) (string, error) {
 	out, _, err := s.shaped(Rule{Kind: kind}, value)
 	return out, err
+}
+
+// LabelIdentifier is the ShapeLabel pseudonym of value under kind: what a GCP project or a Cloud SQL
+// instance becomes in a recording, so a recording's own configuration (its scope) can name them the
+// way its payloads do.
+func (s *Sanitiser) LabelIdentifier(kind Kind, value string) (string, error) {
+	return s.key.Label(kind, value)
 }
 
 // Hex is the ShapeHex pseudonym of value under kind, or false where value is not hex. It is how a

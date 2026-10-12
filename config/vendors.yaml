@@ -72,7 +72,29 @@ platform_rules: []
 vendors:
   - slug: google-cloud
     name: Google Cloud
-    products: [cloud-run, cloud-sql, cloud-logging, cloud-monitoring, gke, cloud-dns, pub-sub]
+    # Google's own product titles, as status.cloud.google.com and its incident feed spell them: matching is
+    # exact after case-folding, so a slug like `cloud-run` matched nothing. Chosen from the surfaces this
+    # organisation's projects actually use (2026-10-09): Cloud Run and the Cloud Functions behind some of
+    # its services, Cloud SQL, the monitoring and logging the connector reads, the secrets, buckets and
+    # VPC access its revisions mount, the registries its images come from, and IAM. GKE, Cloud DNS and
+    # Pub/Sub are absent because no project in scope uses them. "Multiple Products" is deliberately not
+    # listed: it is a heading, and an incident filed under it is matched on the products it names.
+    products:
+      - Cloud Run
+      - Google Cloud Functions
+      - Google Cloud SQL
+      - Cloud Monitoring
+      - Cloud Logging
+      - Secret Manager
+      - Google Cloud Storage
+      - Virtual Private Cloud (VPC)
+      - Artifact Registry
+      - Container Registry
+      - Identity and Access Management
+    # The locations this organisation runs in, as Google spells them. An incident stating locations,
+    # none of them listed, is dropped as location_not_allowlisted; one stating none (most mail) is kept.
+    # `eu` and `europe` cover the EU multi-region the images are served from, whichever id a notice uses.
+    locations: [europe-west1, global, eu, europe]
     hosts: [googleapis.com, run.app, cloudfunctions.net]
     senders: [CloudPlatform-noreply@google.com]
 

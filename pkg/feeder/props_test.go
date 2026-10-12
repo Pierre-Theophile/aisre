@@ -4,6 +4,7 @@ package feeder_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -224,4 +225,44 @@ func mustStruct(t *testing.T, fields map[string]any) *structpb.Struct {
 		t.Fatalf("structpb.NewStruct: %v", err)
 	}
 	return s
+}
+
+// A list a real estate makes too large is kept to whole values under the graph's limit, with the rest
+// counted, instead of the ingest refusing the event (the first live GCP run, 2026-10-09: a service's
+// environment entries were 7,101 bytes).
+func TestStrsBoundedKeepsWholeValuesUnderTheLimit(t *testing.T) {
+	t.Parallel()
+	values := make([]string, 300)
+	for i := range values {
+		values[i] = fmt.Sprintf("FEATURE_%03d=fp_0123456789abcdef0123456789abcdef", i)
+	}
+	built, err := feeder.NewProps().StrsBounded("env", values...).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := built.Fields["env"].MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > feeder.MaxPropertyBytes {
+		t.Fatalf("the bounded list encodes to %d bytes, over the %d limit", len(raw), feeder.MaxPropertyBytes)
+	}
+	kept := len(built.Fields["env"].GetListValue().GetValues())
+	omitted := int(built.Fields["env"+feeder.OmittedSuffix].GetNumberValue())
+	if kept == 0 || omitted == 0 || kept+omitted != len(values) {
+		t.Errorf("kept %d, omitted %d; want both non-zero and accounting for all %d", kept, omitted, len(values))
+	}
+	for i, v := range built.Fields["env"].GetListValue().GetValues() {
+		if v.GetStringValue() != values[i] {
+			t.Fatalf("value %d is %q, want %q whole and in order", i, v.GetStringValue(), values[i])
+		}
+	}
+
+	small, err := feeder.NewProps().StrsBounded("env", values[:3]...).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present := small.Fields["env"+feeder.OmittedSuffix]; present {
+		t.Error("an omitted count on a list that fits")
+	}
 }

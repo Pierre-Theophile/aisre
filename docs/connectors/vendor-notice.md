@@ -37,6 +37,20 @@ Each field is also length-bounded. A `product` longer than the bound is not trun
 **unextracted record** naming the field, because a paragraph in a product field is a parser that has
 gone wrong and truncating it would hide that.
 
+### Products under a heading, and locations
+
+Google files most outages under the heading **Multiple Products** and names the products in
+`affected_products`. The incident reader keeps the heading as the product and the named products as
+alternates; the allowlist tries the alternates when the heading is not allowlisted, and attributes the
+change to the product that matched. The heading itself is never allowlisted: it would admit every
+outage Google has.
+
+A vendor entry may list the `locations` the organisation runs in, as the vendor spells them
+(`europe-west1`, `global`). An announcement that states locations, none of them listed, is dropped as
+`location_not_allowlisted`; one that states none — most mail — is kept. Precision has to come from
+here: once a vendor is within an investigation's reach, its changes are ranked on time alone, so an
+outage in a region the organisation does not use would compete with the one that matters.
+
 ## 2. What is never stored
 
 **The body is never written to disk. Not redacted, not truncated, not hashed — never written**

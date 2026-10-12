@@ -3,6 +3,8 @@
 package gcp_test
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -210,4 +212,34 @@ func claimed(claims []gcpfeeder.Claim, namespace, value string) bool {
 		}
 	}
 	return false
+}
+
+// A service with more variable names than the graph's property limit holds still produces claims:
+// the names are kept whole up to the bound and the rest are counted, rather than the ingest refusing
+// the whole run over one attribute (the first live run, 2026-10-09).
+func TestManyEnvVarNamesAreBoundedNotRefused(t *testing.T) {
+	t.Parallel()
+	names := make([]string, 0, 400)
+	for i := range 400 {
+		names = append(names, fmt.Sprintf("FEATURE_FLAG_NUMBER_%04d", i))
+	}
+	claims := (gcpfeeder.Service{Project: "p", Region: "r", Name: "storefront"}).Claims("", names)
+	joined := claims[0].Attrs[gcpfeeder.AttrEnvVarNames]
+	if len(joined) > gcpfeeder.MaxEnvVarNamesBytes || joined == "" {
+		t.Fatalf("joined names are %d bytes, want 1..%d", len(joined), gcpfeeder.MaxEnvVarNamesBytes)
+	}
+	kept := len(strings.Fields(joined))
+	omitted, err := strconv.Atoi(claims[0].Attrs[gcpfeeder.AttrEnvVarNamesOmitted])
+	if err != nil || kept+omitted != 400 {
+		t.Errorf("kept %d and omitted %q; want them to account for all 400 names", kept, claims[0].Attrs[gcpfeeder.AttrEnvVarNamesOmitted])
+	}
+	for _, name := range strings.Fields(joined) {
+		if !strings.HasPrefix(name, "FEATURE_FLAG_NUMBER_") || len(name) != len("FEATURE_FLAG_NUMBER_0000") {
+			t.Fatalf("a name was cut mid-way: %q", name)
+		}
+	}
+	few := (gcpfeeder.Service{Project: "p", Region: "r", Name: "s"}).Claims("", names[:3])
+	if _, present := few[0].Attrs[gcpfeeder.AttrEnvVarNamesOmitted]; present {
+		t.Error("an omitted count on a service whose names all fit")
+	}
 }

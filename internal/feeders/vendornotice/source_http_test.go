@@ -460,3 +460,36 @@ func TestAChangelogThatAnswersAnErrorIsAGap(t *testing.T) {
 		t.Fatal("a 500 was read as a changelog with nothing in it")
 	}
 }
+
+// Google files most outages under the heading "Multiple Products" and names the products and the
+// locations beside it. Both are read, so the allowlist can match the products this organisation uses
+// and its locations can drop an outage elsewhere.
+func TestAnIncidentUnderMultipleProductsCarriesItsProductsAndLocations(t *testing.T) {
+	t.Parallel()
+
+	url := serve(t, `[{"id":"inc-9","service_name":"Multiple Products","begin":"2026-08-20T15:40:00Z",
+		"end":"2026-08-20T19:20:00Z","status_impact":"SERVICE_OUTAGE",
+		"affected_products":[{"title":"Cloud Run"},{"title":"Google Cloud SQL"},{"title":"Cloud Run"}],
+		"currently_affected_locations":[],
+		"previously_affected_locations":[{"id":"global"},{"id":"us-west1"}]},
+		{"id":"inc-10","service_name":"","begin":"2026-08-21T10:00:00Z","affected_products":[{"title":"Artifact Registry"}]}]`)
+
+	batch, err := changelogSource(t, url, vn.FormatGCPIncidents, vn.ChangelogOptions{}).Read(context.Background())
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(batch.Announcements) != 2 {
+		t.Fatalf("got %d announcements: %+v", len(batch.Announcements), batch)
+	}
+	first := batch.Announcements[0]
+	if first.Product != "Multiple Products" || strings.Join(first.AlternateProducts, ",") != "Cloud Run,Google Cloud SQL" {
+		t.Errorf("product %q alternates %v, want the heading and the named products once each", first.Product, first.AlternateProducts)
+	}
+	if strings.Join(first.Locations, ",") != "global,us-west1" || strings.Join(first.AffectedResources, ",") != "global,us-west1" {
+		t.Errorf("locations %v, affected %v; want the stated locations as both", first.Locations, first.AffectedResources)
+	}
+	// An incident with no heading but named products is attributed to the first, not unextracted.
+	if second := batch.Announcements[1]; second.Product != "Artifact Registry" {
+		t.Errorf("an incident naming a product under no heading was placed as %+v", second)
+	}
+}

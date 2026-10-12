@@ -4,6 +4,7 @@ package gcpx
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -38,18 +39,31 @@ import (
 // the scope is the ONLY control there is (research §8.1, item 2).
 
 // The scopes this integration asks for, narrowest first.
+//
+// `cloud-platform.read-only` is NOT accepted by every API it reads, which is the finding of the first
+// live run (2026-10-09): Cloud Run, GKE and Compute Engine answer ACCESS_TOKEN_SCOPE_INSUFFICIENT to a
+// token holding only it. Each publishes its own read-only scope in its discovery document, and those
+// are requested alongside. Cloud SQL Admin publishes NONE — only `cloud-platform` and
+// `sqlservice.admin` — which is CloudSQLTokenSource's business and the one exception below.
 const (
-	// ScopeCloudPlatformReadOnly covers reads across every GCP service this integration touches
-	// and authorises no write anywhere. It is the scope to mint the credential with.
+	// ScopeCloudPlatformReadOnly covers reads on the APIs that accept it (Cloud Logging, Cloud DNS,
+	// Resource Manager) and authorises no write anywhere.
 	ScopeCloudPlatformReadOnly = "https://www.googleapis.com/auth/cloud-platform.read-only"
-	// ScopeMonitoringRead and ScopeLoggingRead are narrower still, and are requested alongside so
-	// that a deployment which prefers per-service scopes over the umbrella one also works.
+	// ScopeMonitoringRead and ScopeLoggingRead are narrower still. Cloud Monitoring does not accept
+	// the umbrella read-only scope at all, so monitoring.read is required, not a preference.
 	ScopeMonitoringRead = "https://www.googleapis.com/auth/monitoring.read"
 	ScopeLoggingRead    = "https://www.googleapis.com/auth/logging.read"
+	// ScopeRunReadOnly, ScopeContainerReadOnly and ScopeComputeReadOnly are the per-API read-only
+	// scopes for the three APIs that refuse the umbrella one.
+	ScopeRunReadOnly       = "https://www.googleapis.com/auth/run.readonly"
+	ScopeContainerReadOnly = "https://www.googleapis.com/auth/container.read-only"
+	ScopeComputeReadOnly   = "https://www.googleapis.com/auth/compute.readonly"
+	// ScopeServiceHealthReadOnly is Service Health's own read-only scope (T191).
+	ScopeServiceHealthReadOnly = "https://www.googleapis.com/auth/servicehealth.readonly"
 
-	// ScopeCloudPlatform is NOT requested. It is named here so that tokenscope.go can recognise it
-	// in a token the environment supplied, and say plainly that the credential is wider than this
-	// integration asked for.
+	// ScopeCloudPlatform is requested for ONE client: Cloud SQL Admin's, which publishes no read-only
+	// scope (CloudSQLTokenSource). The gate's credential never carries it, and tokenscope.go still
+	// reports it as wider than asked wherever the environment supplied it.
 	ScopeCloudPlatform = "https://www.googleapis.com/auth/cloud-platform"
 )
 
@@ -58,6 +72,10 @@ var ReadOnlyScopes = []string{
 	ScopeCloudPlatformReadOnly,
 	ScopeMonitoringRead,
 	ScopeLoggingRead,
+	ScopeRunReadOnly,
+	ScopeContainerReadOnly,
+	ScopeComputeReadOnly,
+	ScopeServiceHealthReadOnly,
 }
 
 // ErrNoCredential is returned when a transport is built without a credential. It is a distinct error
@@ -113,6 +131,45 @@ func (c *Credential) Gate() *GateResult {
 		return nil
 	}
 	return c.gate
+}
+
+// CloudSQLTokenSource mints, from the same proved credential, the one token this integration holds
+// with `cloud-platform`: Cloud SQL Admin's.
+//
+// Cloud SQL Admin publishes no read-only OAuth scope — its discovery document lists `cloud-platform`
+// and `sqlservice.admin`, nothing else — so no token it accepts is bounded by scope. What bounds this
+// one is IAM alone: the custom role grants `cloudsql.instances.list` and `.get` and nothing else
+// (docs/connectors/gcp.md §1), and layer 1 has just tested that the principal holds no Cloud SQL write
+// permission. It is the reason UnverifiableAreas names Cloud SQL's scope, so an operator asserts it
+// with the rest rather than discovering it here.
+//
+// It is a separate token source rather than a scope added to the credential, so that the wider scope
+// reaches exactly one client: every other API is still read with a token that cannot write.
+func (c *Credential) CloudSQLTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
+	if c == nil || c.creds == nil {
+		return nil, ErrNoCredential
+	}
+	var (
+		wider *google.Credentials
+		err   error
+	)
+	if len(c.creds.JSON) > 0 {
+		// The type is the proved credential's own, read back from it: the same principal the gate
+		// tested, with a wider scope, and not whatever a JSON document might claim to be.
+		var kind struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(c.creds.JSON, &kind); err != nil {
+			return nil, fmt.Errorf("gcpx: reading the proved credential's type: %w", err)
+		}
+		wider, err = google.CredentialsFromJSONWithType(ctx, c.creds.JSON, google.CredentialsType(kind.Type), ScopeCloudPlatform)
+	} else {
+		wider, err = google.FindDefaultCredentials(ctx, ScopeCloudPlatform)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("gcpx: minting the Cloud SQL Admin token: %w", err)
+	}
+	return wider.TokenSource, nil
 }
 
 // FindDefaultCredential discovers the credential through Application Default Credentials, with the
