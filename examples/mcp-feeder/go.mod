@@ -3,8 +3,8 @@ module github.com/Pierre-Theophile/aisre/examples/mcp-feeder
 go 1.27
 
 require (
-	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/Pierre-Theophile/aisre v0.0.0-00010101000000-000000000000
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -48,7 +48,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
