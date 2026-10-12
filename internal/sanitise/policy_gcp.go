@@ -359,6 +359,21 @@ func addGCPPayloadRows(p *Policy) {
 		"decommissionDate.year", "decommissionDate.month", "decommissionDate.day")
 	drop("gcp.function_runtimes.runtimes[].displayName", "a display name; the contract drops every one (FR-135), and the runtime id says the same")
 
+	// --- gcp.health_events: Service Health (T191) -----------------------------------------------
+	const h = "gcp.health_events.events[]"
+	healthEvent := "projects/{project:label}/locations/global/events/{notice_id}"
+	tmpl(h+".name", healthEvent, "the event's resource name")
+	tmpl(h+".parentEvent", healthEvent, "the event this one was merged into")
+	keepAll(h, whyEnum, "category", "detailedCategory", "state", "detailedState", "relevance")
+	keepAll(h, whyTime, "startTime", "endTime", "updateTime", "nextUpdateTime")
+	drop(h+".title", "prose Google wrote about the incident")
+	drop(h+".description", "the same")
+	drop(h+".updates[].*", "each update's prose")
+	keep(h+".eventImpacts[].product.productName", "Google's own product name; matched against the vendor allowlist")
+	keep(h+".eventImpacts[].product.id", "Google's own product id")
+	drop(h+".eventImpacts[].product.previousDisplayNames[]", "a product's former display names; display names are dropped (FR-135) and nothing reads them")
+	tmpl(h+".eventImpacts[].location.locationName", "{region}", "a location id; anything not shaped like one is dropped")
+
 	// --- gcp.poll: the poller's own marker -------------------------------------------------------
 	keepAll("gcp.poll", "the poll's outcome and the closed vocabularies its checkpoint carries", "outcome", "stop_reason", "deferred[]")
 	// The reason is rewritten by the GCP pre-pass before this table sees it (feeders/gcp

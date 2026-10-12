@@ -46,9 +46,13 @@ SA=sre-agent-reader@$P.iam.gserviceaccount.com
 # the custom Cloud SQL role, file content in docs/connectors/gcp.md §1
 gcloud iam roles create sreAgentCloudSqlReader --project=$P --file=sre-agent-cloudsql-reader.yaml
 for r in roles/run.viewer roles/logging.viewer roles/monitoring.viewer \
-         roles/container.clusterViewer projects/$P/roles/sreAgentCloudSqlReader; do
+         roles/container.clusterViewer roles/servicehealth.viewer \
+         projects/$P/roles/sreAgentCloudSqlReader; do
   gcloud projects add-iam-policy-binding $P --member=serviceAccount:$SA --role=$r
 done
+# Service Health (T191) reads the incidents Google relates to the project; enable its API first:
+#   gcloud services enable servicehealth.googleapis.com --project=$P
+# The Cloud Functions runtime catalogue (T192) needs no role at all.
 # P3 areas, only if load balancers and DNS are in scope:
 #   roles/compute.viewer (not compute.networkViewer, which writes) and roles/dns.reader
 ```

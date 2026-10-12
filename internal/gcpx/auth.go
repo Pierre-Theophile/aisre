@@ -58,6 +58,8 @@ const (
 	ScopeRunReadOnly       = "https://www.googleapis.com/auth/run.readonly"
 	ScopeContainerReadOnly = "https://www.googleapis.com/auth/container.read-only"
 	ScopeComputeReadOnly   = "https://www.googleapis.com/auth/compute.readonly"
+	// ScopeServiceHealthReadOnly is Service Health's own read-only scope (T191).
+	ScopeServiceHealthReadOnly = "https://www.googleapis.com/auth/servicehealth.readonly"
 
 	// ScopeCloudPlatform is requested for ONE client: Cloud SQL Admin's, which publishes no read-only
 	// scope (CloudSQLTokenSource). The gate's credential never carries it, and tokenscope.go still
@@ -73,6 +75,7 @@ var ReadOnlyScopes = []string{
 	ScopeRunReadOnly,
 	ScopeContainerReadOnly,
 	ScopeComputeReadOnly,
+	ScopeServiceHealthReadOnly,
 }
 
 // ErrNoCredential is returned when a transport is built without a credential. It is a distinct error

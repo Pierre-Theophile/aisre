@@ -528,7 +528,7 @@ func (c *Changelog) readGCPIncidents(body []byte) (Batch, error) {
 		if end, ok := parseInstant(incident.End); ok {
 			window.End = end
 		}
-		locations := incident.locations()
+		locations := RegionsOf(incident.locations())
 		batch.Announcements = append(batch.Announcements, Announcement{
 			Vendor: c.vendor, Product: product, Kind: KindIncident,
 			Window: window, NoticeID: firstNonEmpty(incident.ID, incident.Number),
@@ -574,4 +574,27 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// zoneSuffix is a GCP zone's letter after its region: `europe-west1-c`.
+var zoneSuffix = regexp.MustCompile(`^([a-z]+-[a-z]+[0-9]+)-[a-z]$`)
+
+// RegionsOf reduces vendor location ids to distinct regions, in first-seen order: a zone becomes its
+// region, everything else is kept. An incident lists every zone it touched, so a global one names a
+// hundred locations, and the affected-resource bound (MaxAffectedResources) is there to refuse a
+// vendor-wide notice read as a specific one, not to drop an outage for being listed by zone.
+func RegionsOf(ids []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if m := zoneSuffix.FindStringSubmatch(id); m != nil {
+			id = m[1]
+		}
+		if id != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
 }

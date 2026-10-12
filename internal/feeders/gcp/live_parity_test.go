@@ -4,6 +4,7 @@ package gcp_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -84,6 +85,14 @@ func TestLiveGraphParity(t *testing.T) {
 			t.Fatalf("live read: %v", err)
 		}
 		raw = append(raw, p)
+	}
+	for _, p := range raw {
+		if p.Kind == gcpfeeder.PayloadPollMarker {
+			// The outcome and the failed reads' operation names, never their error text.
+			var m gcpfeeder.PollMarker
+			_ = json.Unmarshal(p.Bytes, &m)
+			t.Logf("poll: %s %s", m.Outcome, gcpfeeder.FailedReads(m.Reason))
+		}
 	}
 	if !usage.ReadOnlyHonoured() || len(usage.StateChanges()) != 0 {
 		t.Fatalf("the live cycle changed state: %v", usage.StateChanges())

@@ -60,6 +60,10 @@ import (
 // DefaultPollInterval is the time between cycle starts when none is configured.
 const DefaultPollInterval = 5 * time.Minute
 
+// HealthEventWindow is how far back each cycle reads Service Health events, by update time. Every
+// cycle re-reads it, which is idempotent, and catches an incident Google updates late.
+const HealthEventWindow = 30 * 24 * time.Hour
+
 // DefaultAuditLookback is how far back the first cycle reads the audit stream.
 const DefaultAuditLookback = time.Hour
 
@@ -340,6 +344,21 @@ func (p *Poller) cycle(ctx context.Context) error {
 					if err := c.pushJSON(PayloadFunctionRuntimes, map[string]any{"runtimes": runtimes}); err != nil {
 						return err
 					}
+				}
+			}
+		}
+	}
+	if t.Notices != nil {
+		for _, project := range scope.Projects {
+			events, err := paced(c, func() ([]json.RawMessage, error) {
+				return t.Notices.ListHealthEvents(ctx, project, start.Add(-HealthEventWindow))
+			})
+			if err := c.failed("servicehealth.events.list "+project, err); err != nil {
+				return err
+			}
+			if err == nil {
+				if err := c.pushJSON(PayloadHealthEvents, map[string]any{"events": events}); err != nil {
+					return err
 				}
 			}
 		}

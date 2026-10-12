@@ -734,8 +734,9 @@ type NoticeReader interface {
 	// ListFunctionRuntimes reads the Cloud Functions runtime catalogue for one region, with each
 	// runtime's stage and its deprecation and decommission dates.
 	ListFunctionRuntimes(ctx context.Context, project, region string) ([]json.RawMessage, error)
-	// ListHealthEvents reads the Service Health events Google relates to the project.
-	ListHealthEvents(ctx context.Context, project string) ([]json.RawMessage, error)
+	// ListHealthEvents reads the Service Health events Google relates to the project, updated at or
+	// after since.
+	ListHealthEvents(ctx context.Context, project string, since time.Time) ([]json.RawMessage, error)
 }
 
 // noticePageLimit bounds a paged read, for the same reason MaxSQLOperationPages does.
@@ -773,12 +774,19 @@ func (n *liveNotices) ListFunctionRuntimes(ctx context.Context, project, region 
 		"/locations/"+url.PathEscape(region)+"/runtimes", "runtimes")
 }
 
-func (n *liveNotices) ListHealthEvents(ctx context.Context, project string) ([]json.RawMessage, error) {
+// ListHealthEvents asks for the documented maximum page (100) and filters on `update_time`, the one
+// time field the API filters by: a project's history runs to hundreds of events, ten to a page by
+// default, and an unfiltered read is one no poll finishes.
+func (n *liveNotices) ListHealthEvents(ctx context.Context, project string, since time.Time) ([]json.RawMessage, error) {
 	if err := n.lt.budget.Issue(ctx, gcpx.OpServiceHealthEventsList, project, ""); err != nil {
 		return nil, err
 	}
+	query := url.Values{
+		"pageSize": {"100"},
+		"filter":   {`update_time>="` + since.UTC().Format(time.RFC3339) + `"`},
+	}
 	return pagedJSON(ctx, n.narrow, "https://servicehealth.googleapis.com/v1/projects/"+url.PathEscape(project)+
-		"/locations/global/events", "events")
+		"/locations/global/events?"+query.Encode(), "events")
 }
 
 // pagedJSON drains a list endpoint, bounded, returning the items of field.
@@ -788,7 +796,11 @@ func pagedJSON(ctx context.Context, client *http.Client, endpoint, field string)
 	for page := 0; page < noticePageLimit; page++ {
 		target := endpoint
 		if token != "" {
-			target += "?pageToken=" + url.QueryEscape(token)
+			separator := "?"
+			if strings.Contains(endpoint, "?") {
+				separator = "&"
+			}
+			target += separator + "pageToken=" + url.QueryEscape(token)
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 		if err != nil {
