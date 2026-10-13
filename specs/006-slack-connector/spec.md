@@ -196,8 +196,8 @@ empty, double-delivered and shuffled.
 **Acceptance Scenarios**:
 
 1. **Given** a recording, **Then** it contains no message text, no display or real name, no email,
-   no avatar URL and no user id in clear; channel ids and user ids are HMAC-pseudonymised with the
-   corpus key; channel names are kept only where they match the naming rule, slug included.
+   no avatar URL and no user id; channel and workspace ids are HMAC-pseudonymised with the corpus
+   key; channel names are kept only where they match the naming rule, slug included.
 2. **Given** the private audit's incident list, **When** the intake rule is replayed over the
    recorded channel history, **Then** the result is compared incident by incident and every miss
    or false declaration is listed (SC-001, SC-002).
@@ -224,9 +224,10 @@ Stories 1–4 depends on it.
 
 ### Edge Cases
 
-- **Channel renamed after declaration**: the key does not move; the new name is a later fact with
-  its own instant (002 FR-007). A rename *into* a matching name declares at the rename instant,
-  with the creation instant recorded as a claim.
+- **Channel renamed after declaration**: the key does not move and nothing is re-declared (002
+  FR-007). A channel renamed *into* a matching name is declared at its creation instant if it was
+  created inside the horizon, and not at all otherwise: Slack's channel list carries no rename
+  instant to declare at. (Amended 2026-10-13.)
 - **Channel archived and unarchived**: archive is evidence of resolution, not a retraction; it
   never closes or deletes the investigation. Unarchive does not re-declare.
 - **Test and drill channels**: names matching the rule but carrying a configured exclusion marker
@@ -272,9 +273,10 @@ Stories 1–4 depends on it.
 - **FR-006**: The declaration MUST carry: source `slack:<team id>`, place = channel id, declared
   instant = channel creation instant (or rename instant, Edge Cases), severity and title as parsed,
   the declaring identity of FR-052, and zero or more targets with provenance `parsed_from_declaration`.
-- **FR-007**: The rule MUST NOT guess a target. A slug token becomes a target only if it resolves to
-  exactly one graph entity by the published resolution query at the declared instant; otherwise no
-  target is emitted and the token is kept in the title.
+- **FR-007**: The rule MUST NOT guess a target. A slug token becomes a target only if the operator's
+  service map names it (`--service <token>=<ns>=<value>`); otherwise no target is emitted and the
+  token is kept in the title. (Amended 2026-10-13, ADR-0011 item 4: a feeder does not read the graph,
+  so the "published resolution query at the declared instant" became operator configuration.)
 - **FR-008**: The default rule (`sev-channel@1`) MUST match `sev<N>-<YYYY>-<MM>-<DD>-<slug>` and be
   replaceable by configuration. Exclusion markers MUST be configurable.
 - **FR-009**: The idempotency key MUST be `intake.DeclarationKey(source, channel id, declared
@@ -331,12 +333,15 @@ Stories 1–4 depends on it.
 
 - **FR-050**: Sanitisation MUST happen in the connector before anything touches disk, under a
   `slack` policy table in `internal/sanitise`: message text dropped; display names, real names,
-  emails, avatars, status text dropped; user ids, channel ids and team ids HMAC-pseudonymised with
-  the corpus key; channel names kept only when they match the naming rule.
+  emails, avatars, status text dropped; channel ids and team ids HMAC-pseudonymised with the corpus
+  key; user ids (the channel creator) **dropped**, because the project's sanitiser never hashes people;
+  channel names kept only when they match the naming rule.
 - **FR-051**: The public repository MUST carry only synthetic structural twins; real recordings live
   in the private corpus behind its four gates.
-- **FR-052**: The declaring identity MUST be `slack:<team>/<HMAC(user id)>` unless an operator has
-  configured a mapping to an OIDC subject for that user; it MUST NOT be derived from an email.
+- **FR-052**: The declaring identity MUST be `slack:<team>/u_<HMAC(team, user id)>`, under a key the
+  deployment holds (`SRE_AGENT_SLACK_IDENTITY_KEY`, never the corpus key), unless an operator has
+  configured a mapping to an OIDC subject for that user; it MUST NOT be derived from an email. A
+  replayed recording, which carries no creator, names `slack:<team>/creator-not-recorded`.
 - **FR-053**: Fixtures MUST cover: a matching channel, a test channel, a renamed channel, a channel
   discovered late, two channels for one incident, a private channel, an injection attempt, and a
   delivery that edits in place.

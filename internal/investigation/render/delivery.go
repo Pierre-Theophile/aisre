@@ -77,6 +77,9 @@ var (
 	// rather than a fallback: defaulting an unrecognised transport to the one that happens to
 	// be compiled in is how a write path ends up somewhere nobody chose (T116, constitution VII).
 	ErrUnknownSink = errors.New("unknown report-delivery sink")
+	// ErrSinkNeedsConnector is a published sink this package does not build, because building it
+	// would mean importing a transport (ADR-0005 D8). The caller builds it from its connector.
+	ErrSinkNeedsConnector = errors.New("report-delivery sink is built by its connector")
 )
 
 // Credential is the scoped secret a delivery uses.
@@ -365,12 +368,18 @@ func Deliver(ctx context.Context, sink Sink, cred *Credential, req DeliveryReque
 // SinkLog is the id of the v1 transport, the recorded no-op driver.
 const SinkLog = "log"
 
+// SinkSlack is the Slack transport's id (ADR-0011 item 5).
+const SinkSlack = "slack"
+
 // PublishedSinks lists every transport this build admits, in the order an operator sees them.
 //
 // It is a list rather than a plugin mechanism. A transport is a connector, a connector is
 // reviewed, and a build that has not had one reviewed into it has exactly one: the log sink that
 // posts nothing (ADR-0005 D8).
-func PublishedSinks() []string { return []string{SinkLog} }
+//
+// `slack` (feature 006, ADR-0011 item 5) is published here and built by its connector,
+// internal/investigation/render/slacksink: this package still imports no transport.
+func PublishedSinks() []string { return []string{SinkLog, SinkSlack} }
 
 // NewSink resolves a sink id to a transport, or refuses.
 //
@@ -382,6 +391,9 @@ func NewSink(id string, logger *slog.Logger) (Sink, error) {
 	switch id {
 	case SinkLog:
 		return NewLogSink(logger), nil
+	case SinkSlack:
+		return nil, fmt.Errorf("%w: the %q sink is built by its connector (slacksink.New), not by "+
+			"this package, which imports no transport", ErrSinkNeedsConnector, id)
 	default:
 		return nil, fmt.Errorf("%w %q; this build publishes %s", ErrUnknownSink, id,
 			strings.Join(PublishedSinks(), ", "))

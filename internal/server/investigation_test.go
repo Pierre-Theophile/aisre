@@ -672,3 +672,70 @@ func TestGetReturnsTheLedger(t *testing.T) {
 		}
 	}
 }
+
+// TestDeclareOnBehalfIsAConnectorsRight is 006 G3 (ADR-0011): a principal may name a declaring
+// identity other than its own only when it is a feeder scoped to the declaration's origin system,
+// and then both the declarer and the requester are recorded.
+func TestDeclareOnBehalfIsAConnectorsRight(t *testing.T) {
+	ts := newInvestigationServer(t)
+	ctx := context.Background()
+	mint := func(name, source string, roles ...Role) string {
+		t.Helper()
+		token, err := ts.issuer.MintFor(DevUser{Name: name, Roles: roles, SourceID: source})
+		if err != nil {
+			t.Fatalf("mint %s: %v", name, err)
+		}
+		return token
+	}
+	declare := func(token, declarer string) (*investigationv1.Investigation, error) {
+		stream, err := ts.client(token).Declare(ctx, connect.NewRequest(&investigationv1.DeclareRequest{
+			Declaration: &investigationv1.Symptom{
+				OriginSystem: "slack:T0ACME", OriginRef: "slack:T0ACME/C0SEV2",
+				FiredAt: timestamppb.New(investigationAt), Title: "sev2-2026-10-14-checkout",
+				Severity: "sev2", DeclaringIdentity: declarer,
+			},
+		}))
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = stream.Close() }()
+		var last *investigationv1.Investigation
+		for stream.Receive() {
+			last = stream.Msg()
+		}
+		return last, stream.Err()
+	}
+	denied := func(name string, err error) {
+		t.Helper()
+		var connectErr *connect.Error
+		if !errors.As(err, &connectErr) || connectErr.Code() != connect.CodePermissionDenied {
+			t.Errorf("%s: error = %v, want PermissionDenied", name, err)
+		}
+	}
+
+	// An investigator declares as themselves, and only as themselves.
+	alice := mint("alice", "", RoleInvestigator)
+	if _, err := declare(alice, ts.tokenPrincipal(t, "alice")); err != nil {
+		t.Errorf("declaring as oneself: %v", err)
+	}
+	_, err := declare(alice, "slack:T0ACME/U0BOB")
+	denied("an investigator naming someone else", err)
+
+	// A feeder for another source cannot speak for this one.
+	other := mint("pagerduty-feeder", "pagerduty:acme", RoleInvestigator, RoleFeeder)
+	_, err = declare(other, "slack:T0ACME/U0BOB")
+	denied("a feeder scoped to another source", err)
+
+	// The Slack feeder declares for the channel's creator; both are on the record.
+	feeder := mint("slack-feeder", "slack:T0ACME", RoleInvestigator, RoleFeeder)
+	last, err := declare(feeder, "slack:T0ACME/U0BOB")
+	if err != nil {
+		t.Fatalf("the scoped feeder declaring on behalf: %v", err)
+	}
+	if got := last.GetSymptoms()[0].GetDeclaringIdentity(); got != "slack:T0ACME/U0BOB" {
+		t.Errorf("declaring identity = %q, want the channel creator", got)
+	}
+	if got := last.GetRequester(); got != ts.tokenPrincipal(t, "slack-feeder") {
+		t.Errorf("requester = %q, want the feeder's own principal", got)
+	}
+}

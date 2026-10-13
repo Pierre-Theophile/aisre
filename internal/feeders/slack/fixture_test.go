@@ -334,8 +334,26 @@ func TestDeclarerMapping(t *testing.T) {
 	if err := f.Run(t.Context(), source.NewSliceSource(payloads), emit.NewMemoryEmitter(f.Describe())); err != nil {
 		t.Fatal(err)
 	}
-	if len(opened) != 2 || opened[0].Declarer != "oidc|morgan" || opened[1].Declarer != "slack:T0TWIN/U0OTHER" {
-		t.Errorf("declarers %+v", opened)
+	if len(opened) != 2 || opened[0].Declarer != "oidc|morgan" ||
+		opened[1].Declarer != "slack:T0TWIN/"+slack.UnrecordedCreator {
+		t.Errorf("without a key: declarers %+v", opened)
+	}
+
+	// With the deployment's identity key, an unmapped creator is a stable workspace pseudonym and
+	// never the raw user id (FR-052).
+	key := []byte("0123456789abcdef0123456789abcdef")
+	opts.IdentityKey = key
+	opened = nil
+	f, _ = slack.New(opts)
+	if err := f.Run(t.Context(), source.NewSliceSource(payloads), emit.NewMemoryEmitter(f.Describe())); err != nil {
+		t.Fatal(err)
+	}
+	want := "slack:T0TWIN/" + slack.DeclarerPseudonym(key, "T0TWIN", "U0OTHER")
+	if len(opened) != 2 || opened[1].Declarer != want || strings.Contains(want, "U0OTHER") {
+		t.Errorf("with a key: declarers %+v, want %s", opened, want)
+	}
+	if slack.DeclarerPseudonym(key, "T0OTHER", "U0OTHER") == slack.DeclarerPseudonym(key, "T0TWIN", "U0OTHER") {
+		t.Error("one user in two workspaces is one pseudonym")
 	}
 }
 

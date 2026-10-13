@@ -4,6 +4,9 @@ package slack
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -63,8 +66,15 @@ type Options struct {
 	// not in the map is never a target.
 	Services map[string]*graphv1.Ref
 	// People maps a Slack user id to the deployment's OIDC subject, where an operator has stated
-	// one (FR-052). Unmapped, the declaring identity is the Slack user, scoped to the workspace.
+	// one (FR-052). Unmapped, the declaring identity is the Slack user's workspace-scoped
+	// pseudonym under IdentityKey.
 	People map[string]string
+	// IdentityKey is the deployment's key for declaring-identity pseudonyms (FR-052): an unmapped
+	// creator is `slack:<team>/u_<HMAC(team, user id)>`, stable across restarts for as long as the
+	// key is. It is the deployment's own secret, never the corpus key: a recording drops the
+	// creator instead (FR-050). Without it, an unmapped creator is recorded as
+	// UnrecordedCreator — never as the raw user id.
+	IdentityKey []byte
 	// Horizon and LateAfter: see the defaults.
 	Horizon   time.Duration
 	LateAfter time.Duration
@@ -345,7 +355,19 @@ func (f *Feeder) declarer(team, creator string) string {
 	if subject, ok := f.opts.People[creator]; ok && strings.TrimSpace(subject) != "" {
 		return subject
 	}
-	return SourceIDPrefix + team + "/" + creator
+	if len(f.opts.IdentityKey) == 0 {
+		return SourceIDPrefix + team + "/" + UnrecordedCreator
+	}
+	return SourceIDPrefix + team + "/" + DeclarerPseudonym(f.opts.IdentityKey, team, creator)
+}
+
+// DeclarerPseudonym is the workspace-scoped pseudonym of a Slack user (FR-052): `u_` and the first
+// 16 hex digits of HMAC-SHA256(key, team "/" user). The team is inside the MAC so that one person in
+// two workspaces is two identities, as Slack itself has them.
+func DeclarerPseudonym(key []byte, team, user string) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(team + "/" + user))
+	return "u_" + hex.EncodeToString(mac.Sum(nil))[:16]
 }
 
 // skip records why a channel is not declared. It is per channel, not per poll: a test channel listed

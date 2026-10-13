@@ -14,6 +14,7 @@ import (
 
 	"github.com/Pierre-Theophile/aisre/internal/slackx"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder/testkit"
 )
 
 // TestSurfaceIsTheFourPublishedReads is FR-002/FR-003 in its cheapest form: the reader can issue
@@ -146,4 +147,10 @@ func TestMessageInstant(t *testing.T) {
 	if got := slackx.SlackTS(time.Unix(1791976323, 250_000)); got != "1791976323.000250" {
 		t.Errorf("SlackTS = %s", got)
 	}
+}
+
+// TestSurfaceMatchesThePublishedPage is FR-003: the operation table an administrator approves and the
+// list this package enforces are one list.
+func TestSurfaceMatchesThePublishedPage(t *testing.T) {
+	testkit.AssertSurfaceMatchesPage(t, slackx.Surface, "../../docs/connectors/slack.md")
 }

@@ -36,10 +36,10 @@ in `internal/feeders/slack/`, sink in `internal/investigation/render/slacksink/`
 
 **Purpose**: the decision record and the operation list, so nothing can issue an unpublished call.
 
-- [ ] T001 [P] Write `docs/decisions/ADR-0011-shared-contract-additions-for-006.md`: source kind `slack`, sink id `slack`, worker name `chat`, rule namespace `slack/`, the declaring-identity form, the doorbell-only credential kind (G1, G2), with the alternatives rejected in research R2 and R4; fixture: unit
-- [ ] T002 [P] Create `internal/slackx/doc.go` and `internal/feeders/slack/doc.go` stating scope and read-only posture (FR-001–FR-004); fixture: unit
-- [ ] T003 Write `internal/slackx/operations.go`: the six-row operation list of contracts §2 and a test that the client exposes no other method (FR-002, FR-003); fixture: unit
-- [ ] T004 [P] Write `docs/connectors/slack.md`: the two apps, their manifests and scopes (research R2), the optional invite workflow (R3), marked **not yet enforced** until T010; fixture: unit
+- [X] T001 [P] Write `docs/decisions/ADR-0011-shared-contract-additions-for-006.md`: source kind `slack`, sink id `slack`, worker name `chat`, rule namespace `slack/`, the declaring-identity form, the doorbell-only credential kind (G1, G2), with the alternatives rejected in research R2 and R4; fixture: unit
+- [X] T002 [P] Create `internal/slackx/doc.go` and `internal/feeders/slack/doc.go` stating scope and read-only posture (FR-001–FR-004); fixture: unit. Note: Done as the package comments of `internal/slackx/client.go` and `internal/feeders/slack/feeder.go`.
+- [X] T003 Write `internal/slackx/operations.go`: the six-row operation list of contracts §2 and a test that the client exposes no other method (FR-002, FR-003); fixture: unit. Note: Done as `slackx.Surface` (four GETs) plus the sink's own three-operation list; `docs/connectors/slack.md` is compared with the code by a test.
+- [X] T004 [P] Write `docs/connectors/slack.md`: the two apps, their manifests and scopes (research R2), the optional invite workflow (R3), marked **not yet enforced** until T010; fixture: unit
 
 **Checkpoint**: ADR-0011 exists before any shared name is used in code.
 
@@ -50,11 +50,11 @@ in `internal/feeders/slack/`, sink in `internal/investigation/render/slacksink/`
 **Purpose**: the four gaps, the client and the sanitiser. Blocks every story.
 
 - [ ] T005 [P] Add the doorbell-only credential kind to `pkg/feeder/credential.go`: opens a socket, refused by every read and write path, `String` redacted (G2); fixture: unit
-- [ ] T006 [P] Add `feeder:declare` to the token scopes and restrict naming a `declaring_identity` other than the caller's to it, in `internal/server/investigation.go`; test that requester and declarer are both recorded (G3, FR-052); fixture: unit
-- [ ] T007 [P] Write `internal/sanitise/policy_slack.go`: drop text, names, emails, avatars, status; HMAC user, channel and team ids; keep channel names only on rule match (G4, FR-050); fixture: unit with canaries
+- [X] T006 [P] Add `feeder:declare` to the token scopes and restrict naming a `declaring_identity` other than the caller's to it, in `internal/server/investigation.go`; test that requester and declarer are both recorded (G3, FR-052); fixture: unit. Note: Done with the existing `feeder` role scoped to the declaration's origin system instead of a new scope (ADR-0011 item 2).
+- [X] T007 [P] Write `internal/sanitise/policy_slack.go`: drop text, names, emails, avatars, status; HMAC user, channel and team ids; keep channel names only on rule match (G4, FR-050); fixture: unit with canaries. Note: Creators are dropped, not hashed: the sanitiser never hashes people.
 - [ ] T008 Implement `internal/slackx/client.go`: the five Web API methods, cursor pagination, per-method tier budgets through `pkg/feeder/quota`, `Retry-After`, priority intake > reading > delivery (FR-014, research R7); fixture: unit against a recorded double
-- [ ] T009 Implement `internal/slackx/record.go`: record and replay of sanitised responses through `pkg/feeder/record`, sanitising before write (FR-050); fixture: unit
-- [ ] T010 Run `CheckReadOnly` on the reader bot token at start, refusing any write scope by name, and mark `docs/connectors/slack.md` enforced (FR-002, US5 scenario 1); fixture: unit
+- [X] T009 Implement `internal/slackx/record.go`: record and replay of sanitised responses through `pkg/feeder/record`, sanitising before write (FR-050); fixture: unit. Note: Done through `deployrecord.Tee` with `slack.PreparePayload`, as the other feeders record.
+- [X] T010 Run `CheckReadOnly` on the reader bot token at start, refusing any write scope by name, and mark `docs/connectors/slack.md` enforced (FR-002, US5 scenario 1); fixture: unit
 
 **Checkpoint**: a read-only, rate-limited, recordable Slack client exists, and no story has started.
 
@@ -67,13 +67,13 @@ in `internal/feeders/slack/`, sink in `internal/investigation/render/slacksink/`
 **Independent Test**: `fixtures/slack-intake-01` — three channels created (match, test, no match);
 exactly one declaration, keyed on the channel id, pinned to creation.
 
-- [ ] T011 [P] [US1] Implement `internal/feeders/slack/rule.go`: rule struct, `slack/sev-channel@1` per research R5, severity map, exclusion markers, `RuleRef` on every parsed field (FR-005, FR-008); fixture: unit table of names incl. typos and tests
-- [ ] T012 [P] [US1] Implement `internal/feeders/slack/resolve.go`: slug token → target only on a unique resolution at the declared instant, else no target (FR-007); fixture: unit over `fixtures/baseline-topology-01`
-- [ ] T013 [US1] Implement `internal/feeders/slack/feeder.go`: poll, match, build `DeclareRequest` exactly as `investigate declare` does, `DeclarationKey(slack:<team>, channel id, created)` (FR-006, FR-009, FR-010); fixture: `slack-intake-01`
-- [ ] T014 [US1] Checkpoint and backfill: horizon (default 24 h), review mode for late discovery, true creation instant (FR-012, US1 scenarios 4–5); fixture: `slack-intake-late-01`
-- [ ] T015 [US1] Renames and archives: a rename is a later fact, a rename into a match declares at the rename instant, archive is evidence and never retracts (Edge Cases, US1 scenario 2); fixture: `slack-intake-rename-01`
+- [X] T011 [P] [US1] Implement `internal/feeders/slack/rule.go`: rule struct, `slack/sev-channel@1` per research R5, severity map, exclusion markers, `RuleRef` on every parsed field (FR-005, FR-008); fixture: unit table of names incl. typos and tests
+- [X] T012 [P] [US1] Implement `internal/feeders/slack/resolve.go`: slug token → target only on a unique resolution at the declared instant, else no target (FR-007); fixture: unit over `fixtures/baseline-topology-01`. Note: Replaced by the operator's service map (`--service`): feeders do not read the graph (ADR-0011 item 4).
+- [X] T013 [US1] Implement `internal/feeders/slack/feeder.go`: poll, match, build `DeclareRequest` exactly as `investigate declare` does, `DeclarationKey(slack:<team>, channel id, created)` (FR-006, FR-009, FR-010); fixture: `slack-intake-01`
+- [X] T014 [US1] Checkpoint and backfill: horizon (default 24 h), review mode for late discovery, true creation instant (FR-012, US1 scenarios 4–5); fixture: `slack-intake-late-01`
+- [X] T015 [US1] Renames and archives: a rename is a later fact, a rename into a match declares at the rename instant, archive is evidence and never retracts (Edge Cases, US1 scenario 2); fixture: `slack-intake-rename-01`. Note: A rename never re-declares; a channel renamed into a match is declared only if it was created inside the horizon, at its creation instant.
 - [ ] T016 [P] [US1] Socket Mode doorbell in `internal/slackx/socket.go` through `pkg/feeder/doorbell`: events ring an early poll and carry nothing (FR-011); fixture: `slack-doorbell-forged-01`
-- [ ] T017 [US1] `aisre feed slack` in `internal/cli/feed_slack.go`: live, `--record`, `--replay`, `--interval`, `--rule`, `--horizon`, `--doorbell`; fixture: unit
+- [X] T017 [US1] `aisre feed slack` in `internal/cli/feed_slack.go`: live, `--record`, `--replay`, `--interval`, `--rule`, `--horizon`, `--doorbell`; fixture: unit. Note: `--rule` and `--doorbell` follow with T016.
 - [ ] T018 [US1] Fixtures `fixtures/slack-intake-01`, `-late-01`, `-rename-01`, `-two-channels-01`, `-private-01` as synthetic twins, each passing `aisre fixture verify` (replay, double, shuffle) (FR-053, SC-004); fixture: themselves
 
 **Checkpoint**: the MVP trigger works on recordings; delivery still goes to `LogSink`.
@@ -87,11 +87,11 @@ exactly one declaration, keyed on the channel id, pinned to creation.
 **Independent Test**: the sink against a recorded Slack double — post, update, no-op on identical
 body; `report_deliveries.update_count = 1`.
 
-- [ ] T019 [P] [US2] Slack renderer for the FR-057c sections: `header`, `section`, `context` blocks only, deep links as mrkdwn, truncation at a section boundary with a link (FR-023, FR-025, research R6); fixture: unit goldens
-- [ ] T020 [US2] Implement `internal/investigation/render/slacksink/sink.go`: scope and target checks, post / update / no-op by digest, outcome `failed` with Slack's error code, never an error into the lifecycle (FR-020–FR-022, ADR-0007 confinements 1–5); fixture: unit against a recorded double
-- [ ] T021 [US2] Default target is the investigation's own `slack:` origin, otherwise `not_configured` (FR-021, US2 scenario 5); fixture: unit
-- [ ] T022 [US2] Strip `@here`, `@channel`, `@everyone` using `internal/sanitise` group-mention matching (FR-024); fixture: unit
-- [ ] T023 [US2] Register `slack` in `render.NewSink` / `PublishedSinks` and accept a reporter token on `investigate report --deliver --sink slack` (FR-020); fixture: unit
+- [X] T019 [P] [US2] Slack renderer for the FR-057c sections: `header`, `section`, `context` blocks only, deep links as mrkdwn, truncation at a section boundary with a link (FR-023, FR-025, research R6); fixture: unit goldens. Note: Section and context blocks; the report's own header is its first line.
+- [X] T020 [US2] Implement `internal/investigation/render/slacksink/sink.go`: scope and target checks, post / update / no-op by digest, outcome `failed` with Slack's error code, never an error into the lifecycle (FR-020–FR-022, ADR-0007 confinements 1–5); fixture: unit against a recorded double. Note: An unchanged body is re-sent as `chat.update` rather than skipped: the request carries no previous digest.
+- [X] T021 [US2] Default target is the investigation's own `slack:` origin, otherwise `not_configured` (FR-021, US2 scenario 5); fixture: unit
+- [X] T022 [US2] Strip `@here`, `@channel`, `@everyone` using `internal/sanitise` group-mention matching (FR-024); fixture: unit. Note: Done in the sink (`slacksink.Neutralise`), which escapes Slack's control characters as well.
+- [X] T023 [US2] Register `slack` in `render.NewSink` / `PublishedSinks` and accept a reporter token on `investigate report --deliver --sink slack` (FR-020); fixture: unit. Note: `render.NewSink` refuses `slack` and the CLI builds the sink, so `render` imports no transport.
 - [ ] T024 [US2] Cross-credential tests: the reporter credential cannot read, the reader credential cannot deliver, both fail before any network call (US2 scenario 3); fixture: unit
 - [ ] T025 [US2] Fixture `fixtures/slack-delivery-edit-01`: conclude, reopen, conclude again; one post, one update (FR-053, SC-004); fixture: itself
 

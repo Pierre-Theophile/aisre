@@ -10,24 +10,28 @@ detail.
 | source kind | `slack` |
 | source id | `slack:<team id>` |
 | place id (declaration key, element 2) | `<channel id>` |
-| origin ref (human-facing) | `slack:<team id>/<channel id>`, plus the permalink |
+| origin system | `slack:<team id>` (equals the source id, so the reporter credential is minted for it) |
+| origin ref (human-facing) | `slack:<team id>/<channel id>` |
 | sink id | `slack` |
 | worker name | `chat` |
 | rule id namespace | `slack/` (e.g. `slack/sev-channel@1`) |
-| declaring identity | `slack:<team id>/<HMAC(user id)>`, or the operator-mapped OIDC subject |
+| declaring identity | the operator-mapped OIDC subject, else `slack:<team id>/u_<HMAC(team, user id)>` under the deployment's identity key; `slack:<team id>/creator-not-recorded` on a replay |
 
 ## 2. Operation list (read-only proof)
 
 | method | app | used by | condition |
 |---|---|---|---|
+| `auth.test` | reader | intake | at start: workspace and scopes for the read-only gate |
 | `conversations.list` (public, non-archived and archived) | reader | intake | always |
 | `conversations.info` | reader | intake, chat | always |
 | `conversations.history` | reader | chat | chat worker enabled, member |
 | `apps.connections.open` + WebSocket | reader (app token) | doorbell | doorbell enabled |
+| `auth.test` | reporter | sink | once per process, before the first write: workspace and scopes |
 | `chat.postMessage` | reporter | sink | first delivery |
 | `chat.update` | reporter | sink | later deliveries |
 
-No other method is compiled into `internal/slackx`. A test asserts the list.
+No other method is compiled into `internal/slackx` (reader) or `slacksink` (reporter); tests assert
+both lists, and `docs/connectors/slack.md` is compared with the reader's in both directions.
 
 ## 3. Intake
 
@@ -37,7 +41,9 @@ No other method is compiled into `internal/slackx`. A test asserts the list.
   declared: match the configured rule; skip with a reason on exclusion; otherwise send
   `DeclareRequest` with `origin = DECLARED`, `transport = human_declared`, `fired_at = creation
   instant`, `idempotency_key = DeclarationKey("slack:<team>", channel id, fired_at)`, and targets
-  with provenance `PARSED_FROM_DECLARATION` and `rule_id = slack/<rule>@<version>`.
+  from the operator's service map with provenance `PARSED_FROM_DECLARATION` and
+  `rule_id = slack/<rule>@<version>`. The feeder's graph token must be scoped to `slack:<team>` to
+  name the declarer (ADR-0011 item 2).
 - Channels first seen after `fired_at + 5 min` are declared in review mode.
 
 ## 4. Sink
@@ -48,7 +54,8 @@ No other method is compiled into `internal/slackx`. A test asserts the list.
 2. Target: `req.TargetRef` if set, else the investigation's origin channel if it is `slack:`; else
    `not_configured`.
 3. No previous reference → `chat.postMessage`; previous reference and changed digest →
-   `chat.update`; unchanged digest → no call, outcome `delivered`.
+   `chat.update` (an unchanged body is re-sent; the request carries no previous digest); a deleted
+   message is posted again.
 4. Any error → outcome `failed` with Slack's error code; never returned as a Go error into the
    lifecycle.
 
@@ -56,7 +63,7 @@ No other method is compiled into `internal/slackx`. A test asserts the list.
 
 | capability | in | out |
 |---|---|---|
-| `chat_mentions` | term class (published vocabulary), window | count, first and last instant, distinct pseudonymous authors, up to 10 permalinks, coverage |
+| `chat_mentions` | term class (published vocabulary), window | count, first and last instant, number of distinct participants, up to 10 permalinks, coverage |
 | `chat_timeline` | window, bucket (≥ 1 min) | per-bucket message and participant counts, coverage |
 
 Term classes (`slack/terms@1`): `rollback`, `deploy`, `flag`, `restart`, `scale`, `vendor`,
