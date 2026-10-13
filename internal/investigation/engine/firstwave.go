@@ -210,7 +210,7 @@ func (e *Engine) RunFirstWave(ctx context.Context) (*FirstWave, error) {
 		// ones.
 		if len(refusals[i]) > 0 {
 			refused := refusals[i][0]
-			if err := e.recordUntested(plan.hypothesisID, refused.Request, refused.Refused); err != nil {
+			if err := e.recordUntested(plan.hypothesisID, refused.Request, budgetReason(refused.Refused)); err != nil {
 				return nil, err
 			}
 			wave.Untested = append(wave.Untested, plan.hypothesisID)

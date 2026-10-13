@@ -50,6 +50,10 @@ type Subject struct {
 	Origin string
 	// Priority is the alert priority the budget profile is selected from.
 	Priority string
+	// ChatChannel is the declared incident channel, "slack:<team>/<channel>", when the incident
+	// was declared in one. It is the only channel the chat family may read, and the family is
+	// offered only when it is set (006 FR-030, FR-031).
+	ChatChannel string
 }
 
 // Validate refuses a subject the engine could not investigate.
@@ -213,12 +217,15 @@ func New(cfg Config) (*Engine, error) {
 		return nil, err
 	}
 
+	catalogue := NewCatalogue()
+	catalogue.SetChatChannel(cfg.Subject.ChatChannel)
+
 	return &Engine{
 		id:            cfg.InvestigationID,
 		subject:       cfg.Subject,
 		at:            cfg.Instants,
 		ledger:        book,
-		catalogue:     NewCatalogue(),
+		catalogue:     catalogue,
 		trajectory:    NewTrajectory(clock),
 		budget:        cfg.Budget,
 		workers:       cfg.Workers,

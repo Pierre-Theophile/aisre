@@ -232,6 +232,15 @@ func isEmpty(resp *investigationv1.AlgebraResponse) bool {
 		return len(body.Knowledge.GetItems()) == 0
 	case *investigationv1.Digest_Onset:
 		return body.Onset.GetUnavailable()
+	case *investigationv1.Digest_ChatMentions:
+		return body.ChatMentions.GetMessages() == 0
+	case *investigationv1.Digest_ChatTimeline:
+		for _, b := range body.ChatTimeline.GetBuckets() {
+			if b.GetMessages() > 0 {
+				return false
+			}
+		}
+		return true
 	default:
 		// No body at all. For a telemetry answer that is as empty as it gets. The graph
 		// worker's answers legitimately land here — a subgraph travels in Response.Graph

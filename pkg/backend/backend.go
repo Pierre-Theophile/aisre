@@ -104,6 +104,9 @@ const (
 	// FamilyKnowledge is graph-scoped retrieval over durable knowledge, served by the
 	// knowledge worker.
 	FamilyKnowledge Family = "knowledge"
+	// FamilyChat is digests of the incident's own chat channel, served by the chat worker and
+	// offered to the investigator only when that worker is registered (algebra 1.1.0, ADR-0012).
+	FamilyChat Family = "chat"
 	// FamilyUnknown is a term name the algebra does not publish.
 	FamilyUnknown Family = ""
 )
@@ -135,6 +138,10 @@ var termFamilies = map[string]Family{
 
 	// knowledge: scoped by the graph, never over telemetry.
 	"knowledge_search": FamilyKnowledge,
+
+	// chat (1.1.0): the incident channel only, counts and instants, never text.
+	"chat_mentions": FamilyChat,
+	"chat_timeline": FamilyChat,
 }
 
 // FamilyOf returns the family a published term belongs to, or FamilyUnknown when the algebra
@@ -247,10 +254,10 @@ func (d Description) Validate() error {
 	if d.AlgebraVersion == "" {
 		return fmt.Errorf("backend %s declares no algebra version; a term of an unknown version is refused, not guessed at", d.Name)
 	}
-	if d.AlgebraVersion != AlgebraVersion {
+	if !SupportsAlgebraVersion(d.AlgebraVersion) {
 		return Reject(ReasonUnknownAlgebraVersion,
-			"backend %s implements algebra version %s; this build publishes %s, and a world recorded against another version could not be replayed against this one",
-			d.Name, d.AlgebraVersion, AlgebraVersion)
+			"backend %s implements algebra version %s; this build implements %v, and a world recorded against another version could not be replayed against this one",
+			d.Name, d.AlgebraVersion, supportedAlgebraVersions)
 	}
 	return d.validateCapabilities()
 }

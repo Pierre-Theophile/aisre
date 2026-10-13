@@ -200,6 +200,9 @@ func (r *Redactor) Apply(resp *Response) error {
 		// An onset digest carries an instant, an uncertainty and the method's parameters.
 		// There is nothing in it to redact, which is the strongest argument for computing it
 		// backend-side.
+	case *investigationv1.Digest_ChatMentions, *investigationv1.Digest_ChatTimeline:
+		// Counts, instants and permalinks. No message text and no person crosses the boundary:
+		// the chat worker counts participants and never names them (006 FR-033).
 	}
 	return r.CheckDeclared(resp)
 }

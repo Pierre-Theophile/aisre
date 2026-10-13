@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -348,6 +349,18 @@ func renderDigestBody(d *investigationv1.Digest) string {
 		for _, item := range body.Knowledge.GetItems() {
 			fmt.Fprintf(&b, "  %.6f  %s\n", item.GetScore(), item.GetCitation())
 		}
+	case *investigationv1.Digest_ChatMentions:
+		m := body.ChatMentions
+		fmt.Fprintf(&b, "  %s (%s): %d messages, %d participants, %d instruction-like\n",
+			m.GetTermClass(), m.GetVocabulary(), m.GetMessages(), m.GetParticipants(), m.GetInstructionLike())
+		for _, link := range m.GetPermalinks() {
+			fmt.Fprintf(&b, "  %s\n", link)
+		}
+	case *investigationv1.Digest_ChatTimeline:
+		for _, bucket := range body.ChatTimeline.GetBuckets() {
+			fmt.Fprintf(&b, "  %s  %d messages  %d participants\n",
+				bucket.GetStart().AsTime().Format("15:04:05"), bucket.GetMessages(), bucket.GetParticipants())
+		}
 	default:
 		fmt.Fprintf(&b, "  (no digest body)\n")
 	}
@@ -422,6 +435,19 @@ func termFromArgs(termName, args string) (*engine.Term, error) {
 			return nil, fmt.Errorf("--args for %s: %w", termName, err)
 		}
 		return engine.KnowledgeSearch(msg.GetEntityIds(), msg.GetQueryTerms(), msg.GetLimit()), nil
+	case engine.TermChatMentions:
+		msg := &investigationv1.ChatMentionsTerm{}
+		if err := unmarshal.Unmarshal([]byte(args), msg); err != nil {
+			return nil, fmt.Errorf("--args for %s: %w", termName, err)
+		}
+		return engine.ChatMentions(msg.GetChannelRef(), msg.GetTermClass(), msg.GetWindow()), nil
+	case engine.TermChatTimeline:
+		msg := &investigationv1.ChatTimelineTerm{}
+		if err := unmarshal.Unmarshal([]byte(args), msg); err != nil {
+			return nil, fmt.Errorf("--args for %s: %w", termName, err)
+		}
+		return engine.ChatTimeline(msg.GetChannelRef(), msg.GetWindow(),
+			time.Duration(msg.GetBucketSeconds())*time.Second), nil
 	default:
 		return nil, engine.OutsideAlgebra(termName)
 	}

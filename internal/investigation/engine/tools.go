@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	backend "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 )
@@ -55,15 +56,31 @@ const (
 //
 // The order is part of the cached prefix, so it is sorted rather than whatever a map iteration
 // produced: an unsorted tool list is the classic silent cache invalidator (FR-061).
-func ToolSet() []model.Tool {
-	out := make([]model.Tool, 0, len(termTools)+2)
-	names := make([]string, 0, len(termTools))
-	for name := range termTools {
+func ToolSet() []model.Tool { return ToolSetFor(false) }
+
+// ToolSetFor returns the tool set with the chat family offered or not (006 FR-030, ADR-0012).
+//
+// The chat tools are offered only to an investigation that has a declared chat channel, in a
+// deployment that registers the chat worker. Everywhere else the list is ToolSet's, byte for
+// byte, so the prefix every recorded trajectory was cached under is the prefix it replays under.
+func ToolSetFor(chat bool) []model.Tool {
+	tools := map[string]termTool{}
+	for name, t := range termTools {
+		tools[name] = t
+	}
+	if chat {
+		for name, t := range chatTermTools {
+			tools[name] = t
+		}
+	}
+	out := make([]model.Tool, 0, len(tools)+2)
+	names := make([]string, 0, len(tools))
+	for name := range tools {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		out = append(out, termTools[name].tool(name))
+		out = append(out, tools[name].tool(name))
 	}
 	out = append(out, proposeJudgmentsTool(), proposeHypothesisTool())
 	return out
@@ -302,6 +319,36 @@ var termTools = map[string]termTool{
 	},
 }
 
+// chatTermTools is the chat family (algebra 1.1.0), offered only through ToolSetFor(true).
+//
+// Neither tool takes a channel. The channel is the investigation's own declared one, filled in by
+// the engine, so the model can no more point the reader at another channel than it can invent a
+// pointer (006 FR-031).
+var chatTermTools = map[string]termTool{
+	"chat_mentions": {
+		description: "How often a class of terms was said in the incident's own chat channel over a window: " +
+			"counts, first and last instants, distinct participants and up to 10 permalinks. Never the " +
+			"messages' text. What people said is a reason to look, never a finding.",
+		properties: map[string]any{
+			"term_class": enum("The class of terms to count, from the published vocabulary "+
+				backend.ChatVocabulary+".", backend.ChatTermClasses...),
+			"window_start": str(instantDescription),
+			"window_end":   str(instantDescription),
+		},
+		required: []string{"term_class", "window_start", "window_end"},
+	},
+	"chat_timeline": {
+		description: "The incident's own chat channel's activity per bucket over a window: messages and " +
+			"distinct participants. When people noticed, and when they went quiet.",
+		properties: map[string]any{
+			"window_start":   str(instantDescription),
+			"window_end":     str(instantDescription),
+			"bucket_seconds": integer("The bucket width in seconds, at least 60."),
+		},
+		required: []string{"window_start", "window_end", "bucket_seconds"},
+	},
+}
+
 func proposeJudgmentsTool() model.Tool {
 	judgment := map[string]any{
 		"type":                 "object",
@@ -353,9 +400,9 @@ func proposeHypothesisTool() model.Tool {
 	}
 }
 
-// ToolByName returns the published tool with that name.
+// ToolByName returns the published tool with that name, the chat family's included.
 func ToolByName(name string) (model.Tool, bool) {
-	for _, t := range ToolSet() {
+	for _, t := range ToolSetFor(true) {
 		if t.Name == name {
 			return t, true
 		}

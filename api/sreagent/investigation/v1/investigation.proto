@@ -83,8 +83,22 @@ message KnowledgeSearchTerm {
   uint32 limit = 3;
 }
 
+// ---- The chat family (algebra 1.1.0; 006 FR-030–FR-035, ADR-0012): digests of the incident's
+//      own chat channel. Never message text, never a name. The channel is the investigation's
+//      declared origin, filled in by the engine and never chosen by the model.
+message ChatMentionsTerm {
+  string channel_ref = 1;            // e.g. "slack:T0123/C0456": the investigation's origin
+  string term_class = 2;             // a class of the published vocabulary (slack/terms@1)
+  Window window = 3;
+}
+message ChatTimelineTerm {
+  string channel_ref = 1;
+  Window window = 2;
+  uint32 bucket_seconds = 3;         // at least 60
+}
+
 message AlgebraTerm {
-  string algebra_version = 1;        // e.g. "1.0.0"; a term of an unknown version is refused
+  string algebra_version = 1;        // the version that introduced the term: "1.0.0", or "1.1.0" for chat
   oneof term {
     GraphTerm graph = 10;
     CompareTerm compare = 11;
@@ -96,6 +110,8 @@ message AlgebraTerm {
     ExemplarsTerm exemplars = 17;
     DrillDownTerm drill_down = 18;
     KnowledgeSearchTerm knowledge_search = 19;
+    ChatMentionsTerm chat_mentions = 20;
+    ChatTimelineTerm chat_timeline = 21;
   }
 }
 
@@ -271,6 +287,20 @@ message KnowledgeItem {
 }
 message KnowledgeDigest { repeated KnowledgeItem items = 1; string scorer_version = 2; }
 
+// The chat family's answers. Counts, instants and permalinks; never text, never an author.
+message ChatMentionsDigest {
+  string term_class = 1;
+  string vocabulary = 2;                     // e.g. "slack/terms@1"
+  int64 messages = 3;                        // messages in the window matching the class
+  google.protobuf.Timestamp first_at = 4;
+  google.protobuf.Timestamp last_at = 5;
+  int64 participants = 6;                    // distinct authors among them; a count, never a list
+  repeated string permalinks = 7;            // at most 10, earliest first
+  int64 instruction_like = 8;                // matching messages that read as instructions to an agent (FR-035)
+}
+message ChatBucket { google.protobuf.Timestamp start = 1; int64 messages = 2; int64 participants = 3; }
+message ChatTimelineDigest { repeated ChatBucket buckets = 1; uint32 bucket_seconds = 2; }
+
 message Digest {
   oneof body {
     MetricDigest metric = 1;
@@ -281,6 +311,8 @@ message Digest {
     ErrorsByVersionDigest errors_by_version = 6;
     ExemplarDigest exemplars = 7;
     KnowledgeDigest knowledge = 8;
+    ChatMentionsDigest chat_mentions = 9;
+    ChatTimelineDigest chat_timeline = 10;
   }
   Coverage coverage = 20;                 // mandatory
   Truncated truncation = 21;

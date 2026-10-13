@@ -57,6 +57,24 @@ type Catalogue struct {
 	// span query over an edge has to name the edge's own type, and guessing `calls` for an edge
 	// the graph calls `depends_on` asks a question no recording holds.
 	edgeTypes map[string]graphv1.EdgeType
+	// chatChannel is the investigation's own declared chat channel, "slack:<team>/<channel>", or
+	// empty. It is the only channel a chat term may name, and the engine, not the model, puts it
+	// there (006 FR-031).
+	chatChannel string
+}
+
+// SetChatChannel files the investigation's declared chat channel.
+func (c *Catalogue) SetChatChannel(ref string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.chatChannel = ref
+}
+
+// ChatChannel is the investigation's declared chat channel, or empty.
+func (c *Catalogue) ChatChannel() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.chatChannel
 }
 
 // NewCatalogue returns an empty catalogue.

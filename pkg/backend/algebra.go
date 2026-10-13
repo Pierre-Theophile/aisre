@@ -37,14 +37,82 @@ import (
 //     A world keyed by the spelling rather than the question would answer NOT_RECORDED to a
 //     request it in fact holds.
 
-// AlgebraVersion is the version of the published algebra this build implements. It is carried
-// on every term, recorded in every world index, and checked on load: a term of an unknown
-// version is refused rather than guessed at.
+// AlgebraVersion is the version of the published algebra this build implements. It is checked
+// on load: a term, a world or a backend of a version this build does not implement is refused
+// rather than guessed at.
 //
-// Adding a term is a MINOR bump and obliges a corresponding extension of every recorded world;
-// changing the meaning or the encoding of an existing term is a MAJOR bump, because it changes
-// every term key and therefore invalidates every world.
-const AlgebraVersion = "1.0.0"
+// Adding a term is a MINOR bump; changing the meaning or the encoding of an existing term is a
+// MAJOR bump, because it changes every term key and therefore invalidates every world.
+//
+// A term carries the version that **introduced** it (TermVersion), not the build's version
+// (ADR-0012). A MINOR bump adds questions and changes none, so a 1.0.0 term is the same question
+// at 1.1.0 and keeps the same key: every world recorded before the bump still answers it, and
+// a world only has to be extended for the terms it is meant to hold.
+const AlgebraVersion = "1.1.0"
+
+// BaseAlgebraVersion is the version the graph, telemetry and knowledge families were published
+// at. Every term outside the chat family carries it.
+const BaseAlgebraVersion = "1.0.0"
+
+// supportedAlgebraVersions is every version this build answers, oldest first. A MINOR bump
+// appends; a MAJOR bump replaces the list.
+var supportedAlgebraVersions = []string{BaseAlgebraVersion, AlgebraVersion}
+
+// SupportsAlgebraVersion reports whether this build implements version v.
+func SupportsAlgebraVersion(v string) bool {
+	for _, known := range supportedAlgebraVersions {
+		if v == known {
+			return true
+		}
+	}
+	return false
+}
+
+// termVersions is the version that introduced each term published after BaseAlgebraVersion.
+var termVersions = map[string]string{
+	TermChatMentions: "1.1.0",
+	TermChatTimeline: "1.1.0",
+}
+
+// TermVersion is the algebra version that introduced the named term, or "" for a name the
+// algebra does not publish.
+func TermVersion(name string) string {
+	if FamilyOf(name) == FamilyUnknown {
+		return ""
+	}
+	if v, ok := termVersions[name]; ok {
+		return v
+	}
+	return BaseAlgebraVersion
+}
+
+// VersionOf is the algebra version a set of terms needs: the newest version that introduced any
+// of them. It is what an investigation records as the algebra in force, computed from the terms
+// it was offered, so that an investigation offered no chat term is a 1.0.0 investigation.
+func VersionOf(names []string) string {
+	out := BaseAlgebraVersion
+	for _, name := range names {
+		if v := TermVersion(name); v != "" && versionLess(out, v) {
+			out = v
+		}
+	}
+	return out
+}
+
+// versionLess compares two published versions. They are all MAJOR.MINOR.PATCH with no
+// pre-release part, so a numeric comparison of the three fields is the whole of it.
+func versionLess(a, b string) bool {
+	var am, an, ap, bm, bn, bp int
+	_, _ = fmt.Sscanf(a, "%d.%d.%d", &am, &an, &ap)
+	_, _ = fmt.Sscanf(b, "%d.%d.%d", &bm, &bn, &bp)
+	if am != bm {
+		return am < bm
+	}
+	if an != bn {
+		return an < bn
+	}
+	return ap < bp
+}
 
 // The published term names. They are the wire spelling used in a declaration, a `worker call`
 // invocation, a capability and a cost-class table, so they are constants rather than literals
@@ -84,6 +152,13 @@ const (
 
 	// TermKnowledgeSearch is graph-scoped retrieval over durable knowledge.
 	TermKnowledgeSearch = "knowledge_search"
+
+	// TermChatMentions is how often, when and by how many people a class of terms was said in the
+	// incident's own chat channel (algebra 1.1.0).
+	TermChatMentions = "chat_mentions"
+	// TermChatTimeline is the incident channel's message and participant counts per bucket
+	// (algebra 1.1.0).
+	TermChatTimeline = "chat_timeline"
 )
 
 // Rejection reason codes, published so that a refusal can be recorded, rendered and asserted
@@ -139,8 +214,8 @@ func OutsideAlgebra(asked string) error {
 		asked = "(no term)"
 	}
 	return Reject(ReasonOutsideAlgebra,
-		"%s is not a published algebra term; the algebra is telemetry %v, graph %v, knowledge %v, and nothing else may be asked of a worker",
-		asked, Terms(FamilyTelemetry), Terms(FamilyGraph), Terms(FamilyKnowledge))
+		"%s is not a published algebra term; the algebra is telemetry %v, graph %v, knowledge %v, chat %v, and nothing else may be asked of a worker",
+		asked, Terms(FamilyTelemetry), Terms(FamilyGraph), Terms(FamilyKnowledge), Terms(FamilyChat))
 }
 
 // TermNameOf returns the published name of a typed term, or "" when the term is empty. A term
@@ -168,6 +243,10 @@ func TermNameOf(term *investigationv1.AlgebraTerm) string {
 		return TermDrillDown
 	case *investigationv1.AlgebraTerm_KnowledgeSearch:
 		return TermKnowledgeSearch
+	case *investigationv1.AlgebraTerm_ChatMentions:
+		return TermChatMentions
+	case *investigationv1.AlgebraTerm_ChatTimeline:
+		return TermChatTimeline
 	default:
 		return ""
 	}
@@ -215,15 +294,21 @@ func Normalise(term *investigationv1.AlgebraTerm) (*investigationv1.AlgebraTerm,
 	if !ok { // unreachable: proto.Clone returns the dynamic type it was given.
 		return nil, fmt.Errorf("backend: normalise %s: clone returned a foreign type", name)
 	}
-	switch out.GetAlgebraVersion() {
-	case "":
-		out.AlgebraVersion = AlgebraVersion
-	case AlgebraVersion:
-	default:
+	// The canonical version of a term is the one that introduced it, so that one question has one
+	// key whichever supported version a caller stamped on it. A version older than the term is a
+	// term that version never published.
+	introduced := TermVersion(name)
+	switch v := out.GetAlgebraVersion(); {
+	case v == "":
+	case !SupportsAlgebraVersion(v):
 		return nil, Reject(ReasonUnknownAlgebraVersion,
-			"term %s carries algebra version %s; this build implements %s, and a term of an unknown version is refused rather than guessed at",
-			name, out.GetAlgebraVersion(), AlgebraVersion)
+			"term %s carries algebra version %s; this build implements %v, and a term of an unknown version is refused rather than guessed at",
+			name, v, supportedAlgebraVersions)
+	case versionLess(v, introduced):
+		return nil, Reject(ReasonUnknownAlgebraVersion,
+			"term %s carries algebra version %s, but it was introduced in %s", name, v, introduced)
 	}
+	out.AlgebraVersion = introduced
 
 	switch t := out.GetTerm().(type) {
 	case *investigationv1.AlgebraTerm_Graph:
@@ -246,6 +331,11 @@ func Normalise(term *investigationv1.AlgebraTerm) (*investigationv1.AlgebraTerm,
 	case *investigationv1.AlgebraTerm_KnowledgeSearch:
 		t.KnowledgeSearch.EntityIds = sortedSet(t.KnowledgeSearch.GetEntityIds())
 		t.KnowledgeSearch.QueryTerms = sortedSet(lowered(t.KnowledgeSearch.GetQueryTerms()))
+	case *investigationv1.AlgebraTerm_ChatMentions:
+		t.ChatMentions.TermClass = strings.ToLower(strings.TrimSpace(t.ChatMentions.GetTermClass()))
+		normaliseWindow(t.ChatMentions.GetWindow())
+	case *investigationv1.AlgebraTerm_ChatTimeline:
+		normaliseWindow(t.ChatTimeline.GetWindow())
 	}
 	return out, nil
 }

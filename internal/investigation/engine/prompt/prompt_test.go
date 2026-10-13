@@ -64,8 +64,24 @@ func TestThePrefixPublishesTheWholeAlgebra(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(prefix, sdk.AlgebraVersion) {
-		t.Errorf("the prefix does not state the algebra version %s it was generated from", sdk.AlgebraVersion)
+	if !strings.Contains(prefix, "version "+sdk.BaseAlgebraVersion) {
+		t.Errorf("the prefix does not state the algebra version %s it was generated from", sdk.BaseAlgebraVersion)
+	}
+	// Without the chat worker the chat family is not offered, and the prefix is the 1.0.0 one
+	// (ADR-0012).
+	for _, term := range sdk.Terms(sdk.FamilyChat) {
+		if strings.Contains(prefix, "`"+term+"`") {
+			t.Errorf("the prefix offers %s without the chat worker", term)
+		}
+	}
+	chat := prompt.PrefixFor(true)
+	for _, term := range sdk.Terms(sdk.FamilyChat) {
+		if !strings.Contains(chat, "`"+term+"`") {
+			t.Errorf("the chat prefix does not name %s", term)
+		}
+	}
+	if !strings.Contains(chat, "version "+sdk.AlgebraVersion) || prompt.DigestFor(true) == prompt.Digest() {
+		t.Error("the chat prefix does not state the algebra version that introduced its terms")
 	}
 }
 
@@ -145,8 +161,8 @@ func TestTheDigestContractKeepsTheSixOutcomesApart(t *testing.T) {
 func TestTheVersionMovesWithTheAlgebra(t *testing.T) {
 	t.Parallel()
 
-	if prompt.Version != sdk.AlgebraVersion {
-		t.Errorf("prompt version %s and algebra version %s have drifted apart",
-			prompt.Version, sdk.AlgebraVersion)
+	if prompt.Version != sdk.BaseAlgebraVersion || prompt.VersionFor(true) != sdk.AlgebraVersion {
+		t.Errorf("prompt versions %s/%s and algebra versions %s/%s have drifted apart",
+			prompt.Version, prompt.VersionFor(true), sdk.BaseAlgebraVersion, sdk.AlgebraVersion)
 	}
 }

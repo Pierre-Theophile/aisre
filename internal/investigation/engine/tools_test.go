@@ -4,6 +4,7 @@ package engine_test
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -204,8 +205,98 @@ func TestAPointerIsNeverComposed(t *testing.T) {
 	if req.GetTerm().GetCompare().GetPointer().GetSelector() == "" {
 		t.Error("the pointer did not travel into the term")
 	}
-	if req.GetTerm().GetAlgebraVersion() != engine.AlgebraVersion {
+	// A term carries the version that introduced it, so a 1.0.0 question keeps its 1.0.0 key
+	// (ADR-0012).
+	if req.GetTerm().GetAlgebraVersion() != sdk.BaseAlgebraVersion {
 		t.Errorf("the term carries algebra version %q", req.GetTerm().GetAlgebraVersion())
+	}
+}
+
+// TestTheChatFamilyIsOfferedOnlyWhenAsked (006 FR-030, ADR-0012): without the chat family the
+// tool set is the 1.0.0 set byte for byte, which is what keeps every recorded trajectory
+// replaying; with it, the two chat tools are added and nothing else moves.
+func TestTheChatFamilyIsOfferedOnlyWhenAsked(t *testing.T) {
+	t.Parallel()
+
+	base, _ := json.Marshal(engine.ToolSet())
+	off, _ := json.Marshal(engine.ToolSetFor(false))
+	if string(base) != string(off) {
+		t.Fatal("ToolSetFor(false) is not ToolSet()")
+	}
+	names := map[string]bool{}
+	for _, tool := range engine.ToolSetFor(true) {
+		names[tool.Name] = true
+		if _, takesChannel := tool.Properties["channel_ref"]; takesChannel {
+			t.Errorf("%s lets the model name a channel; the engine fills it", tool.Name)
+		}
+	}
+	for _, term := range sdk.Terms(sdk.FamilyChat) {
+		if !names[term] {
+			t.Errorf("the chat tool set does not offer %s", term)
+		}
+	}
+	if len(names) != len(engine.ToolNames())+len(sdk.Terms(sdk.FamilyChat)) {
+		t.Errorf("the chat tool set has %d tools, want the base set plus the chat family", len(names))
+	}
+	for _, name := range engine.ToolNames() {
+		if !names[name] {
+			t.Errorf("offering chat dropped %s", name)
+		}
+	}
+}
+
+// TestAChatCallReadsOnlyTheDeclaredChannel (006 FR-031): a chat call is unknown to an
+// investigation with no declared channel, names the declared one otherwise, and cannot name
+// another.
+func TestAChatCallReadsOnlyTheDeclaredChannel(t *testing.T) {
+	t.Parallel()
+
+	at := engine.Instants{
+		ValidAt:    time.Date(2026, 10, 14, 9, 30, 0, 0, time.UTC),
+		ObservedAt: time.Date(2026, 10, 14, 9, 30, 0, 0, time.UTC),
+	}
+	call := map[string]any{
+		"term_class":              "rollback",
+		"window_start":            "2026-10-14T09:00:00Z",
+		"window_end":              "2026-10-14T09:30:00Z",
+		"discriminating_question": "did anyone roll back?",
+	}
+
+	cat := engine.NewCatalogue()
+	_, err := engine.DecodeCall("chat_mentions", jsonInput(call), cat, at)
+	var unknown *engine.UnknownToolError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("a chat call without a declared channel: %v, want an unknown tool", err)
+	}
+
+	cat.SetChatChannel("slack:T0TWIN/C0SEV2")
+	req, err := engine.DecodeCall("chat_mentions", jsonInput(call), cat, at)
+	if err != nil {
+		t.Fatalf("chat_mentions: %v", err)
+	}
+	if got := req.GetTerm().GetChatMentions().GetChannelRef(); got != "slack:T0TWIN/C0SEV2" {
+		t.Errorf("channel %q, want the declared one", got)
+	}
+	if req.GetTerm().GetAlgebraVersion() != sdk.AlgebraVersion {
+		t.Errorf("a chat term carries %q, want %s", req.GetTerm().GetAlgebraVersion(), sdk.AlgebraVersion)
+	}
+
+	call["channel_ref"] = "slack:T0TWIN/C0OTHER"
+	if _, err := engine.DecodeCall("chat_mentions", jsonInput(call), cat, at); err == nil {
+		t.Error("the model named a channel and the call was accepted")
+	}
+
+	timeline, err := engine.DecodeCall("chat_timeline", jsonInput(map[string]any{
+		"window_start":            "2026-10-14T09:00:00Z",
+		"window_end":              "2026-10-14T09:30:00Z",
+		"bucket_seconds":          300,
+		"discriminating_question": "when did people notice?",
+	}), cat, at)
+	if err != nil {
+		t.Fatalf("chat_timeline: %v", err)
+	}
+	if timeline.GetTerm().GetChatTimeline().GetChannelRef() != "slack:T0TWIN/C0SEV2" {
+		t.Errorf("timeline channel %q", timeline.GetTerm().GetChatTimeline().GetChannelRef())
 	}
 }
 

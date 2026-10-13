@@ -570,6 +570,13 @@ func orderDigest(d *investigationv1.Digest) {
 			}
 			return items[i].GetDocumentId() < items[j].GetDocumentId()
 		})
+	case *investigationv1.Digest_ChatMentions:
+		sort.Strings(body.ChatMentions.Permalinks)
+	case *investigationv1.Digest_ChatTimeline:
+		buckets := body.ChatTimeline.GetBuckets()
+		sort.SliceStable(buckets, func(i, j int) bool {
+			return buckets[i].GetStart().AsTime().Before(buckets[j].GetStart().AsTime())
+		})
 	case *investigationv1.Digest_Exemplars, *investigationv1.Digest_Onset:
 		// Exemplars keep the order they were sampled in, which is chronological and is the
 		// order a person reads them in. An onset digest is one estimate.
@@ -646,6 +653,16 @@ func applyCaps(d *investigationv1.Digest) {
 			body.Knowledge.Items = body.Knowledge.GetItems()[:MaxKnowledgeItems]
 			noteCardinality(d, "items", n, MaxKnowledgeItems)
 		}
+	case *investigationv1.Digest_ChatMentions:
+		if n := len(body.ChatMentions.GetPermalinks()); n > MaxChatPermalinks {
+			body.ChatMentions.Permalinks = body.ChatMentions.GetPermalinks()[:MaxChatPermalinks]
+			noteCardinality(d, "permalinks", n, MaxChatPermalinks)
+		}
+	case *investigationv1.Digest_ChatTimeline:
+		if n := len(body.ChatTimeline.GetBuckets()); n > MaxChatBuckets {
+			body.ChatTimeline.Buckets = body.ChatTimeline.GetBuckets()[:MaxChatBuckets]
+			noteCardinality(d, "buckets", n, MaxChatBuckets)
+		}
 	case *investigationv1.Digest_Onset:
 		// An onset digest is one estimate. There is nothing to cap, which is why it is the
 		// cheapest thing in a world to review.
@@ -710,6 +727,16 @@ func halveLargest(d *investigationv1.Digest) bool {
 	case *investigationv1.Digest_Knowledge:
 		if n := len(body.Knowledge.GetItems()); n > 1 {
 			body.Knowledge.Items = body.Knowledge.GetItems()[:n/2]
+			return true
+		}
+	case *investigationv1.Digest_ChatMentions:
+		if n := len(body.ChatMentions.GetPermalinks()); n > 1 {
+			body.ChatMentions.Permalinks = body.ChatMentions.GetPermalinks()[:n/2]
+			return true
+		}
+	case *investigationv1.Digest_ChatTimeline:
+		if n := len(body.ChatTimeline.GetBuckets()); n > 1 {
+			body.ChatTimeline.Buckets = body.ChatTimeline.GetBuckets()[:n/2]
 			return true
 		}
 	}

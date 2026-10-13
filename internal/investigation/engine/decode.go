@@ -39,7 +39,10 @@ type Instants struct {
 // the catalogue.
 func DecodeCall(name string, input json.RawMessage, cat *Catalogue, at Instants) (*investigationv1.AlgebraRequest, error) {
 	if _, ok := termTools[name]; !ok {
-		return nil, &UnknownToolError{Name: name}
+		// A chat tool exists only for an investigation the chat family was offered to.
+		if _, chat := chatTermTools[name]; !chat || cat.ChatChannel() == "" {
+			return nil, &UnknownToolError{Name: name}
+		}
 	}
 
 	var common struct {
@@ -63,7 +66,9 @@ func DecodeCall(name string, input json.RawMessage, cat *Catalogue, at Instants)
 	if err != nil {
 		return nil, fmt.Errorf("tool %s: %w", name, err)
 	}
-	term.AlgebraVersion = AlgebraVersion
+	// A term carries the version that introduced it, so a question the 1.0.0 algebra already
+	// published keeps the key every recorded world holds it under (ADR-0012).
+	term.AlgebraVersion = backend.TermVersion(backend.TermName(term))
 
 	return &investigationv1.AlgebraRequest{
 		Term:                   term,
@@ -380,6 +385,38 @@ func decodeTerm(name string, input json.RawMessage, cat *Catalogue, at Instants)
 			return nil, err
 		}
 		return backend.DrillDown(handle), nil
+
+	case "chat_mentions":
+		var in struct {
+			TermClass   string `json:"term_class"`
+			WindowStart string `json:"window_start"`
+			WindowEnd   string `json:"window_end"`
+			termCommon
+		}
+		if err := decodeInput(input, &in); err != nil {
+			return nil, err
+		}
+		window, err := parseWindow("window_start", in.WindowStart, "window_end", in.WindowEnd)
+		if err != nil {
+			return nil, err
+		}
+		return backend.ChatMentions(cat.ChatChannel(), in.TermClass, window), nil
+
+	case "chat_timeline":
+		var in struct {
+			WindowStart   string `json:"window_start"`
+			WindowEnd     string `json:"window_end"`
+			BucketSeconds uint32 `json:"bucket_seconds"`
+			termCommon
+		}
+		if err := decodeInput(input, &in); err != nil {
+			return nil, err
+		}
+		window, err := parseWindow("window_start", in.WindowStart, "window_end", in.WindowEnd)
+		if err != nil {
+			return nil, err
+		}
+		return backend.ChatTimeline(cat.ChatChannel(), window, time.Duration(in.BucketSeconds)*time.Second), nil
 
 	case "knowledge_search":
 		var in struct {

@@ -25,16 +25,46 @@ import (
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 )
 
-// Version is the prompt contract's own version. It moves with the algebra: a change to either is
-// a change that must be evaluated (FR-061), and a confidence produced under one prefix is not
-// comparable with a confidence produced under another.
+// Version is the prompt contract's own version for the prefix every investigation is offered. It
+// moves with the algebra that prefix states: a change to either is a change that must be
+// evaluated (FR-061), and a confidence produced under one prefix is not comparable with a
+// confidence produced under another. The chat prefix states algebra 1.1.0 (VersionFor).
 const Version = "1.0.0"
+
+// VersionFor is the prompt version of PrefixFor(chat): the version of the algebra it states.
+func VersionFor(chat bool) string {
+	if !chat {
+		return Version
+	}
+	return sdk.AlgebraVersion
+}
 
 var (
 	once   sync.Once
 	prefix string
 	digest string
+
+	chatOnce   sync.Once
+	chatPrefix string
+	chatDigest string
 )
+
+// baseFamilies are the families every investigation is offered. The chat family is offered only
+// when the chat worker is registered (ADR-0012), so a deployment without it is handed exactly the
+// prefix it was handed before the chat family existed, to the byte.
+var baseFamilies = []familyGloss{
+	{sdk.FamilyGraph, "the topology and change history, answered from the event log"},
+	{sdk.FamilyTelemetry, "one telemetry backend, answered as a bounded digest"},
+	{sdk.FamilyKnowledge, "durable documents, scoped by the graph to the subgraph in play"},
+}
+
+var chatFamily = familyGloss{sdk.FamilyChat,
+	"the incident's own chat channel, answered as counts and instants; never what anyone wrote"}
+
+type familyGloss struct {
+	name  sdk.Family
+	gloss string
+}
 
 // Prefix returns the stable system prefix.
 //
@@ -53,16 +83,45 @@ func Digest() string {
 	return digest
 }
 
+// PrefixFor returns the prefix for an investigation offered the chat family or not. Each of the
+// two is memoised and stable to the byte; without chat it is Prefix().
+func PrefixFor(chat bool) string {
+	if !chat {
+		return Prefix()
+	}
+	chatOnce.Do(buildChat)
+	return chatPrefix
+}
+
+// DigestFor is the digest of PrefixFor(chat).
+func DigestFor(chat bool) string {
+	if !chat {
+		return Digest()
+	}
+	chatOnce.Do(buildChat)
+	return chatDigest
+}
+
 func build() {
+	prefix, digest = render(baseFamilies)
+}
+
+func buildChat() {
+	chatPrefix, chatDigest = render(append(append([]familyGloss(nil), baseFamilies...), chatFamily))
+}
+
+func render(families []familyGloss) (string, string) {
 	var b strings.Builder
+	role(&b)
+	algebra(&b, families)
 	for _, section := range []func(*strings.Builder){
-		role, algebra, digestContract, ledgerProtocol, outputContract, dataRule,
+		digestContract, ledgerProtocol, outputContract, dataRule,
 	} {
 		section(&b)
 	}
-	prefix = b.String()
-	sum := sha256.Sum256([]byte(prefix))
-	digest = hex.EncodeToString(sum[:])
+	out := b.String()
+	sum := sha256.Sum256([]byte(out))
+	return out, hex.EncodeToString(sum[:])
 }
 
 func role(b *strings.Builder) {
@@ -94,22 +153,20 @@ Three habits matter more than cleverness here:
 
 // algebra renders the published term list, generated from pkg/backend so that the prompt and the
 // algebra cannot drift apart.
-func algebra(b *strings.Builder) {
-	fmt.Fprintf(b, "# The query algebra, version %s\n\n", sdk.AlgebraVersion)
+func algebra(b *strings.Builder, families []familyGloss) {
+	var offered []string
+	for _, family := range families {
+		offered = append(offered, sdk.Terms(family.name)...)
+	}
+	// The version of the algebra this investigation is offered: 1.0.0 without the chat family.
+	fmt.Fprintf(b, "# The query algebra, version %s\n\n", sdk.VersionOf(offered))
 	b.WriteString(`These are the only questions that may be asked of any source. There is no raw query
 language, no selector you compose yourself and no escape hatch; a term outside this list is
 refused and the refusal is recorded. The argument space is finite on purpose: it is what makes an
 investigation replayable without a vendor account.
 
 `)
-	for _, family := range []struct {
-		name  sdk.Family
-		gloss string
-	}{
-		{sdk.FamilyGraph, "the topology and change history, answered from the event log"},
-		{sdk.FamilyTelemetry, "one telemetry backend, answered as a bounded digest"},
-		{sdk.FamilyKnowledge, "durable documents, scoped by the graph to the subgraph in play"},
-	} {
+	for _, family := range families {
 		fmt.Fprintf(b, "## %s — %s\n\n", family.name, family.gloss)
 		for _, term := range sdk.Terms(family.name) {
 			fmt.Fprintf(b, "- `%s`\n", term)
