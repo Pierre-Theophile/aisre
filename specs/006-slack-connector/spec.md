@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-13
 
-**Status**: Draft — awaiting owner approval of scope before planning is executed
+**Status**: Approved by the owner 2026-10-13 (all three defaults); in implementation
 
 **Input**: User description: "The next feature after 005. ADR-0004 D4 says the trigger that would
 have fired on every incident in the corpus is a person creating a dated severity channel in Slack,
@@ -57,10 +57,10 @@ What it adds, in priority order:
 
 ## Clarifications
 
-### Defaults applied pending owner confirmation (2026-10-13)
+### Session 2026-10-13 — defaults confirmed by the owner
 
-These forks change scope or security posture. Each has a default written into the requirements
-below so planning is not blocked; the owner confirms or overrides before `/speckit-implement`.
+These forks change scope or security posture. Each default was written into the requirements
+below, and the owner approved all three as written on 2026-10-13.
 
 - Q1: Intake transport — poll the channel list, or subscribe to Slack's event stream? → **Default:
   polling is the truth, every 30 seconds, and Socket Mode events are an optional doorbell** that

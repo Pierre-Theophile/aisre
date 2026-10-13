@@ -16,8 +16,7 @@ zero-tolerance criteria SC-004 and SC-006. Fixture tasks are interleaved with im
 **Organization**: one foundational phase for the four gaps of [plan.md](./plan.md#phase-0--gaps-found-against-the-code),
 then the stories in priority order: US1 and US2 (P1, the MVP), US3 and US4 (P2), US5 (P3).
 
-**Status**: draft, not started. Nothing below is to be built until the owner approves the scope and
-the three defaults in the spec's clarification section.
+**Status**: scope and the three defaults approved by the owner on 2026-10-13; in implementation.
 
 ## Format: `[ID] [P?] [Story] Description`
 
