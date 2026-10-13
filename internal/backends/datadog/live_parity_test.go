@@ -46,13 +46,25 @@ import (
 //
 // The report names terms and digest hashes, never a digest's content.
 
-// parityPace is how long a rate-limited term waits before asking again: past a one-minute window.
+// parityPace is how long a rate-limited term waits before asking again when Datadog's 429 did not say
+// when its window resets. Where it did, the term waits for that reset instead: the first live run's
+// fixed 65 seconds was a guess at a one-minute window, and five of them need not reach the reset of a
+// logs bucket whose period Datadog states and which is calendar-aligned (research §2.3).
 const parityPace = 65 * time.Second
+
+// parityMaxWait bounds one wait for a stated reset, so a header that names a day-long window ends the
+// run with a named failure rather than holding it.
+const parityMaxWait = 61 * time.Minute
+
+// parityAttempts is how many times a rate-limited term asks before the run records it as unanswered.
+const parityAttempts = 5
 
 type recordedExchange struct {
 	status int
 	header http.Header
 	body   []byte
+	// at is when the answer arrived; Datadog's X-RateLimit-Reset counts from it.
+	at time.Time
 }
 
 // exchangeKey is what makes two requests the same request: the method, the path with its query, and
@@ -90,7 +102,8 @@ func (r *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error
 	resp.Body = io.NopCloser(bytes.NewReader(got))
 	r.mu.Lock()
 	key := exchangeKey(req.Method, req.URL.RequestURI(), body)
-	r.seen[key] = append(r.seen[key], recordedExchange{status: resp.StatusCode, header: resp.Header.Clone(), body: got})
+	r.seen[key] = append(r.seen[key], recordedExchange{status: resp.StatusCode, header: resp.Header.Clone(), body: got,
+		at: time.Now()})
 	r.mu.Unlock()
 	return resp, nil
 }
@@ -169,6 +182,10 @@ func parityBackend(t *testing.T, opts datadogx.Options, now time.Time) *ddbacken
 
 // parityTerms is the algebra over the given log and monitor pointers, one window pair ending an hour
 // before the pinned clock, so the window has settled (SC-009 "over a settled window").
+//
+// new_log_patterns comes first. It pages raw events for the window and again for the baseline, and on
+// the first live run it met a logs allowance the three compares, the onset and errors_by_version had
+// already drawn down, and never answered (T083). First, it asks on a full allowance.
 func parityTerms(selector, monitorID string, now time.Time) []*engine.Term {
 	logs := &graphv1.Pointer{
 		Kind: graphv1.PointerKind_LOG, BackendKind: "datadog", Vocabulary: feeder.VocabDatadogLogs,
@@ -177,14 +194,13 @@ func parityTerms(selector, monitorID string, now time.Time) []*engine.Term {
 	split := now.Add(-90 * time.Minute)
 	pair := engine.NewWindowPair(split, 20*time.Minute)
 	window := engine.NewWindow(split.Add(-20*time.Minute), split.Add(20*time.Minute))
-	terms := []*engine.Term{}
+	terms := []*engine.Term{engine.NewLogPatterns(logs, pair.GetSymptom(), pair.GetBaseline())}
 	for _, s := range []investigationv1.Statistic{investigationv1.Statistic_COUNT, investigationv1.Statistic_RATE,
 		investigationv1.Statistic_ERROR_RATE} {
 		terms = append(terms, engine.Compare(logs, pair, s))
 	}
 	terms = append(terms,
 		engine.Onset(logs, window, investigationv1.OnsetMethod_SEASONAL_CUSUM),
-		engine.NewLogPatterns(logs, pair.GetSymptom(), pair.GetBaseline()),
 		engine.ErrorsByVersion(logs, window, "version"),
 	)
 	if monitorID != "" {
@@ -213,13 +229,14 @@ func TestLiveDigestParity(t *testing.T) {
 		Transport: rec, Timeout: 60 * time.Second}}, now)
 	liveDigests := make([][]byte, len(terms))
 	liveOutcomes := make([]string, len(terms))
+	unanswered := make([]bool, len(terms))
 	kept := map[string][]recordedExchange{}
 	for i, term := range terms {
-		// The organisation's log-aggregate allowance can be as small as two calls per window. A term
-		// that meets it waits for the window to reset and asks again; only the attempt that answered is
-		// kept, so the replay is asked exactly what that answer used.
+		// The organisation's logs allowance can be as small as two calls per window. A term that meets
+		// it waits for the reset Datadog stated and asks again; only the attempt that answered is kept,
+		// so the replay is asked exactly what that answer used.
 		var resp *engine.Response
-		for attempt := 0; ; attempt++ {
+		for attempt := 1; ; attempt++ {
 			rec.mu.Lock()
 			rec.seen = map[string][]recordedExchange{}
 			rec.mu.Unlock()
@@ -228,16 +245,26 @@ func TestLiveDigestParity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("live %s: %v", engine.TermName(term), err)
 			}
-			if resp.GetFailureReason() != investigationv1.FailureReason_RATE_LIMITED || attempt == 4 {
+			if resp.GetFailureReason() != investigationv1.FailureReason_RATE_LIMITED || attempt == parityAttempts {
 				break
 			}
-			time.Sleep(parityPace)
+			rec.mu.Lock()
+			wait, stated := rateLimitWait(rec.seen, time.Now())
+			rec.mu.Unlock()
+			why := "for Datadog's stated reset"
+			if !stated {
+				why = "with no reset stated"
+			}
+			t.Logf("%s: rate-limited (attempt %d of %d), waiting %s %s", engine.TermName(term), attempt,
+				parityAttempts, wait.Round(time.Second), why)
+			time.Sleep(wait)
 		}
 		for k, v := range rec.seen {
 			kept[k] = append(kept[k], v...)
 		}
 		liveDigests[i] = canonicalDigest(t, resp)
 		liveOutcomes[i] = outcomeOf(resp)
+		unanswered[i] = resp.GetFailureReason() == investigationv1.FailureReason_RATE_LIMITED
 	}
 
 	srv := replayServer(t, kept)
@@ -257,11 +284,41 @@ func TestLiveDigestParity(t *testing.T) {
 		sum := sha256.Sum256(got)
 		t.Logf("%s: %s, identical, %d bytes, sha256 %x", name, liveOutcomes[i], len(got), sum[:8])
 	}
+	// A term Datadog never answered replays its refusal identically, which proves the refusal is a
+	// function of the response and nothing about the term's content. The first live run reported such a
+	// term among "7 of 7 identical" (T083); it is a failure of the run, named, not a pass.
+	for i, term := range terms {
+		if unanswered[i] {
+			t.Errorf("%s: still rate-limited after %d attempts, so its parity on real content is not established",
+				engine.TermName(term), parityAttempts)
+		}
+	}
 	calls := 0
 	for _, answers := range kept {
 		calls += len(answers)
 	}
 	t.Logf("%d terms, %d Datadog calls recorded and served back", len(terms), calls)
+}
+
+// rateLimitWait is how long to wait after a rate-limited attempt: until the latest 429's stated reset,
+// plus a second for the calendar boundary, bounded by parityMaxWait. stated is false when no 429 said,
+// and the wait is then parityPace.
+func rateLimitWait(seen map[string][]recordedExchange, now time.Time) (wait time.Duration, stated bool) {
+	var reset time.Time
+	for _, answers := range seen {
+		for _, a := range answers {
+			if a.status != http.StatusTooManyRequests {
+				continue
+			}
+			if reading, ok := feeder.DatadogReadingFromHeaders(a.header, a.at); ok && reading.Reset.After(reset) {
+				reset = reading.Reset
+			}
+		}
+	}
+	if reset.IsZero() {
+		return parityPace, false
+	}
+	return min(max(reset.Sub(now), 0)+time.Second, parityMaxWait), true
 }
 
 // canonicalDigest is the whole answer as bytes — outcome, failure reason and detail, digest, coverage
