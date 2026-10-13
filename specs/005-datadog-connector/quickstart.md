@@ -176,7 +176,10 @@ DD_LIVE_PARITY=1 DD_SITE=datadoghq.eu DD_PARITY_SELECTOR='service:<service> @env
 ```
 
 > **Executed 2026-09-29** (tasks T082, T083). The run and its results are recorded in tasks.md under
-> T082–T083; the corpus is in the private corpus repository.
+> T082–T083; the corpus is in the private corpus repository. The parity command still owes one run:
+> `new_log_patterns` never answered on 2026-09-29, so SC-009 stands at 6 of 7 terms until it does
+> (tasks.md, "Where parity stands"). The harness now gives that term the first call and waits for
+> Datadog's stated reset, and a term that stays rate-limited fails the run.
 
 ---
 

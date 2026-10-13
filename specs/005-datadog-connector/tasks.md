@@ -376,18 +376,45 @@ seeded canary fails the commit.
       4. *One monitor's WATCHES edge stays unattached.* Its tag says `env:prod` and the logs say
          `@env:production`, so the alert names a service no source asserts. That is a tagging fix for the
          owner: retag the monitor `env:production`.
-    - **SC-010 (graph parity).** The live graph is in real names and the recording in pseudonyms, so the
-      comparison is on the fields sanitisation leaves alone. All 7 recorded transitions equal the live
-      ones on monitor id, Datadog's instant, states, group, severity, sampling interval and origin link.
-      All 18 node and identity assertions (14 monitors, 2 sources, 2 correlations) equal on id, type,
-      valid instant, pointer count and property keys. The live side carries 4 more transitions: the
-      history the aborted first run delivered, all from before this recording began.
+    - **Where parity stands** (restated 2026-10-13; the 2026-09-29 run said it with two caveats).
+      | criterion | status | what holds |
+      |---|---|---|
+      | SC-010, graph | **met in its sanitisation-invariant form; byte-for-byte is not claimable on a sanitised corpus** | see below |
+      | SC-009, digests | **6 of 7 terms met; `new_log_patterns` open** | see below |
+    - **SC-010 (graph parity).** The live graph is in real names and the recording in pseudonyms, so
+      SC-010's "byte for byte" cannot hold between them by construction, on this corpus or any later
+      one. What was compared is every field sanitisation leaves alone. All 7 recorded transitions equal
+      the live ones on monitor id, Datadog's instant, states, group, severity, sampling interval and
+      origin link. All 18 node and identity assertions (14 monitors, 2 sources, 2 correlations) equal
+      on id, type, valid instant, pointer count and property keys. Byte-for-byte holds where both sides
+      are the recording: the corpus gate replays it from empty, twice and shuffled, to the same graph
+      on every push (FR-142).
+      - *Caveat, documented, no fix:* the live graph carries 4 more transitions than the recording,
+        11 against 7. They are not a parity difference. The live graph was built by both the aborted
+        first run (22:17, deleted uncommitted) and `datadog-live-02` (22:38), and a run's first poll
+        delivers the monitors' recent history. The first run started 21 minutes earlier, so its history
+        reached 21 minutes further back. The recording's earliest transition is at 21:41:05, and the
+        organisation's Datadog event stream shows monitor transitions before that instant. The 4 are
+        that earlier history, not a transition the recording missed inside its own span; this is
+        inferred from the two start times and the event stream, since the aborted run left no log. The
+        comparison is on the 7 the recording holds. The next campaign should start its live graph
+        from an empty database, so that the two counts match and need no explanation.
     - **SC-009 (digest parity).** `TestLiveDigestParity` (`internal/backends/datadog`, run on request
       only) runs each term live, then again over the recorded responses served back locally. It compares
-      the whole answer except its duration. All 7 terms are identical, and 6 are real digests:
-      `compare` ×3, `onset`, `errors_by_version`, `monitor_state`. `new_log_patterns` was still
-      rate-limited after five paced attempts against a logs-aggregate allowance of 2 calls per window.
-      Its parity on real content is therefore still open; the next run should give it its own window.
+      the whole answer except its duration. Six terms are met on real digests: `compare` ×3, `onset`,
+      `errors_by_version` and `monitor_state`.
+      - *Caveat, fixed in the harness, open until a live run:* `new_log_patterns` never answered. It
+        stayed rate-limited through five attempts against a logs allowance of 2 calls per window. Its
+        refusal replayed identically, and the first report counted it among "7 of 7 identical". That
+        line proves the refusal is a function of the response. It proves nothing about pattern
+        content. Two harness choices most likely kept it from answering. It ran sixth, after five terms had drawn
+        on the same allowance. Each retry also slept a fixed 65 seconds, while Datadog states the
+        bucket's reset in `X-RateLimit-Reset` and its period is calendar-aligned, so five waits need
+        not reach the reset. The harness now runs `new_log_patterns` first and waits for the stated
+        reset (bounded at 61 minutes; `TestParityWaitsForTheStatedReset`). It also **fails** a run in
+        which any term is still rate-limited, naming the term, rather than reporting it as identical.
+        Closing this needs one run of quickstart §8's parity command with the read-only key and the
+        corpus key, which only the owner holds. Until a run passes, SC-009 stands at 6 of 7.
     - **Still open.** The Datadog telemetry backend is imported by no command, so no server serves it
       yet; the parity harness builds it directly.
 
