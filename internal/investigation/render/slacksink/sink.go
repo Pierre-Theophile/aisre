@@ -364,7 +364,7 @@ func Neutralise(s string) string {
 	s = strings.ReplaceAll(s, "<", "&lt;")
 	s = strings.ReplaceAll(s, ">", "&gt;")
 	for _, word := range broadcasts {
-		s = replaceFold(s, word, "@⁠"+word[1:])
+		s = replaceFold(s, word, "@\u2060"+word[1:])
 	}
 	return s
 }
