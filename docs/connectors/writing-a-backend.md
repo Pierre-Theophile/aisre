@@ -90,7 +90,7 @@ the contract:
 |---|---|
 | no name, no vendor | a backend speaks for exactly one vendor and is identified by one name |
 | no terms | it can never be called |
-| a graph or knowledge term | it has mistaken itself for a worker; see [the algebra](../schema/algebra.md#the-three-families) |
+| a graph or knowledge term | it has mistaken itself for a worker; see [the algebra](../schema/algebra.md#the-four-families) |
 | a term with no cost class, or the unspecified class | an unbudgetable term is an unbounded one |
 | a capability with `ReadOnly = false` | `write_capability` (FR-016) |
 | a redaction policy with no version | `undeclared_redaction` — a recording must say what was applied to it |

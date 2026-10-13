@@ -106,12 +106,12 @@ body; `report_deliveries.update_count = 1`.
 **Independent Test**: `worker.Testkit` over `fixtures/slack-chat-01`; no text, name or email in any
 digest; an injection attempt becomes an evidence item.
 
-- [ ] T026 [P] [US3] Published term vocabulary `slack/terms@1` in `internal/workers/chat/terms.go` (FR-032); fixture: unit
-- [ ] T027 [US3] Implement `internal/workers/chat/worker.go`: `chat_mentions`, `chat_timeline`, bound to the origin channel and opted-in ids only, refusal at the boundary (FR-030, FR-031, US3 scenario 3); fixture: unit
-- [ ] T028 [US3] Coverage block reasons `not_enabled`, `not_member`, `private_channel`, `retention_truncated`, `rate_limited`, `outside_origin` (FR-033); fixture: unit
-- [ ] T029 [US3] Injection attempts reported as evidence items and changing nothing (FR-035); fixture: `slack-chat-injection-01`
-- [ ] T030 [US3] Register the `chat` worker behind a flag; with it off the engine reports the source unavailable (US3 scenario 2, SC-007); fixture: 002 corpus unchanged
-- [ ] T031 [US3] Fixtures `fixtures/slack-chat-01`, `-injection-01` with `worker.Testkit` goldens, live/recorded parity (FR-034); fixture: themselves
+- [x] T026 [P] [US3] Published term vocabulary `slack/terms@1` in `internal/workers/chat/terms.go` (FR-032); fixture: unit. Note: the package is `internal/investigation/workers/chat`, beside the other workers.
+- [x] T027 [US3] Implement `internal/workers/chat/worker.go`: `chat_mentions`, `chat_timeline`, bound to the origin channel and opted-in ids only, refusal at the boundary (FR-030, FR-031, US3 scenario 3); fixture: unit. Note: the engine fills the declared channel and the model cannot name one (ADR-0012), so no operator opt-in list was built; a channel outside the bound workspace is refused `outside_origin` without a read.
+- [x] T028 [US3] Coverage block reasons `not_enabled`, `not_member`, `private_channel`, `retention_truncated`, `rate_limited`, `outside_origin` (FR-033); fixture: unit
+- [x] T029 [US3] Injection attempts reported as evidence items and changing nothing (FR-035); fixture: `slack-chat-injection-01`. Note: the digest carries the count (`instruction_like`) and the engine records one attempt per answer; the text is never carried.
+- [x] T030 [US3] Register the `chat` worker behind a flag; with it off the engine reports the source unavailable (US3 scenario 2, SC-007); fixture: 002 corpus unchanged. Note: the flag is `serve --chat-reader`; with it off the chat family is not offered at all, so the 1.0.0 prompt and tool list are unchanged and every 002 trajectory replays (ADR-0012).
+- [x] T031 [US3] Fixtures `fixtures/slack-chat-01`, `-injection-01` with `worker.Testkit` goldens, live/recorded parity (FR-034); fixture: themselves
 
 ---
 
