@@ -230,6 +230,10 @@ func termWindows(term *Term) []*Window {
 		return []*Window{t.ErrorsByVersion.GetWindow()}
 	case *investigationv1.AlgebraTerm_MonitorState:
 		return []*Window{t.MonitorState.GetWindow()}
+	case *investigationv1.AlgebraTerm_ChatMentions:
+		return []*Window{t.ChatMentions.GetWindow()}
+	case *investigationv1.AlgebraTerm_ChatTimeline:
+		return []*Window{t.ChatTimeline.GetWindow()}
 	default:
 		// Handle-bearing and graph terms carry no window of their own.
 		return nil

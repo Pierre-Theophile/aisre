@@ -97,6 +97,9 @@ func PublishedCostClass(term string) sdk.CostClass {
 		return sdk.CostClassStandard
 	case sdk.TermNewLogPatterns, sdk.TermOnset, sdk.TermExemplars:
 		return sdk.CostClassExpensive
+	case sdk.TermChatMentions, sdk.TermChatTimeline:
+		// One channel's history over one window: pages of 200, read in memory and discarded.
+		return sdk.CostClassStandard
 	default:
 		return sdk.CostClassUnspecified
 	}
@@ -110,7 +113,9 @@ func (r *Recorded) Execute(ctx context.Context, req *Request) (*Response, error)
 	}
 	term := req.GetTerm()
 	name := TermName(term)
-	if name == "" || FamilyOf(name) != sdk.FamilyTelemetry {
+	// The chat family is answered from a world exactly as telemetry is: its digests carry counts
+	// and instants, never message text, so a world can hold them (006 FR-034).
+	if name == "" || (FamilyOf(name) != sdk.FamilyTelemetry && FamilyOf(name) != sdk.FamilyChat) {
 		r.countRefusal()
 		return NewResponse(ResponseInput{
 			Request: orEmptyRequest(req),

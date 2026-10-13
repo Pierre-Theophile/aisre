@@ -20,11 +20,13 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/runner"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/chat"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/metrics"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/traces"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/server"
+	"github.com/Pierre-Theophile/aisre/internal/slackx"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
@@ -87,6 +89,11 @@ type serveOptions struct {
 	modelConfig         string
 	recordingRoot       string
 	budgetProfiles      string
+	// chatReader registers the chat worker (006 US3), off by default. Live, it reads the incident
+	// channel through the reader app; over a recorded world, it answers from the world.
+	chatReader    bool
+	chatRetention time.Duration
+	slackAPI      string
 }
 
 func newServeCommand(global *globalOptions) *cobra.Command {
@@ -142,6 +149,13 @@ func newServeCommand(global *globalOptions) *cobra.Command {
 		"directory the trajectory and world recordings are written under (--enable-investigation only)")
 	flags.StringVar(&opts.budgetProfiles, "budget-profiles", "",
 		"budget profile file (--enable-investigation only)")
+	flags.BoolVar(&opts.chatReader, "chat-reader", false,
+		"register the chat worker, which counts what was said in an incident's own Slack channel and "+
+			"never returns a message; reads $"+EnvSlackReaderToken+" (--enable-investigation only; 006 US3)")
+	flags.DurationVar(&opts.chatRetention, "chat-retention", 0,
+		"how much history the Slack workspace's plan keeps; older windows are reported truncated (0: unlimited)")
+	flags.StringVar(&opts.slackAPI, "slack-api", "", "Slack API base URL, for tests against a twin")
+	_ = flags.MarkHidden("slack-api")
 
 	return cmd
 }
@@ -444,9 +458,18 @@ func newInvestigationRunner(
 
 	telemetry, mode := investigationTelemetry(opts.recordingRoot, logger)
 	registry := worker.NewRegistry()
-	for _, w := range []worker.Worker{
-		metrics.New(telemetry), logs.New(telemetry), traces.New(telemetry),
-	} {
+	registered := []worker.Worker{metrics.New(telemetry), logs.New(telemetry), traces.New(telemetry)}
+	if opts.chatReader {
+		w, err := chatWorker(ctx, opts, telemetry, mode, logger)
+		if err != nil {
+			return nil, err
+		}
+		registered = append(registered, w)
+	} else {
+		logger.Info("investigation engine: the chat reader is off, so no investigation is offered the " +
+			"chat family; --chat-reader turns it on (006 US3)")
+	}
+	for _, w := range registered {
 		if err := registry.Register(w); err != nil {
 			return nil, exitWith(ExitUsage, fmt.Errorf("investigation workers: %w", err))
 		}
@@ -516,6 +539,35 @@ func investigationTelemetry(recordingRoot string, logger *slog.Logger) (sdk.Tele
 	return runner.UnconfiguredTelemetry(
 		"no telemetry backend is configured on this server: --recording-root names no recorded " +
 			"world, and this build ships no live telemetry backend"), worker.ModeLive
+}
+
+// chatWorker builds the chat worker: over the recorded world when telemetry is answered from one,
+// otherwise live over the reader app with history enabled. The reader token is checked against
+// what Slack reports before the worker is registered, so a token that could write never reads.
+func chatWorker(ctx context.Context, opts *serveOptions, telemetry sdk.TelemetryBackend, mode worker.Mode, logger *slog.Logger) (worker.Worker, error) {
+	if mode == worker.ModeRecorded {
+		logger.Info("investigation engine: the chat worker answers from the recorded world")
+		return chat.New(chat.RecordedSource, telemetry), nil
+	}
+	client, err := slackx.New(slackx.Options{Token: os.Getenv(EnvSlackReaderToken), BaseURL: opts.slackAPI, History: true})
+	if err != nil {
+		return nil, exitErrorf(ExitUsage, "--chat-reader: $%s: %v", EnvSlackReaderToken, err)
+	}
+	id, err := client.AuthTest(ctx)
+	if err != nil {
+		return nil, exitErrorf(ExitTransport, "--chat-reader: asking Slack which workspace the reader token belongs to: %v", err)
+	}
+	if _, err := slackx.CheckReadOnly(id); err != nil {
+		return nil, exitErrorf(ExitUsage, "--chat-reader: the reader token is not read-only, and no chat will be read: %v", err)
+	}
+	backend, err := chat.NewSlack(client, chat.Options{Team: id.TeamID, WorkspaceURL: id.URL, Retention: opts.chatRetention})
+	if err != nil {
+		return nil, exitWith(ExitUsage, err)
+	}
+	logger.Info("investigation engine: the chat reader is on; an investigation declared in a channel of "+
+		"this workspace is offered the chat family, and reads only that channel",
+		"workspace", id.TeamID)
+	return chat.New(backend.SourceOfTruth(), backend), nil
 }
 
 // investigationModelClient builds the model boundary, or returns nil for a model-free deployment.

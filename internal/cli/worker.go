@@ -15,6 +15,7 @@ import (
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/chat"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/metrics"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/traces"
@@ -63,8 +64,8 @@ func newWorkerCommand(global *globalOptions) *cobra.Command {
 	return cmd
 }
 
-// workerSet builds the workers that do not need a database: the three telemetry workers over one
-// backend. The graph worker needs a query engine and is built where one exists (`worker record`,
+// workerSet builds the workers that do not need a database: the three telemetry workers and the
+// chat worker over one backend. The graph worker needs a query engine and is built where one exists (`worker record`,
 // and Phase 6's engine loop).
 func workerSet(b sdk.TelemetryBackend) (*worker.Registry, error) {
 	registry := worker.NewRegistry()
@@ -72,6 +73,7 @@ func workerSet(b sdk.TelemetryBackend) (*worker.Registry, error) {
 		metrics.New(b),
 		traces.New(b),
 		logs.New(b),
+		chat.New(chat.RecordedSource, b),
 	} {
 		if err := registry.Register(w); err != nil {
 			return nil, err

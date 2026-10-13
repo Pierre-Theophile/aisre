@@ -243,6 +243,9 @@ type Identity struct {
 	Team   string
 	BotID  string
 	Scopes []string
+	// URL is the workspace's own address, "https://<domain>.slack.com/", which a message
+	// permalink is built on.
+	URL string
 }
 
 // AuthTest asks which workspace the token belongs to and what it may do.
@@ -255,6 +258,7 @@ func (c *Client) AuthTest(ctx context.Context) (Identity, error) {
 		TeamID string `json:"team_id"`
 		Team   string `json:"team"`
 		BotID  string `json:"bot_id"`
+		URL    string `json:"url"`
 	}
 	if err := json.Unmarshal(resp.Body, &body); err != nil {
 		return Identity{}, fmt.Errorf("slackx: auth.test: %w", err)
@@ -262,7 +266,7 @@ func (c *Client) AuthTest(ctx context.Context) (Identity, error) {
 	if body.TeamID == "" {
 		return Identity{}, errors.New("slackx: auth.test named no workspace")
 	}
-	return Identity{TeamID: body.TeamID, Team: body.Team, BotID: body.BotID, Scopes: resp.Scopes}, nil
+	return Identity{TeamID: body.TeamID, Team: body.Team, BotID: body.BotID, Scopes: resp.Scopes, URL: body.URL}, nil
 }
 
 // CheckReadOnly runs the read-only gate on the scopes the token reported (FR-002). Slack reports
