@@ -135,10 +135,10 @@ digest; an injection attempt becomes an evidence item.
 
 ## Phase 8: Polish and verification
 
-- [ ] T037 [P] `docs/connectors/slack.md` final: setup, both app manifests, the invite workflow, failure modes; README status row for 006
-- [ ] T038 Live quickstart run against the organisation's workspace, recorded as `quickstart-run-<date>.md`: SC-003 and SC-005 measured at p95
-- [ ] T039 Re-run the coverage audit with Slack intake, beside the 2026-09-22 re-run in the private corpus (FR-054)
-- [ ] T040 `/speckit-analyze` over spec, plan and tasks; close findings
+- [ ] T037 [P] `docs/connectors/slack.md` final: setup, both app manifests, the invite workflow, failure modes; README status row for 006; fixture: unit (docs links checked by `check-specs.sh`)
+- [ ] T038 Live quickstart run against the organisation's workspace, recorded as `quickstart-run-<date>.md`: SC-003 and SC-005 measured at p95; fixture: live run, recorded into the private corpus
+- [ ] T039 Re-run the coverage audit with Slack intake, beside the 2026-09-22 re-run in the private corpus (FR-054); fixture: private
+- [ ] T040 `/speckit-analyze` over spec, plan and tasks; close findings; fixture: all `slack-*`
 
 ---
 
