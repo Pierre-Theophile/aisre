@@ -99,6 +99,10 @@ const (
 	// channel's creator is dropped like every other people identifier.
 	KindWorkspace Kind = "workspace"
 	KindChannel   Kind = "channel"
+	// The Notion connector's identifiers (007 FR-050, research R8). The workspace is KindWorkspace.
+	KindPage       Kind = "page"
+	KindDatabase   Kind = "database"
+	KindDataSource Kind = "data_source"
 )
 
 // kindTag is the token infix per kind. They are short because they appear in every identifier in
@@ -127,6 +131,9 @@ var kindTag = map[Kind]string{
 	KindStatus:       "sts",
 	KindWorkspace:    "wsp",
 	KindChannel:      "chn",
+	KindPage:         "pag",
+	KindDatabase:     "db",
+	KindDataSource:   "dsr",
 }
 
 // Kinds returns the published kinds, sorted. It is what the canary set iterates over when it

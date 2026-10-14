@@ -1,0 +1,60 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: notion-knowledge-twin-01
+family: notion-knowledge
+description: 'A synthetic postmortem database and runbook database read over two days. `Checkout pool exhaustion` is registered as a postmortem valid from its creation and linked to checkout; an edit at 14:00 adds payments, an edit at 20:00 removes checkout (that link ends at 20:00) and renames it `Payments pool exhaustion`. Its summary carries a planted instruction, stored as text and never obeyed. The same page is listed by the runbook database and is held by the first binding. `Vendor bridge outage` names an unmapped service and registers nothing. `Payments failover drill` has a summary property cut at 25 spans, completed through the property endpoint and capped at 600 characters; on day two it is deleted and its link ends at the instant it was last seen. The `Checkout rollback runbook` is trashed at 08:00 on day two (its link ends then) and restored at 08:00 on day three (a new interval). The day-three read of the postmortems is cut short by the rate limit: a coverage gap, and nothing is retracted for it. Synthetic structural twin: no identifier is derived from any organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: notion:twin
+      kind: notion
+      ordering: none
+      reordering_window: 0s
+clock:
+    start: 2026-10-01T08:59:00Z
+    end: 2026-10-03T12:00:00Z
+
+queries:
+  # Day one, 10:00: the postmortem and the runbook concern checkout.
+  - name: checkout-day-one
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-10-01T10:00:00Z
+    observed_at: 2026-10-03T12:00:00Z
+    hops: 1
+    direction: both
+  # Day one, 21:00: the postmortem no longer concerns checkout; it concerns payments.
+  - name: checkout-after-the-edit
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-10-01T21:00:00Z
+    observed_at: 2026-10-03T12:00:00Z
+    hops: 1
+    direction: both
+  - name: payments-after-the-edit
+    kind: subgraph
+    focus: otel.service.name=payments
+    valid_at: 2026-10-01T21:00:00Z
+    observed_at: 2026-10-03T12:00:00Z
+    hops: 1
+    direction: both
+  # Day two, 12:00: the runbook is in the trash.
+  - name: checkout-runbook-trashed
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-10-02T12:00:00Z
+    observed_at: 2026-10-03T12:00:00Z
+    hops: 1
+    direction: both
+  # Day three, 10:00: restored.
+  - name: checkout-runbook-restored
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-10-03T10:00:00Z
+    observed_at: 2026-10-03T12:00:00Z
+    hops: 1
+    direction: both

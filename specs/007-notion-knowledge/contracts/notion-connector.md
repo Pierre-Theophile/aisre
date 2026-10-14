@@ -64,10 +64,16 @@ databases:
 | flag | meaning |
 |---|---|
 | `--config <file>` | the configuration above (required) |
-| `--check` | read everything, emit nothing, print the report of §6 and exit |
+| `--check` | read everything, emit nothing, print the report of §6 and exit (PR 3, T029) |
 | `--once` | one reconciliation, then exit |
-| `--db <dsn>` | PostgreSQL DSN, default `$PG_DSN` |
+| `--cycles <n>` | stop after n cycles; 0 runs until interrupted |
+| `--state <file>` | what the connector registered, so a restart notices a page that left while it was stopped (default `notion-state.json` beside `--config`) |
 | `--record <dir>` | record the sanitised exchange for `fixture record` |
+| `--replay <dir>` | read a recording instead of Notion |
+| `--server`, `--token` | the graph server and the feeder token for `notion:<workspace>`, as every `feed` command takes them |
+
+Amended during implementation: an earlier draft had `--db <dsn>`; a feeder appends through the
+graph server like every other connector, never to the database directly.
 
 Exit codes are the CLI's (`internal/cli/root.go`): 0 ok, 1 usage, 2 Notion unreachable at start,
 3 refused credential or missing acknowledgement.

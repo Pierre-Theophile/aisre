@@ -31,7 +31,9 @@ inside the connector (constitution IX).
 
 A `KNOWLEDGE_DOC` registered by a connector carries the props `knowledge link` writes, plus
 `configured_by` and `summary_truncated`. Each `CONCERNS` edge it makes carries `rule`, `database`,
-`property` and `value`: the clause that produced it. A link made by hand carries none of them, and
+`property` and `property_value`: the clause that produced it. (`property_value` rather than `value`:
+the graph refuses a prop named `value`, which is a telemetry-sample key, so the name was amended
+during implementation.) A link made by hand carries none of them, and
 nothing reads their absence as a fault.
 
 ### Item 3 — the knowledge corpus is read as of two instants

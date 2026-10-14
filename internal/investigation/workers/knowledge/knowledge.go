@@ -374,6 +374,15 @@ type LinkRequest struct {
 	AsOf time.Time
 	// AuthoredAt is when the document was written, when the person says.
 	AuthoredAt time.Time
+	// ConfiguredBy is the principal who signed a connector's configuration, when a connector
+	// registers the document rather than a person (007 ADR-0013 item 2). Empty for `knowledge link`.
+	ConfiguredBy string
+	// SummaryTruncated says the summary was cut to its cap. A connector sets it; a person's summary
+	// is theirs and is never cut.
+	SummaryTruncated bool
+	// Provenance replaces the default `registered by <RegisteredBy>` link provenance, for a connector
+	// whose link was made by a rule an operator configured (`notion/notion-db@1 configured by …`).
+	Provenance string
 }
 
 // Validate refuses a registration that would produce an uncitable document.
@@ -414,15 +423,7 @@ func (r LinkRequest) Events(sourceID string, at time.Time) ([]*graphv1.EventEnve
 	}
 	validAt = validAt.UTC().Truncate(time.Second)
 
-	props, err := structpb.NewStruct(map[string]any{
-		"kind":            r.Kind,
-		"summary":         r.Summary,
-		"location":        r.Location,
-		"registered_by":   r.RegisteredBy,
-		"registered_at":   at.UTC().Format(time.RFC3339),
-		"authored_at":     authoredAt(r.AuthoredAt),
-		"link_provenance": "registered by " + r.RegisteredBy,
-	})
+	props, err := structpb.NewStruct(r.Props(at))
 	if err != nil {
 		return nil, fmt.Errorf("knowledge link: properties: %w", err)
 	}
@@ -454,6 +455,32 @@ func (r LinkRequest) Events(sourceID string, at time.Time) ([]*graphv1.EventEnve
 		})
 	}
 	return events, nil
+}
+
+// Props are the properties a registration writes on the `KNOWLEDGE_DOC` node, registered at `at`. The
+// corpus reads `kind`, `summary`, `location`, `authored_at` and `link_provenance` back (graph.go). A
+// connector's own additions appear only when set, so `knowledge link` writes what it always wrote.
+func (r LinkRequest) Props(at time.Time) map[string]any {
+	provenance := r.Provenance
+	if provenance == "" {
+		provenance = "registered by " + r.RegisteredBy
+	}
+	props := map[string]any{
+		"kind":            r.Kind,
+		"summary":         r.Summary,
+		"location":        r.Location,
+		"registered_by":   r.RegisteredBy,
+		"registered_at":   at.UTC().Format(time.RFC3339),
+		"authored_at":     authoredAt(r.AuthoredAt),
+		"link_provenance": provenance,
+	}
+	if r.ConfiguredBy != "" {
+		props["configured_by"] = r.ConfiguredBy
+	}
+	if r.SummaryTruncated {
+		props["summary_truncated"] = true
+	}
+	return props
 }
 
 func authoredAt(at time.Time) string {

@@ -44,7 +44,7 @@ These are the props `LinkRequest.Events` already writes, plus `summary_truncated
 |---|---|
 | src → dst | `notion.page=<id>` → the mapped entity |
 | `rule` | `notion/notion-db@1` |
-| `database`, `property`, `value` | what produced the link (FR-033) |
+| `database`, `property`, `property_value` | what produced the link (FR-033); `value` is a telemetry-sample key the graph refuses |
 | valid | from the page version that first carried the value, to the `retract_edge` end of R6 |
 
 ## Page lifecycle
