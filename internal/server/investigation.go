@@ -208,8 +208,13 @@ func (s *InvestigationService) Declare(
 	// FR-002a and FR-066: the declaring identity is the authenticated caller unless the caller
 	// is a connector declaring on someone's behalf, in which case it is what the connector
 	// observed. Either way it is never blank and never invented.
-	if declaration.GetDeclaringIdentity() == "" {
+	switch declared := declaration.GetDeclaringIdentity(); {
+	case declared == "":
 		declaration.DeclaringIdentity = requester
+	case declared != requester:
+		if err := requireDeclareOnBehalf(ctx, declaration.GetOriginSystem()); err != nil {
+			return err
+		}
 	}
 	emit := emitter(true, stream)
 	final, err := s.runner.Declare(ctx, req.Msg, requester, emit)
@@ -494,6 +499,26 @@ func RequireAny(ctx context.Context, roles ...Role) error {
 	}
 	return connect.NewError(connect.CodePermissionDenied,
 		fmt.Errorf("principal %s holds none of the roles %v this call needs", p.Key(), roles))
+}
+
+// requireDeclareOnBehalf is 006 G3 (ADR-0011): naming a declaring identity other than one's own is
+// what a connector does when it declares for the person who opened an incident channel, and only a
+// connector may do it — a principal holding the feeder role, scoped to the very source the
+// declaration comes from. An investigator declares as themselves; a Slack feeder cannot speak for
+// a PagerDuty user. The caller is still recorded as the requester beside the declarer, so "who
+// declared" and "which credential said so" are both answerable.
+func requireDeclareOnBehalf(ctx context.Context, originSystem string) error {
+	p, ok := PrincipalFrom(ctx)
+	if !ok {
+		return connect.NewError(connect.CodeUnauthenticated, ErrMissingToken)
+	}
+	if !p.Has(RoleFeeder) || p.SourceID == "" || p.SourceID != originSystem {
+		return connect.NewError(connect.CodePermissionDenied,
+			fmt.Errorf("declare: principal %s may declare only as itself; naming another declaring "+
+				"identity needs the feeder role scoped to the declaration's origin system %q (ADR-0011)",
+				p.Key(), originSystem))
+	}
+	return nil
 }
 
 // requesterFrom is FR-066 at the handler: every investigation and every human decision records

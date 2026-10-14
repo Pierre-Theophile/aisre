@@ -95,6 +95,10 @@ const (
 	KindRun          Kind = "run"
 	KindRelease      Kind = "release"
 	KindStatus       Kind = "deployment_status"
+	// The Slack connector's identifiers (006 FR-050). A workspace and a channel, never a person: a
+	// channel's creator is dropped like every other people identifier.
+	KindWorkspace Kind = "workspace"
+	KindChannel   Kind = "channel"
 )
 
 // kindTag is the token infix per kind. They are short because they appear in every identifier in
@@ -121,6 +125,8 @@ var kindTag = map[Kind]string{
 	KindRun:          "run",
 	KindRelease:      "rel",
 	KindStatus:       "sts",
+	KindWorkspace:    "wsp",
+	KindChannel:      "chn",
 }
 
 // Kinds returns the published kinds, sorted. It is what the canary set iterates over when it

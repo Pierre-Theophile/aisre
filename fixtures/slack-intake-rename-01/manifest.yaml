@@ -1,0 +1,35 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: slack-intake-rename-01
+family: slack-intake
+description: '`sev2-2026-10-14-checkout-latency` is declared at 09:12:03; at 09:31 it has been renamed `sev1-2026-10-14-checkout-outage`. The rename opens nothing: the key is the channel id, never the name (FR-008b), and the checkpoint states the rename. A second team opens `sev2-2026-10-14-payments-checkout` for the same incident at 09:14: that is a second declaration, watching both services the operator mapped, and grouping the two is the engine''s published association rule''s business, never this connector''s. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: slack:T0TWIN
+      kind: slack
+      ordering: none
+      reordering_window: 30s
+clock:
+    start: 2026-10-14T09:11:30Z
+    end: 2026-10-14T09:35:00Z
+
+queries:
+  - name: checkout-after-rename
+    kind: subgraph
+    focus: incident=C0SEV2CHK
+    valid_at: 2026-10-14T09:35:00Z
+    observed_at: 2026-10-14T09:35:00Z
+    hops: 1
+    direction: both
+  - name: payments-second-channel
+    kind: subgraph
+    focus: incident=C0SEV2PAY
+    valid_at: 2026-10-14T09:35:00Z
+    observed_at: 2026-10-14T09:35:00Z
+    hops: 1
+    direction: both

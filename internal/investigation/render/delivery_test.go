@@ -382,15 +382,20 @@ func TestACredentialForOnePlaceIsNotACredentialForAnother(t *testing.T) {
 func TestSinkRegistryAdmitsOnlyThePublishedSinks(t *testing.T) {
 	t.Parallel()
 
-	if got := render.PublishedSinks(); len(got) != 1 || got[0] != render.SinkLog {
-		t.Fatalf("published sinks = %v, want exactly [%s]; a new one needs a review and a line "+
-			"in docs/security", got, render.SinkLog)
+	if got := render.PublishedSinks(); len(got) != 2 || got[0] != render.SinkLog || got[1] != render.SinkSlack {
+		t.Fatalf("published sinks = %v, want exactly [%s %s]; a new one needs a review and a line "+
+			"in docs/security", got, render.SinkLog, render.SinkSlack)
+	}
+	// Slack is published and built by its connector: this package refuses to build it rather
+	// than import a transport (ADR-0011 item 5).
+	if sink, err := render.NewSink(render.SinkSlack, nil); !errors.Is(err, render.ErrSinkNeedsConnector) || sink != nil {
+		t.Errorf("NewSink(slack) = %v, %v, want ErrSinkNeedsConnector", sink, err)
 	}
 	sink, err := render.NewSink(render.SinkLog, nil)
 	if err != nil || sink == nil {
 		t.Fatalf("NewSink(%q) = %v, %v", render.SinkLog, sink, err)
 	}
-	for _, id := range []string{"", "slack", "Log", "log ", "webhook", "../log"} {
+	for _, id := range []string{"", "Slack", "Log", "log ", "webhook", "../log"} {
 		sink, err := render.NewSink(id, nil)
 		if !errors.Is(err, render.ErrUnknownSink) {
 			t.Errorf("NewSink(%q) = %v, want ErrUnknownSink", id, err)

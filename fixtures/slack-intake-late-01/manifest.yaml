@@ -1,0 +1,28 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: slack-intake-late-01
+family: slack-intake
+description: 'The feeder starts at 09:00 and its first poll finds `sev3-2026-10-14-payments`, created at 08:10 while nothing was watching. It is declared with its true creation instant, 08:10, not the 09:00 discovery (FR-004a); the live run opens its investigation in review mode. `sev2-2026-10-10-search`, created four days earlier, is outside the 24-hour backfill horizon and is skipped as such rather than opening an investigation of a closed incident. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: slack:T0TWIN
+      kind: slack
+      ordering: none
+      reordering_window: 30s
+clock:
+    start: 2026-10-14T08:59:00Z
+    end: 2026-10-14T09:05:00Z
+
+queries:
+  - name: payments-declared-at-creation
+    kind: subgraph
+    focus: incident=C0SEV3LTE
+    valid_at: 2026-10-14T08:10:00Z
+    observed_at: 2026-10-14T09:05:00Z
+    hops: 1
+    direction: both

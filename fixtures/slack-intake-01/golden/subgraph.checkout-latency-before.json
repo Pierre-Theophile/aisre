@@ -1,0 +1,1 @@
+{"extent":{"earliestObserved":"2026-10-14T09:12:30Z","latestObserved":"2026-10-14T09:26:30Z","sources":[{"lastCheckpoint":"2026-10-14T09:26:30Z","sourceId":"slack:T0TWIN"}]},"truncation":{"perHopCap":50,"reason":"before_recorded_history","totalCap":500}}

@@ -787,5 +787,6 @@ func ContractPolicy() *Policy {
 
 	addGCPPayloadRows(p)
 	addVendorNoticeRows(p)
+	addSlackRows(p)
 	return p
 }

@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/render/slacksink"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 )
@@ -335,8 +337,10 @@ func newInvestigateReportCommand(global *globalOptions) *cobra.Command {
 			"of the investigation concluding: a failure is recorded and printed, and the command\n" +
 			"still exits 0, because the investigation is complete whatever the chat connector did\n" +
 			"(FR-057f, constitution VII).\n\n" +
-			"The transport in this version is a recorded no-op driver: the report is rendered and\n" +
-			"logged and nothing leaves the process. A real transport is a connector's job.",
+			"--sink log (the default) is a recorded no-op driver: the report is rendered and logged\n" +
+			"and nothing leaves the process. --sink slack posts it into the Slack channel the\n" +
+			"incident was declared from with the reporter app's token in $" + EnvDeliveryToken + ",\n" +
+			"which may hold chat:write and chat:write.public and nothing else.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := investigationIDArg(cmd, args)
@@ -482,13 +486,36 @@ func deliverReport(cmd *cobra.Command, inv *investigationv1.Investigation, body,
 	system, ref := deliverySplit(inv)
 	// The transport is resolved before the credential is read, so that a typo in --sink is
 	// refused rather than quietly served by whichever sink is compiled in (T116).
-	sink, err := render.NewSink(sinkID, nil)
+	sink, err := newDeliverySink(sinkID)
 	if err != nil {
 		return render.DeliveryResult{
 			Outcome:       render.OutcomeNotConfigured,
 			FailureDetail: err.Error(),
 		}
 	}
+	var previous string
+	for _, d := range inv.GetDeliveries() {
+		if d.GetTargetSystem() == system && d.GetTargetRef() == ref {
+			previous = d.GetExternalMessageRef()
+		}
+	}
+	return deliverReportWith(cmd.Context(), sink, inv, body, previous)
+}
+
+// newDeliverySink resolves a published sink id. The connector-built ones are built here, so that
+// internal/investigation/render imports no transport (ADR-0011 item 5).
+func newDeliverySink(sinkID string) (render.Sink, error) {
+	if sinkID == render.SinkSlack {
+		return slacksink.New(slacksink.Options{}), nil
+	}
+	return render.NewSink(sinkID, nil)
+}
+
+// deliverReportWith delivers through an already-built sink, editing previous when one is given.
+func deliverReportWith(
+	ctx context.Context, sink render.Sink, inv *investigationv1.Investigation, body, previous string,
+) render.DeliveryResult {
+	system, ref := deliverySplit(inv)
 	secret := os.Getenv(EnvDeliveryToken)
 	if secret == "" {
 		// No delivery credential is the ordinary state of a deployment with no chat connector.
@@ -508,13 +535,7 @@ func deliverReport(cmd *cobra.Command, inv *investigationv1.Investigation, body,
 			FailureDetail: credErr.Error(),
 		}
 	}
-	var previous string
-	for _, d := range inv.GetDeliveries() {
-		if d.GetTargetSystem() == system && d.GetTargetRef() == ref {
-			previous = d.GetExternalMessageRef()
-		}
-	}
-	return render.Deliver(cmd.Context(), sink, cred, render.DeliveryRequest{
+	return render.Deliver(ctx, sink, cred, render.DeliveryRequest{
 		InvestigationID:    inv.GetInvestigationId(),
 		TargetSystem:       system,
 		TargetRef:          ref,

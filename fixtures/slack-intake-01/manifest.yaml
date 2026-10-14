@@ -1,0 +1,38 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: slack-intake-01
+family: slack-intake
+description: 'Four channels appear in a workspace''s public list over four polls. `sev2-2026-10-14-checkout-latency`, created 09:12:03, is declared once — severity sev2, pinned to its creation instant rather than the 09:12:30 poll, keyed on its channel id, watching the checkout service through the operator''s service map — and the three later polls that still list it declare nothing. `sev2-…-test-paging` matches the pattern and is skipped as a test; a channel whose name the pattern does not match (blanked, as a recording blanks it) is skipped; and a severity channel shared with another organisation is skipped because it is not this organisation''s to declare. The creator is absent, as in a recording, so the declaring identity says it was not recorded. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: slack:T0TWIN
+      kind: slack
+      ordering: none
+      reordering_window: 30s
+clock:
+    start: 2026-10-14T09:11:30Z
+    end: 2026-10-14T09:30:00Z
+
+queries:
+  # The declaration: an ALERT on the channel, declared at 09:12:03, watching checkout.
+  - name: checkout-latency-declared
+    kind: subgraph
+    focus: incident=C0SEV2CHK
+    valid_at: 2026-10-14T09:12:03Z
+    observed_at: 2026-10-14T09:30:00Z
+    hops: 1
+    direction: both
+  # A second before the channel existed, nothing was declared.
+  - name: checkout-latency-before
+    kind: subgraph
+    focus: incident=C0SEV2CHK
+    valid_at: 2026-10-14T09:12:02Z
+    observed_at: 2026-10-14T09:30:00Z
+    hops: 1
+    direction: both
+    expect_empty: the channel did not exist yet, so a declaration dated at the poll rather than at creation would show here

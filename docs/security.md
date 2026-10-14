@@ -92,6 +92,23 @@ query the graph for what that source asserted while it was valid — which is a 
 bitemporal model can actually answer, because "what did we believe, and when did we learn it"
 is the thing it is built to store.
 
+## Declaring on someone's behalf, and the Slack report (006, 2026-10-13)
+
+`Declare` records two identities: the **requester** (the authenticated caller) and the
+**declaring identity** (who opened the incident). A caller may name a declaring identity other
+than its own only when it holds `feeder` scoped to the declaration's origin system
+(`internal/server/investigation.go`, `requireDeclareOnBehalf`; ADR-0011 item 2). An investigator
+declares as themselves; a Slack feeder token for one workspace cannot declare in another's name or
+for another source. A leaked Slack feeder token can therefore open investigations attributed to
+that workspace's people, and every one of them names the token as requester.
+
+The second published sink, `slack` (`internal/investigation/render/slacksink`), writes with the
+reporter app's bot token and nothing else. Before its first write it asks Slack which workspace and
+scopes the token has, and refuses to post with any scope beyond `chat:write` and
+`chat:write.public`, or into a workspace other than the one the credential was minted for. Its
+operation list is three calls; mentions in a report are neutralised so a report cannot page a
+channel. See [`docs/connectors/slack.md`](connectors/slack.md).
+
 ## Findings and fixes (T090, 2026-09-17)
 
 The security pass reviewed authentication, the dev provider, feeder scoping, credential handling
