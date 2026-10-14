@@ -49,10 +49,10 @@ in `internal/feeders/slack/`, sink in `internal/investigation/render/slacksink/`
 
 **Purpose**: the four gaps, the client and the sanitiser. Blocks every story.
 
-- [ ] T005 [P] Add the doorbell-only credential kind to `pkg/feeder/credential.go`: opens a socket, refused by every read and write path, `String` redacted (G2); fixture: unit
+- [X] T005 [P] Add the doorbell-only credential kind to `pkg/feeder/credential.go`: opens a socket, refused by every read and write path, `String` redacted (G2); fixture: unit Note: `feeder.DoorbellCredential` in `pkg/feeder/credential.go`: no method returns the secret except `Open`, which hands it to the call that opens the socket; redacted under every fmt verb, JSON and text; a reported scope beyond the doorbell's refuses (`DoorbellScopeError`).
 - [X] T006 [P] Add `feeder:declare` to the token scopes and restrict naming a `declaring_identity` other than the caller's to it, in `internal/server/investigation.go`; test that requester and declarer are both recorded (G3, FR-052); fixture: unit. Note: Done with the existing `feeder` role scoped to the declaration's origin system instead of a new scope (ADR-0011 item 2).
 - [X] T007 [P] Write `internal/sanitise/policy_slack.go`: drop text, names, emails, avatars, status; HMAC user, channel and team ids; keep channel names only on rule match (G4, FR-050); fixture: unit with canaries. Note: Creators are dropped, not hashed: the sanitiser never hashes people.
-- [ ] T008 Implement `internal/slackx/client.go`: the five Web API methods, cursor pagination, per-method tier budgets through `pkg/feeder/quota`, `Retry-After`, priority intake > reading > delivery (FR-014, research R7); fixture: unit against a recorded double
+- [X] T008 Implement `internal/slackx/client.go`: the five Web API methods, cursor pagination, per-method tier budgets through `pkg/feeder/quota`, `Retry-After`, priority intake > reading > delivery (FR-014, research R7); fixture: unit against a recorded double Note: `internal/slackx/budget.go`. Slack reports no remaining quota, so each method draws from a static per-minute allowance at its published tier through `feeder.QuotaBudget`, reported as `static_fallback`; reading defers at a quarter of the window left (`DeferredError`); a 429 closes the method until `Retry-After`. Delivery is on the reporter app, metered separately by Slack, so it never shares this budget.
 - [X] T009 Implement `internal/slackx/record.go`: record and replay of sanitised responses through `pkg/feeder/record`, sanitising before write (FR-050); fixture: unit. Note: Done through `deployrecord.Tee` with `slack.PreparePayload`, as the other feeders record.
 - [X] T010 Run `CheckReadOnly` on the reader bot token at start, refusing any write scope by name, and mark `docs/connectors/slack.md` enforced (FR-002, US5 scenario 1); fixture: unit
 
@@ -72,9 +72,9 @@ exactly one declaration, keyed on the channel id, pinned to creation.
 - [X] T013 [US1] Implement `internal/feeders/slack/feeder.go`: poll, match, build `DeclareRequest` exactly as `investigate declare` does, `DeclarationKey(slack:<team>, channel id, created)` (FR-006, FR-009, FR-010); fixture: `slack-intake-01`
 - [X] T014 [US1] Checkpoint and backfill: horizon (default 24 h), review mode for late discovery, true creation instant (FR-012, US1 scenarios 4–5); fixture: `slack-intake-late-01`
 - [X] T015 [US1] Renames and archives: a rename is a later fact, a rename into a match declares at the rename instant, archive is evidence and never retracts (Edge Cases, US1 scenario 2); fixture: `slack-intake-rename-01`. Note: A rename never re-declares; a channel renamed into a match is declared only if it was created inside the horizon, at its creation instant.
-- [ ] T016 [P] [US1] Socket Mode doorbell in `internal/slackx/socket.go` through `pkg/feeder/doorbell`: events ring an early poll and carry nothing (FR-011); fixture: `slack-doorbell-forged-01`
+- [X] T016 [P] [US1] Socket Mode doorbell in `internal/slackx/socket.go` through `pkg/feeder/doorbell`: events ring an early poll and carry nothing (FR-011); fixture: `slack-doorbell-forged-01` Note: Socket Mode over a hand-written WebSocket client (`internal/slackx/websocket.go`; no new module, plan amended). The socket reads only each message's type and envelope id, acknowledges, and counts; `feed slack --doorbell` drains it through a `doorbell.Bell` at one early poll per 10 s. `fixtures/slack-doorbell-forged-01` is three reads of one channel and one declaration.
 - [X] T017 [US1] `aisre feed slack` in `internal/cli/feed_slack.go`: live, `--record`, `--replay`, `--interval`, `--rule`, `--horizon`, `--doorbell`; fixture: unit. Note: `--rule` and `--doorbell` follow with T016.
-- [ ] T018 [US1] Fixtures `fixtures/slack-intake-01`, `-late-01`, `-rename-01`, `-two-channels-01`, `-private-01` as synthetic twins, each passing `aisre fixture verify` (replay, double, shuffle) (FR-053, SC-004); fixture: themselves
+- [X] T018 [US1] Fixtures `fixtures/slack-intake-01`, `-late-01`, `-rename-01`, `-two-channels-01`, `-private-01` as synthetic twins, each passing `aisre fixture verify` (replay, double, shuffle) (FR-053, SC-004); fixture: themselves Note: `-two-channels-01` is two incidents in one second, independent of list order; `-private-01` is a private channel skipped before its name is read, and a declared channel made private keeps its declaration (private channels are now carried as a flag and blanked by the recording pre-pass). All six intake fixtures pass `aisre fixture verify`.
 
 **Checkpoint**: the MVP trigger works on recordings; delivery still goes to `LogSink`.
 
@@ -92,8 +92,8 @@ body; `report_deliveries.update_count = 1`.
 - [X] T021 [US2] Default target is the investigation's own `slack:` origin, otherwise `not_configured` (FR-021, US2 scenario 5); fixture: unit
 - [X] T022 [US2] Strip `@here`, `@channel`, `@everyone` using `internal/sanitise` group-mention matching (FR-024); fixture: unit. Note: Done in the sink (`slacksink.Neutralise`), which escapes Slack's control characters as well.
 - [X] T023 [US2] Register `slack` in `render.NewSink` / `PublishedSinks` and accept a reporter token on `investigate report --deliver --sink slack` (FR-020); fixture: unit. Note: `render.NewSink` refuses `slack` and the CLI builds the sink, so `render` imports no transport.
-- [ ] T024 [US2] Cross-credential tests: the reporter credential cannot read, the reader credential cannot deliver, both fail before any network call (US2 scenario 3); fixture: unit
-- [ ] T025 [US2] Fixture `fixtures/slack-delivery-edit-01`: conclude, reopen, conclude again; one post, one update (FR-053, SC-004); fixture: itself
+- [X] T024 [US2] Cross-credential tests: the reporter credential cannot read, the reader credential cannot deliver, both fail before any network call (US2 scenario 3); fixture: unit Note: `internal/cli/slack_delivery_test.go`. Both apps' bot tokens are `xoxb-`, so neither can be told apart before Slack says whose it is: each refusal comes after `auth.test` and before any read or write, and an app-level token reaches neither without a request.
+- [X] T025 [US2] Fixture `fixtures/slack-delivery-edit-01`: conclude, reopen, conclude again; one post, one update (FR-053, SC-004); fixture: itself Note: found that a reopened investigation (a new record) would have posted a second message; `previousMessageRef` now walks the reopen chain to the parent's message, and `feed slack` uses it after a restart too. The fixture is `delivery.json`, the exchange without text.
 
 **Checkpoint**: US1 + US2 is the MVP — declared in Slack, answered in Slack.
 
@@ -128,16 +128,16 @@ digest; an injection attempt becomes an evidence item.
 
 ## Phase 7: User Story 5 — The operator check (P3)
 
-- [ ] T036 [US5] `aisre feed slack --check`: scopes per credential, rule and version, channels matched and skipped with the excluding clause (US5); fixture: unit over `slack-intake-01`
+- [X] T036 [US5] `aisre feed slack --check`: scopes per credential, rule and version, channels matched and skipped with the excluding clause (US5); fixture: unit over `slack-intake-01` Note: `--check` checks the reader, reporter and doorbell credentials it is given, prints the rule, reads the list once and names matched and excluded channels with their clause; non-matching and private ones are counted, never named. Works over `--replay` too. `--rule` (published refs only) and `--doorbell` land here, completing T017.
 
 ---
 
 ## Phase 8: Polish and verification
 
-- [ ] T037 [P] `docs/connectors/slack.md` final: setup, both app manifests, the invite workflow, failure modes; README status row for 006; fixture: unit (docs links checked by `check-specs.sh`)
+- [X] T037 [P] `docs/connectors/slack.md` final: setup, both app manifests, the invite workflow, failure modes; README status row for 006; fixture: unit (docs links checked by `check-specs.sh`) Note: §1 four credentials, the doorbell's operation and the budget, `--check`, both app manifests, letting the chat reader into a channel, failure modes; README row updated.
 - [ ] T038 Live quickstart run against the organisation's workspace, recorded as `quickstart-run-<date>.md`: SC-003 and SC-005 measured at p95; fixture: live run, recorded into the private corpus
 - [ ] T039 Re-run the coverage audit with Slack intake, beside the 2026-09-22 re-run in the private corpus (FR-054); fixture: private
-- [ ] T040 `/speckit-analyze` over spec, plan and tasks; close findings; fixture: all `slack-*`
+- [X] T040 `/speckit-analyze` over spec, plan and tasks; close findings; fixture: all `slack-*` Note: a manual consistency pass rather than the skill's full report. Two findings closed: US5 listed `archived before declaration` as a skip reason, which contradicts the archive edge case and the code (spec amended); plan said a WebSocket module would be added (amended: hand-written). T017's `--rule`/`--doorbell` closed by T036/T016.
 
 ---
 

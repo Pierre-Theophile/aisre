@@ -1,0 +1,28 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: slack-doorbell-forged-01
+family: slack-intake
+description: 'What a doorbell ring costs: at most one extra read of the channel list, and nothing else. `sev2-2026-10-14-checkout-latency` is created at 09:12:03. The doorbell-triggered poll at 09:12:05 reads it; a forged or replayed Socket Mode event, arriving once the bell''s rate limit has refilled, earns the extra poll at 09:12:40; and the next scheduled poll at 09:13:15 reads it again: three reads, one declaration, dated 09:12:03 (FR-011, SC-003). What the event said reaches nothing — internal/slackx/socket.go counts envelopes and never decodes their payload — and this fixture proves the other half, that an extra poll creates, alters and retracts nothing. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: slack:T0TWIN
+      kind: slack
+      ordering: none
+      reordering_window: 30s
+clock:
+    start: 2026-10-14T09:11:05Z
+    end: 2026-10-14T09:15:00Z
+
+queries:
+  - name: checkout-after-three-reads
+    kind: subgraph
+    focus: incident=C0SEV2CHK
+    valid_at: 2026-10-14T09:15:00Z
+    observed_at: 2026-10-14T09:15:00Z
+    hops: 1
+    direction: both

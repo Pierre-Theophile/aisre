@@ -15,6 +15,7 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
+	"github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1/investigationv1connect"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render/slacksink"
@@ -371,7 +372,7 @@ func newInvestigateReportCommand(global *globalOptions) *cobra.Command {
 			if !deliver {
 				return nil
 			}
-			result := deliverReport(cmd, resp.Msg, body, sinkID)
+			result := deliverReport(cmd, resp.Msg, body, sinkID, investigationGetter(client))
 			// FR-057f's other half: "a delivery that fails is recorded and the investigation
 			// still concludes". Until now nothing on this path wrote the ledger row, so
 			// `report_deliveries` only ever moved in tests and an operator asking "did the
@@ -482,7 +483,10 @@ func deliveryLedgerOutcome(result render.DeliveryResult) (outcome, detail string
 
 // deliverReport runs the delivery through the v1 sink. It returns a result and never an error,
 // which is the type-level half of "delivery never blocks" (FR-057f).
-func deliverReport(cmd *cobra.Command, inv *investigationv1.Investigation, body, sinkID string) render.DeliveryResult {
+func deliverReport(
+	cmd *cobra.Command, inv *investigationv1.Investigation, body, sinkID string,
+	get func(context.Context, string) (*investigationv1.Investigation, error),
+) render.DeliveryResult {
 	system, ref := deliverySplit(inv)
 	// The transport is resolved before the credential is read, so that a typo in --sink is
 	// refused rather than quietly served by whichever sink is compiled in (T116).
@@ -493,13 +497,58 @@ func deliverReport(cmd *cobra.Command, inv *investigationv1.Investigation, body,
 			FailureDetail: err.Error(),
 		}
 	}
-	var previous string
-	for _, d := range inv.GetDeliveries() {
-		if d.GetTargetSystem() == system && d.GetTargetRef() == ref {
-			previous = d.GetExternalMessageRef()
-		}
-	}
+	previous := previousMessageRef(cmd.Context(), get, inv, system, ref)
 	return deliverReportWith(cmd.Context(), sink, inv, body, previous)
+}
+
+// investigationGetter reads an investigation through the service, for previousMessageRef.
+func investigationGetter(client investigationv1connect.InvestigationServiceClient) func(context.Context, string) (*investigationv1.Investigation, error) {
+	return func(ctx context.Context, id string) (*investigationv1.Investigation, error) {
+		resp, err := client.Get(ctx, connect.NewRequest(&investigationv1.GetRequest{InvestigationId: id}))
+		if err != nil {
+			return nil, err
+		}
+		return resp.Msg, nil
+	}
+}
+
+// maxReopenChain bounds the walk up a chain of reopened investigations.
+const maxReopenChain = 16
+
+// previousMessageRef is the message a delivery edits: the investigation's own last delivery to the
+// place, or, for an investigation that reopens another, the message its parent delivered there.
+// A reopened investigation is a new record with its own id (FR-057b), and the people in the channel
+// asked one question: the answer to it is edited in place, never posted twice (006 US2). get reads
+// an investigation by id; nil, or a parent it cannot read, means a new message.
+func previousMessageRef(ctx context.Context, get func(context.Context, string) (*investigationv1.Investigation, error),
+	inv *investigationv1.Investigation, system, ref string,
+) string {
+	seen := map[string]bool{}
+	for range maxReopenChain {
+		if inv == nil || seen[inv.GetInvestigationId()] {
+			return ""
+		}
+		seen[inv.GetInvestigationId()] = true
+		var previous string
+		for _, d := range inv.GetDeliveries() {
+			if d.GetTargetSystem() == system && d.GetTargetRef() == ref && d.GetExternalMessageRef() != "" {
+				previous = d.GetExternalMessageRef()
+			}
+		}
+		if previous != "" {
+			return previous
+		}
+		parent := inv.GetReopensInvestigationId()
+		if parent == "" || get == nil {
+			return ""
+		}
+		next, err := get(ctx, parent)
+		if err != nil {
+			return ""
+		}
+		inv = next
+	}
+	return ""
 }
 
 // newDeliverySink resolves a published sink id. The connector-built ones are built here, so that

@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,36 +20,98 @@ import (
 
 // `feed slack` (006 US1, T013–T015).
 
-// slackTwin answers auth.test with the given scopes and refuses everything else, so a test that
-// reaches any other operation fails loudly.
+// slackTwin answers auth.test with the given scopes and lists four channels created minutes ago; it
+// refuses everything else, so a test that reaches any other operation — a message read, a write —
+// fails loudly.
 func slackTwin(t *testing.T, scopes string) *httptest.Server {
 	t.Helper()
+	created := time.Now().Add(-10 * time.Minute).Unix()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method+" "+r.URL.Path != "GET /api/auth.test" {
+		w.Header().Set("X-OAuth-Scopes", scopes)
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/auth.test":
+			_, _ = io.WriteString(w, `{"ok":true,"team_id":"T0TWIN","team":"twin","bot_id":"B0READ"}`)
+		case "GET /api/conversations.list":
+			_, _ = fmt.Fprintf(w, `{"ok":true,"channels":[`+
+				`{"id":"C1","name":"sev2-2026-10-14-checkout-latency","created":%[1]d},`+
+				`{"id":"C2","name":"sev2-2026-10-14-test-paging","created":%[1]d},`+
+				`{"id":"C3","name":"random","created":%[1]d},`+
+				`{"id":"C4","name":"sev1-2026-10-14-vendor-bridge","created":%[1]d,"is_ext_shared":true}]}`, created)
+		default:
 			t.Errorf("feed slack --check issued %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
-			return
 		}
-		w.Header().Set("X-OAuth-Scopes", scopes)
-		_, _ = io.WriteString(w, `{"ok":true,"team_id":"T0TWIN","team":"twin","bot_id":"B0READ"}`)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
 }
 
-func TestFeedSlackCheckReadsNoChannel(t *testing.T) {
+// TestFeedSlackCheckShowsWhatTheRuleMatches is US5: each credential, the rule and its version, and
+// the channels matched and skipped, each skipped one with the clause that excluded it — from one read
+// of the list, and nothing emitted.
+func TestFeedSlackCheckShowsWhatTheRuleMatches(t *testing.T) {
 	t.Setenv(EnvSlackReaderToken, "xoxb-reader")
+	t.Setenv(EnvDeliveryToken, "")
+	t.Setenv(EnvSlackAppToken, "")
 	srv := slackTwin(t, "channels:read")
 	stdout, stderr, code := run(t, t.Context(), "feed", "slack", "--check", "--slack-api", srv.URL,
 		"--service", "checkout=service.name=checkout")
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, stderr)
 	}
-	for _, want := range []string{"workspace T0TWIN", "read-only", "source id: slack:T0TWIN",
-		"slack/sev-channel@1", "services mapped: 1", "no channel was read"} {
+	for _, want := range []string{"workspace T0TWIN", "read-only", "reporter token: not set", "doorbell: off",
+		"source id: slack:T0TWIN", "rule: slack/sev-channel@1", "services mapped: 1",
+		"1 matched", "matched: sev2-2026-10-14-checkout-latency",
+		"skipped: sev2-2026-10-14-test-paging — excluded marker test",
+		"skipped: sev1-2026-10-14-vendor-bridge — shared with another organisation",
+		"skipped: 1 channel(s) — no rule match (not named)", "no message was read and no event was emitted"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("--check does not say %q:\n%s", want, stdout)
 		}
+	}
+	if strings.Contains(stdout, "random") {
+		t.Errorf("--check named a channel the rule does not match:\n%s", stdout)
+	}
+}
+
+// --check refuses a reporter token that can do more than post the report, and a doorbell token that
+// is not an app-level token, after saying everything else.
+func TestFeedSlackCheckRefusesAWrongCredential(t *testing.T) {
+	t.Setenv(EnvSlackReaderToken, "xoxb-reader")
+	t.Setenv(EnvDeliveryToken, "")
+	t.Setenv(EnvSlackAppToken, "xoxb-not-an-app-token")
+	srv := slackTwin(t, "channels:read")
+	stdout, stderr, code := run(t, t.Context(), "feed", "slack", "--check", "--slack-api", srv.URL)
+	if code != ExitUsage || !strings.Contains(stdout, "doorbell: REFUSED") || !strings.Contains(stderr, "doorbell token") {
+		t.Errorf("exit %d\n%s\n%s", code, stdout, stderr)
+	}
+}
+
+// The same check over a recording: fixtures/slack-intake-01 (T036).
+func TestFeedSlackCheckOverARecording(t *testing.T) {
+	stdout, stderr, code := run(t, t.Context(), "feed", "slack", "--check", "--team", "T0TWIN",
+		"--replay", "../../fixtures/slack-intake-01", "--horizon", "876000h")
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	for _, want := range []string{"matched: sev2-2026-10-14-checkout-latency",
+		"skipped: sev2-2026-10-14-test-paging — excluded marker test",
+		"skipped: sev1-2026-10-14-vendor-bridge — shared with another organisation",
+		"no rule match (not named)"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("--check --replay does not say %q:\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout, "reader token") {
+		t.Errorf("a replay checked a credential:\n%s", stdout)
+	}
+}
+
+func TestFeedSlackRefusesAnUnpublishedRule(t *testing.T) {
+	_, stderr, code := run(t, t.Context(), "feed", "slack", "--check", "--team", "T0TWIN",
+		"--replay", "../../fixtures/slack-intake-01", "--rule", "slack/sev-channel@9")
+	if code != ExitUsage || !strings.Contains(stderr, "not a published naming rule") {
+		t.Errorf("exit %d: %s", code, stderr)
 	}
 }
 
@@ -133,5 +196,23 @@ func TestParseSlackServices(t *testing.T) {
 		if _, err := parseSlackServices(bad); err == nil {
 			t.Errorf("%v accepted", bad)
 		}
+	}
+}
+
+// --doorbell is for a live run, and needs the app-level token: a bot token is not one.
+func TestFeedSlackDoorbellNeedsAnAppLevelToken(t *testing.T) {
+	_, stderr, code := run(t, t.Context(), "feed", "slack", "--doorbell", "--team", "T0TWIN",
+		"--replay", "../../fixtures/slack-intake-01")
+	if code != ExitUsage || !strings.Contains(stderr, "live run") {
+		t.Errorf("replay: exit %d: %s", code, stderr)
+	}
+	t.Setenv(EnvSlackReaderToken, "xoxb-reader")
+	t.Setenv(EnvSlackIdentityKey, strings.Repeat("ab", 32))
+	t.Setenv(EnvSlackAppToken, "xoxb-reader")
+	srv := slackTwin(t, "channels:read")
+	_, stderr, code = run(t, t.Context(), "feed", "slack", "--doorbell", "--slack-api", srv.URL, "--cycles", "1",
+		"--investigate=false")
+	if code != ExitUsage || !strings.Contains(stderr, EnvSlackAppToken) {
+		t.Errorf("bot token as the doorbell's: exit %d: %s", code, stderr)
 	}
 }

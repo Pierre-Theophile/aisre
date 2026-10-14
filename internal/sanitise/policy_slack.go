@@ -7,7 +7,7 @@ package sanitise
 // A poll is already reduced before it reaches this table: the poller keeps only channels created inside
 // the declaration horizon, and the recording pre-pass (slack.PreparePayload) blanks every name the
 // naming rule's pattern does not match. What is left is a workspace, channel ids, the names of
-// incident channels, instants and two flags.
+// incident channels, instants and three flags.
 //
 //   - the workspace and channel ids are pseudonymised, so a recording still joins a declaration to the
 //     report that went back to the same channel;
@@ -32,4 +32,5 @@ func addSlackRows(p *Policy) {
 	keep(c+".created", "the declared instant (FR-004a)")
 	keep(c+".archived", "a flag")
 	keep(c+".shared", "a flag: shared with another organisation")
+	keep(c+".private", "a flag: a private channel, whose name the pre-pass blanks")
 }

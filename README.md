@@ -33,7 +33,7 @@ cloud platform and the deploys an organisation actually runs.
 | [003 GCP integration](specs/003-gcp-integration/spec.md) | built and verified on synthetic twins ([quickstart run](specs/003-gcp-integration/quickstart-run-2026-09-22.md)); the recording campaign against a real estate and what can only be shown on it wait on a credential and a named signatory |
 | [004 Deploy feeders](specs/004-deploy-feeders/spec.md) (GitHub, Vercel) | built and verified on synthetic twins; waits on the same campaign, and on a real project-scoped Vercel token to establish the token regime |
 | [005 Datadog connector](specs/005-datadog-connector/spec.md) | specified; not yet planned |
-| [006 Slack connector](specs/006-slack-connector/spec.md) (incident-channel intake, report in the channel, chat reader) | approved 2026-10-13; in implementation |
+| [006 Slack connector](specs/006-slack-connector/spec.md) (incident-channel intake, report in the channel, chat reader) | built and verified on synthetic twins ([docs](docs/connectors/slack.md)); the recording campaign and the live quickstart wait on the two apps being installed in the workspace and a named signatory |
 
 Each feature's `tasks.md` says exactly what is open and why. What follows is feature 001's part.
 

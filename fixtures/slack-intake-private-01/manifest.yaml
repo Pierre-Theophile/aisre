@@ -1,0 +1,30 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: slack-intake-private-01
+family: slack-intake
+description: 'A private channel created at 11:04 is listed (its name blanked, as a recording blanks every private channel''s name) and is not declared: a private channel is skipped before its name is read, so whether it would have matched is never recorded. `sev3-2026-10-14-checkout-errors`, public at 11:05, is declared; at 11:20 it has been made private, and that retracts nothing — the declaration stands at 11:05, and its channel id stays the key. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: slack:T0TWIN
+      kind: slack
+      ordering: none
+      reordering_window: 30s
+clock:
+    start: 2026-10-14T11:04:30Z
+    end: 2026-10-14T11:25:00Z
+
+queries:
+  - name: checkout-declared-and-kept
+    kind: subgraph
+    focus: incident=C0SEV3CHK
+    valid_at: 2026-10-14T11:25:00Z
+    observed_at: 2026-10-14T11:25:00Z
+    hops: 1
+    direction: both
+  # The private channel C0PRIV001 has no golden: it was never declared, so the graph has no entity
+  # to focus on, which TestAPrivateChannelIsNeverDeclaredOrNamed asserts on the events.

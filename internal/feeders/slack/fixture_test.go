@@ -41,6 +41,7 @@ type twinChannel struct {
 	Created  time.Time `json:"created"`
 	Archived bool      `json:"archived,omitempty"`
 	Shared   bool      `json:"shared,omitempty"`
+	Private  bool      `json:"private,omitempty"`
 }
 
 type twinPoll struct {
@@ -201,8 +202,113 @@ queries:
 	}
 }
 
+var (
+	sevPayments = twinChannel{ID: "C0SEV1PAY", Name: "sev1-2026-10-14-payments-down", Created: at(14, 2, 10)}
+	sevSearch   = twinChannel{ID: "C0SEV2SRC", Name: "sev2-2026-10-14-search-latency", Created: at(14, 2, 10)}
+)
+
+func intakeTwoChannels01() intakeFixture {
+	return intakeFixture{
+		dir: "fixtures/slack-intake-two-channels-01",
+		description: "Two unrelated incidents are declared in the same second: `sev1-2026-10-14-payments-down` " +
+			"and `sev2-2026-10-14-search-latency`, both created at 14:02:10. Each is its own declaration, " +
+			"keyed on its own channel id and pinned to the shared instant, and each watches only the " +
+			"service its own slug names. Slack lists them in one order on the first poll and the other on " +
+			"the second; the declarations do not depend on it, because the feeder orders a poll by " +
+			"creation instant and channel id.",
+		polls: []twinPoll{
+			{at: at(14, 2, 30), channels: []twinChannel{sevSearch, sevPayments}},
+			{at: at(14, 3, 0), channels: []twinChannel{sevPayments, sevSearch}},
+		},
+		end: at(14, 5, 0),
+		queries: `
+queries:
+  - name: payments-declared
+    kind: subgraph
+    focus: incident=C0SEV1PAY
+    valid_at: 2026-10-14T14:02:10Z
+    observed_at: 2026-10-14T14:05:00Z
+    hops: 1
+    direction: both
+  - name: search-declared
+    kind: subgraph
+    focus: incident=C0SEV2SRC
+    valid_at: 2026-10-14T14:02:10Z
+    observed_at: 2026-10-14T14:05:00Z
+    hops: 1
+    direction: both
+`,
+	}
+}
+
+var (
+	sevPrivate        = twinChannel{ID: "C0PRIV001", Name: "", Created: at(11, 4, 0), Private: true}
+	sevCheckoutPublic = twinChannel{ID: "C0SEV3CHK", Name: "sev3-2026-10-14-checkout-errors", Created: at(11, 5, 0)}
+)
+
+func intakePrivate01() intakeFixture {
+	madePrivate := sevCheckoutPublic
+	madePrivate.Name, madePrivate.Private = "", true
+	return intakeFixture{
+		dir: "fixtures/slack-intake-private-01",
+		description: "A private channel created at 11:04 is listed (its name blanked, as a recording blanks " +
+			"every private channel's name) and is not declared: a private channel is skipped before its name " +
+			"is read, so whether it would have matched is never recorded. `sev3-2026-10-14-checkout-errors`, " +
+			"public at 11:05, is declared; at 11:20 it has been made private, and that retracts nothing — " +
+			"the declaration stands at 11:05, and its channel id stays the key.",
+		polls: []twinPoll{
+			{at: at(11, 5, 30), channels: []twinChannel{sevPrivate, sevCheckoutPublic}},
+			{at: at(11, 20, 0), channels: []twinChannel{sevPrivate, madePrivate}},
+		},
+		end: at(11, 25, 0),
+		queries: `
+queries:
+  - name: checkout-declared-and-kept
+    kind: subgraph
+    focus: incident=C0SEV3CHK
+    valid_at: 2026-10-14T11:25:00Z
+    observed_at: 2026-10-14T11:25:00Z
+    hops: 1
+    direction: both
+  # The private channel C0PRIV001 has no golden: it was never declared, so the graph has no entity
+  # to focus on, which TestAPrivateChannelIsNeverDeclaredOrNamed asserts on the events.
+`,
+	}
+}
+
+func doorbellForged01() intakeFixture {
+	return intakeFixture{
+		dir: "fixtures/slack-doorbell-forged-01",
+		description: "What a doorbell ring costs: at most one extra read of the channel list, and nothing else. " +
+			"`sev2-2026-10-14-checkout-latency` is created at 09:12:03. The doorbell-triggered poll at " +
+			"09:12:05 reads it; a forged or replayed Socket Mode event, arriving once the bell's rate limit " +
+			"has refilled, earns the extra poll at 09:12:40; and the next scheduled poll at 09:13:15 reads " +
+			"it again: three reads, one declaration, dated 09:12:03 (FR-011, SC-003). What the event said " +
+			"reaches nothing — " +
+			"internal/slackx/socket.go counts envelopes and never decodes their payload — and this fixture " +
+			"proves the other half, that an extra poll creates, alters and retracts nothing.",
+		polls: []twinPoll{
+			{at: at(9, 12, 5), channels: []twinChannel{sevCheckout}},
+			{at: at(9, 12, 40), channels: []twinChannel{sevCheckout}},
+			{at: at(9, 13, 15), channels: []twinChannel{sevCheckout}},
+		},
+		end: at(9, 15, 0),
+		queries: `
+queries:
+  - name: checkout-after-three-reads
+    kind: subgraph
+    focus: incident=C0SEV2CHK
+    valid_at: 2026-10-14T09:15:00Z
+    observed_at: 2026-10-14T09:15:00Z
+    hops: 1
+    direction: both
+`,
+	}
+}
+
 func allFixtures() []intakeFixture {
-	return []intakeFixture{intake01(), intakeLate01(), intakeRename01()}
+	return []intakeFixture{intake01(), intakeLate01(), intakeRename01(), intakeTwoChannels01(), intakePrivate01(),
+		doorbellForged01()}
 }
 
 func TestGenerateIntakeFixtures(t *testing.T) {
@@ -312,6 +418,92 @@ func TestRenameNeverReDeclares(t *testing.T) {
 	}
 	if r := f.Report(); r.Renamed != 1 || !strings.Contains(r.Note(), "1 rename") {
 		t.Errorf("report %s", r.Note())
+	}
+}
+
+func TestTwoChannelsInOneSecondAreTwoDeclarations(t *testing.T) {
+	var opened []slack.Declared
+	opts := fixtureOptions()
+	opts.Services["search"] = feeder.Ref(feeder.NSOTelService, "search")
+	opts.OnDeclared = func(_ context.Context, d slack.Declared) { opened = append(opened, d) }
+	f, _ := slack.New(opts)
+	if err := f.Run(t.Context(), source.NewSliceSource(intakeTwoChannels01().payloads(t)),
+		emit.NewMemoryEmitter(f.Describe())); err != nil {
+		t.Fatal(err)
+	}
+	if len(opened) != 2 || opened[0].ChannelID != sevPayments.ID || opened[1].ChannelID != sevSearch.ID {
+		t.Fatalf("opened %+v; want payments then search, by channel id within the shared second", opened)
+	}
+	if opened[0].IdempotencyKey == opened[1].IdempotencyKey {
+		t.Error("two channels share a key")
+	}
+	if len(opened[1].Targets) != 1 || opened[1].Targets[0].GetValue() != "search" {
+		t.Errorf("search watches %v", opened[1].Targets)
+	}
+}
+
+func TestAPrivateChannelIsNeverDeclaredOrNamed(t *testing.T) {
+	var opened []string
+	opts := fixtureOptions()
+	opts.OnDeclared = func(_ context.Context, d slack.Declared) { opened = append(opened, d.ChannelID) }
+	f, _ := slack.New(opts)
+	em := emit.NewMemoryEmitter(f.Describe())
+	if err := f.Run(t.Context(), source.NewSliceSource(intakePrivate01().payloads(t)), em); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(opened, []string{sevCheckoutPublic.ID}) {
+		t.Errorf("opened %v", opened)
+	}
+	r := f.Report()
+	if r.Skipped[slack.SkipPrivate] != 1 || len(r.Excluded) != 0 {
+		t.Errorf("report %s, excluded %v", r.Note(), r.Excluded)
+	}
+	// Made private after its declaration, the channel's declaration stands: nothing is retracted.
+	transitions := 0
+	for _, ev := range em.Events() {
+		if ev.GetRetractNode() != nil || ev.GetRetractEdge() != nil {
+			t.Errorf("a retraction: %v", ev)
+		}
+		if ev.GetAlertTransition() != nil {
+			transitions++
+		}
+	}
+	if transitions != 1 {
+		t.Errorf("%d transitions; want the one declaration", transitions)
+	}
+}
+
+func TestExtraPollsDeclareOnce(t *testing.T) {
+	f, _ := slack.New(fixtureOptions())
+	em := emit.NewMemoryEmitter(f.Describe())
+	if err := f.Run(t.Context(), source.NewSliceSource(doorbellForged01().payloads(t)), em); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, ev := range em.Events() {
+		if ev.GetAlertTransition() != nil {
+			n++
+		}
+	}
+	if n != 1 || f.Report().Polls != 3 {
+		t.Errorf("%d declaration(s) over %d poll(s); want one over three", n, f.Report().Polls)
+	}
+}
+
+// The report names each channel a clause excluded, with the clause, and never a channel the pattern
+// did not match (US5 scenario 2).
+func TestTheReportNamesTheExcludingClause(t *testing.T) {
+	f, _ := slack.New(fixtureOptions())
+	if err := f.Run(t.Context(), source.NewSliceSource(intake01().payloads(t)), emit.NewMemoryEmitter(f.Describe())); err != nil {
+		t.Fatal(err)
+	}
+	got := f.Report().Excluded
+	want := []slack.Excluded{
+		{Name: sevShared.Name, Reason: slack.SkipShared},
+		{Name: sevTest.Name, Reason: "excluded marker test"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("excluded %+v, want %+v", got, want)
 	}
 }
 

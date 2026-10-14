@@ -1,0 +1,16 @@
+{
+  "description": "An investigation declared in a Slack channel concludes and its report is posted there. It is reopened with new evidence, which opens a new investigation record linked to its parent (FR-057b); that one concludes and the report in the channel is edited in place. One chat.postMessage, one chat.update, one message in the channel (006 US2). Only the operations and the message are recorded, never the report's text.",
+  "exchange": [
+    {
+      "op": "chat.postMessage",
+      "channel": "C0SEV2CHK",
+      "ts": "1760434200.000001"
+    },
+    {
+      "op": "chat.update",
+      "channel": "C0SEV2CHK",
+      "ts": "1760434200.000001"
+    }
+  ],
+  "messages_in_channel": 1
+}

@@ -1,0 +1,35 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: slack-intake-two-channels-01
+family: slack-intake
+description: 'Two unrelated incidents are declared in the same second: `sev1-2026-10-14-payments-down` and `sev2-2026-10-14-search-latency`, both created at 14:02:10. Each is its own declaration, keyed on its own channel id and pinned to the shared instant, and each watches only the service its own slug names. Slack lists them in one order on the first poll and the other on the second; the declarations do not depend on it, because the feeder orders a poll by creation instant and channel id. Synthetic structural twin: no identifier is derived from the organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: slack:T0TWIN
+      kind: slack
+      ordering: none
+      reordering_window: 30s
+clock:
+    start: 2026-10-14T14:01:30Z
+    end: 2026-10-14T14:05:00Z
+
+queries:
+  - name: payments-declared
+    kind: subgraph
+    focus: incident=C0SEV1PAY
+    valid_at: 2026-10-14T14:02:10Z
+    observed_at: 2026-10-14T14:05:00Z
+    hops: 1
+    direction: both
+  - name: search-declared
+    kind: subgraph
+    focus: incident=C0SEV2SRC
+    valid_at: 2026-10-14T14:02:10Z
+    observed_at: 2026-10-14T14:05:00Z
+    hops: 1
+    direction: both

@@ -42,8 +42,9 @@ What is missing is listed as gaps below; there are four, and only one touches a 
 `NewSink`); `internal/sanitise`; `internal/campaign`. The Slack Web API (`conversations.list`,
 `conversations.info`, `conversations.history`, `chat.postMessage`, `chat.update`) and Socket Mode
 (`apps.connections.open` plus a WebSocket). **No Slack client library**: five methods and a socket,
-hand-written, so the read-only operation list is provable (constitution X; research R1). A
-WebSocket dependency is the only new module, and only for the doorbell.
+hand-written, so the read-only operation list is provable (constitution X; research R1). No new
+module: the doorbell's WebSocket client is hand-written as well, because the maintained libraries are
+ISC- or BSD-2-Clause-licensed, outside the constitution's list (amended 2026-10-14).
 
 **Storage**: PostgreSQL 16, unchanged. No new tables: declarations go through the existing event
 log, and report references live in the existing `investigation.report_deliveries`. The naming

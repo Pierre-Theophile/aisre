@@ -3,7 +3,9 @@
 package feeder
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 )
@@ -171,3 +173,117 @@ func isReadPermission(value string) bool {
 	}
 	return false
 }
+
+// The doorbell-only credential (006 G2, T005; research R2).
+//
+// Some platforms push their "something changed" signal over a connection the connector must open
+// itself, and the credential that opens it is named like a write: Slack's Socket Mode app-level token
+// carries `connections:write`, which writes nothing to the workspace and only opens the app's own
+// socket. Teaching CheckReadOnly that one write scope is harmless would make it an exception list,
+// and the next harmless-looking write would be argued onto it. So the token gets a type of its own
+// instead, and the type is what makes it harmless:
+//
+//   - it cannot be passed where a read or write credential is taken, because it is not a string and
+//     has no method that returns one;
+//   - the only use of its secret is Open, which hands it to a function that opens the doorbell's
+//     connection — reviewable in one place per platform;
+//   - it renders as redacted under every fmt verb and in JSON, so a log line or a checkpoint that
+//     carries it by mistake carries nothing.
+//
+// The read-only gate still runs on every credential that reads, and a doorbell can still only ring
+// (pkg/feeder/doorbell): the most a doorbell credential in the wrong hands buys is an early poll.
+
+// DoorbellCredential is a secret that opens a doorbell connection and does nothing else.
+type DoorbellCredential struct {
+	platform string
+	secret   string
+	scopes   []string
+}
+
+// DoorbellScopeError is a doorbell credential that the platform says can do more than open a
+// doorbell connection.
+type DoorbellScopeError struct {
+	Platform string
+	// Extra are the scopes beyond the doorbell's, sorted.
+	Extra []string
+}
+
+func (e *DoorbellScopeError) Error() string {
+	return fmt.Sprintf("feeder: %s's doorbell credential holds %s beyond what opening a doorbell "+
+		"connection needs; a doorbell credential that can do anything else is not a doorbell "+
+		"credential, so it is refused rather than trusted not to be used (constitution VII)",
+		e.Platform, strings.Join(e.Extra, ", "))
+}
+
+// NewDoorbellCredential wraps secret as a doorbell credential for platform. reported is what the
+// platform said the secret holds, where it says; allowed is the doorbell's own scope set. A reported
+// scope outside allowed refuses. Nothing reported is accepted, because the type and not the scope
+// list is what confines it: it can only ever be handed to Open.
+func NewDoorbellCredential(platform, secret string, reported, allowed []string) (*DoorbellCredential, error) {
+	platform = strings.TrimSpace(platform)
+	switch {
+	case platform == "":
+		return nil, fmt.Errorf("feeder: a doorbell credential with no platform name")
+	case strings.TrimSpace(secret) == "":
+		return nil, fmt.Errorf("feeder: %s's doorbell credential is empty", platform)
+	}
+	var extra []string
+	for _, scope := range reported {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		permitted := false
+		for _, a := range allowed {
+			if scope == a {
+				permitted = true
+			}
+		}
+		if !permitted {
+			extra = append(extra, scope)
+		}
+	}
+	if len(extra) > 0 {
+		sort.Strings(extra)
+		return nil, &DoorbellScopeError{Platform: platform, Extra: extra}
+	}
+	scopes := append([]string(nil), reported...)
+	sort.Strings(scopes)
+	return &DoorbellCredential{platform: platform, secret: strings.TrimSpace(secret), scopes: scopes}, nil
+}
+
+// Platform names the platform the credential belongs to.
+func (c *DoorbellCredential) Platform() string {
+	if c == nil {
+		return ""
+	}
+	return c.platform
+}
+
+// Open hands the secret to open, which opens the doorbell's connection. It is the secret's only use.
+func (c *DoorbellCredential) Open(open func(secret string) error) error {
+	if c == nil || c.secret == "" {
+		return fmt.Errorf("feeder: no doorbell credential")
+	}
+	return open(c.secret)
+}
+
+// String is redacted.
+func (c *DoorbellCredential) String() string {
+	if c == nil {
+		return "doorbell credential (none)"
+	}
+	return c.platform + " doorbell credential (redacted)"
+}
+
+// GoString is redacted, so %#v carries nothing either.
+func (c *DoorbellCredential) GoString() string { return c.String() }
+
+// Format is redacted under every verb, %+v and %x included.
+func (c *DoorbellCredential) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, c.String()) }
+
+// MarshalJSON is redacted.
+func (c *DoorbellCredential) MarshalJSON() ([]byte, error) { return json.Marshal(c.String()) }
+
+// MarshalText is redacted.
+func (c *DoorbellCredential) MarshalText() ([]byte, error) { return []byte(c.String()), nil }
