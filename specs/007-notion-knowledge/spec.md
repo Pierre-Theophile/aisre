@@ -69,7 +69,8 @@ the owner approved all five as written on 2026-10-14.
 - Q5: Transport? → **Default: poll each database for pages edited since the last poll, every 15
   minutes, with a full reconciliation daily.** Notion webhooks need a public endpoint and are not
   offered in v1. Edits become later facts; a page archived, trashed or moved out of a database
-  closes its links at the instant it was observed gone, and history is kept. (FR-040–FR-044)
+  closes its links at the instant Notion records for the change (FR-043), and history is
+  kept. (FR-040–FR-044)
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -143,7 +144,7 @@ Casey configures the feeder with the Postmortems and Runbooks database ids, the 
 the map from Services values to graph entities, and the Summary and Resolution properties. Within one
 poll, every page with a mapped service is a `KNOWLEDGE_DOC`. When someone edits a postmortem's
 Resolution, the next poll records the new summary as a later fact; when someone archives a runbook,
-its links close at the instant it was seen gone.
+its links close at the instant it was archived.
 
 **Why this priority**: without it Story 1 has nothing to cite.
 
@@ -162,7 +163,7 @@ surface.
 3. **Given** a page whose Services property changes from `checkout` to `checkout, payments`, **Then**
    one edge is added at the observed instant and the existing one is untouched.
 4. **Given** a page archived, trashed, or moved out of every configured database, **Then** its edges
-   are closed at the observed instant; the node and its history remain.
+   are closed at the instant of FR-043; the node and its history remain.
 5. **Given** a page whose services the map does not name, **Then** it is not registered and the
    operator check lists it with the unmapped values.
 
@@ -299,8 +300,10 @@ it.
 - **FR-042**: A changed title, summary, kind or link set MUST be recorded as a later fact at the
   observed instant; earlier versions remain queryable.
 - **FR-043**: A page archived, trashed or moved out of every configured database MUST have its links
-  closed at the instant it was observed gone; a restored page MUST have them reopened as a new
-  interval.
+  closed at the instant Notion records for that change, or, when Notion records none, at the last
+  instant the page was seen; never at the instant the feeder noticed (amended 2026-10-14 in
+  planning, to match the project's `retract_edge` rule). A restored page MUST have them reopened as
+  a new interval.
 - **FR-044**: Calls MUST be spent from a declared budget, honour `Retry-After`, and a poll cut short
   MUST be recorded as a coverage gap.
 
