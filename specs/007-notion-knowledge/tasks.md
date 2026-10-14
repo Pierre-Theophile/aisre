@@ -19,8 +19,8 @@ phase for the client, the sanitiser and the corpus interface, then the stories i
 US2 comes before US3 and US1 although all three are P1: it is useful alone (hand-registered
 documents and reviewed investigations start being cited) and US1 cannot be met without it.
 
-**Status**: scope and the five defaults approved by the owner on 2026-10-14; plan and tasks awaiting
-the owner before any code.
+**Status**: scope, the five defaults, the plan and these tasks approved by the owner on 2026-10-14
+(all three PRs); in implementation.
 
 ## Format: `[ID] [P?] [Story] Description`
 
