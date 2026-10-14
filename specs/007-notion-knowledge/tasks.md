@@ -108,9 +108,9 @@ and `fixtures/incidents/knowledge-notion-01/`.
 
 **Independent Test**: `fixtures/incidents/knowledge-notion-01` — linked postmortem cited; out-of-subgraph and later postmortems never cited.
 
-- [ ] T026 [US1] Author `fixtures/incidents/knowledge-notion-01/`: an incident on `checkout` whose graph holds three Notion postmortems from the T024 twin — one linked to `checkout` and older than the pin, one linked to a service outside the subgraph that is the better lexical match, one authored after the pin — plus one injection attempt in a summary (US1 scenarios 1–3, 5); fixture: knowledge-notion-01
-- [ ] T027 [US1] Evaluation test in `internal/eval/`: the linked postmortem is cited with identifier, linked entity, provenance `notion/notion-db@1 configured by …`, age and location; the other two are cited in 0 % of runs; scope, budgets and verdict are unchanged by the injection (SC-001 shape, SC-002, FR-017 of 002); fixture: knowledge-notion-01
-- [ ] T028 [US1] Assert that a hypothesis resting only on the cited postmortem is reported knowledge-derived and never reaches `supported` without a source-of-truth worker (US1 scenario 4, 002 FR-051); fixture: knowledge-notion-01
+- [X] T026 [US1] Author `fixtures/incidents/knowledge-notion-01/`: an incident on `checkout` whose graph holds three Notion postmortems from the T024 twin — one linked to `checkout` and older than the pin, one linked to a service outside the subgraph that is the better lexical match, one authored after the pin — plus one injection attempt in a summary (US1 scenarios 1–3, 5); fixture: knowledge-notion-01 Note: the incident is knowledge-scope-01's; its `knowledge_search` predicates use the digest's real paths (`knowledge.items[*].document_id`, `knowledge.items`).
+- [X] T027 [US1] Evaluation test in `internal/eval/`: the linked postmortem is cited with identifier, linked entity, provenance `notion/notion-db@1 configured by …`, age and location; the other two are cited in 0 % of runs; scope, budgets and verdict are unchanged by the injection (SC-001 shape, SC-002, FR-017 of 002); fixture: knowledge-notion-01 Note: `internal/eval/knowledge_notion_test.go` grades the fixture's own predicates against the worker's answer over the harness graph, once per declared run, and compares the verdict and worker calls with knowledge-scope-01's; the recorded trajectories (model-free and fake model) ask no `knowledge_search`.
+- [X] T028 [US1] Assert that a hypothesis resting only on the cited postmortem is reported knowledge-derived and never reaches `supported` without a source-of-truth worker (US1 scenario 4, 002 FR-051); fixture: knowledge-notion-01 Note: `TestAPostmortemAloneNeverSupportsAHypothesis`.
 
 **Checkpoint**: the MVP the owner asked for is demonstrable on synthetic data.
 
@@ -122,7 +122,7 @@ and `fixtures/incidents/knowledge-notion-01/`.
 
 **Independent Test**: `fixture campaign scan` and `verify` pass over the private recording.
 
-- [ ] T029 [P] [US4] Add Notion user-id and email shapes to the independent scan in `internal/campaign` and plant canary tokens in the twin's dropped properties (SC-005); fixture: notion-knowledge-twin-01
+- [X] T029 [P] [US4] Add Notion user-id and email shapes to the independent scan in `internal/campaign` and plant canary tokens in the twin's dropped properties (SC-005); fixture: notion-knowledge-twin-01 Note: the independent scan is `scripts/check-no-secrets.sh` (rule `notion-person`, plus Notion secret shapes under `api-key`); canaries are planted in the twin (a user mention, an unbound property) and in the client test (`created_by`, a people property).
 - [ ] T030 [US4] Record the organisation's postmortem and runbook databases into the private corpus with `feed notion --record` and pass `fixture campaign scan` and `verify` there (FR-051, US4 scenario 1); fixture: private corpus. **Needs the owner**: the integration created and shared, and where the postmortems live confirmed.
 - [ ] T031 [US4] Re-run the coverage audit with the index populated from the recording, incident by incident: earlier postmortem on the same entities, cited or not, and record it beside the earlier re-runs in `docs/evaluation/` without private content (FR-053, SC-001, US4 scenario 2); fixture: private corpus. **Needs the owner**, after T030.
 
@@ -136,8 +136,8 @@ and `fixtures/incidents/knowledge-notion-01/`.
 
 **Independent Test**: `feed notion --check` on the twin prints the report of contracts §6.
 
-- [ ] T032 [US5] Implement `--check` in `internal/cli/feed_notion.go`: credential evidence and acknowledgement, workspace label, per database its kind, data sources, resolved properties, pages registered and skipped with the closed set of reasons, pages outside the configured databases as a count only, the budget spent; emits nothing (US5 scenarios 1–2, contracts §6); fixture: unit over notion-knowledge-twin-01
-- [ ] T033 [US5] Print the same registration report at the end of each reconciliation in the feeder's log, without summaries or bodies; fixture: unit
+- [X] T032 [US5] Implement `--check` in `internal/cli/feed_notion.go`: credential evidence and acknowledgement, workspace label, per database its kind, data sources, resolved properties, pages registered and skipped with the closed set of reasons, pages outside the configured databases as a count only, the budget spent; emits nothing (US5 scenarios 1–2, contracts §6); fixture: unit over notion-knowledge-twin-01 Note: also runs over `--replay`; contract §6 amended (archived counts as ended; `untitled`; outside is a count).
+- [X] T033 [US5] Print the same registration report at the end of each reconciliation in the feeder's log, without summaries or bodies; fixture: unit Note: the poller marks the last read of a cycle (`end_of_cycle`).
 
 **Checkpoint**: all stories complete.
 
@@ -145,9 +145,9 @@ and `fixtures/incidents/knowledge-notion-01/`.
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T034 [P] Add the 007 row to `README.md`'s feature table and walk `docs/connectors/checklist.md` for the Notion connector, recording each box in the PR; fixture: unit (`scripts/check-specs.sh`)
-- [ ] T035 [P] Run `./scripts/add-spdx-headers.sh`, `./scripts/check-no-secrets.sh`, `golangci-lint run` and `go test ./...` with `PG_DSN` set; fixture: CI
-- [ ] T036 Walk [quickstart.md](./quickstart.md) §1–§4 and §6 on the twin and record the run in `quickstart.md`; §5 live once T030 is possible; fixture: notion-knowledge-twin-01
+- [X] T034 [P] Add the 007 row to `README.md`'s feature table and walk `docs/connectors/checklist.md` for the Notion connector, recording each box in the PR; fixture: unit (`scripts/check-specs.sh`) Note: checklist walked in PR 3's description.
+- [X] T035 [P] Run `./scripts/add-spdx-headers.sh`, `./scripts/check-no-secrets.sh`, `golangci-lint run` and `go test ./...` with `PG_DSN` set; fixture: CI
+- [X] T036 Walk [quickstart.md](./quickstart.md) §1–§4 and §6 on the twin and record the run in `quickstart.md`; §5 live once T030 is possible; fixture: notion-knowledge-twin-01 Note: recorded in quickstart.md, "Run 2026-10-14"; §1 needs a model to show a served citation.
 
 ---
 

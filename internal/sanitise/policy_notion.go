@@ -36,6 +36,9 @@ func addNotionRows(p *Policy) {
 	keep(root+".edited_since", "the lower bound of an incremental read")
 	keep(root+".complete", "a flag: whether the read was whole")
 	keep(root+".gap", "why a read was not whole; the poller's own words and an HTTP status")
+	keep(root+".properties_found[]", "a configured property name some listed page carried")
+	keep(root+".outside", "a count of listed pages outside the configured databases")
+	keep(root+".end_of_cycle", "a flag: the last read of a cycle")
 	pg := root + ".pages[]"
 	pseudo(pg+".id", KindPage, "the page id: the document reference")
 	drop(pg+".url", "the page URL carries the page id in the clear; a replay rebuilds one from the pseudonym")

@@ -82,8 +82,13 @@ Exit codes are the CLI's (`internal/cli/root.go`): 0 ok, 1 usage, 2 Notion unrea
 
 Per database: kind, data sources, properties resolved, pages registered, pages skipped with their
 reason, and the budget spent. Reasons are a closed set: `no mapped entity`, `unmapped value <v>`,
-`in another bound database`, `archived`, `outside the configured databases` (count only). Page
-titles are printed; summaries and page bodies are not.
+`in another bound database <id>`, `untitled`. Page titles are printed; summaries and page bodies
+are not.
+
+Amended during implementation (PR 3): an archived or trashed page is not a skip but an ending, so it
+is counted under "ended" with moved and deleted pages; `untitled` was added for a page with no title
+to cite; and pages outside the configured databases are a count of their own, not a reason, because
+the connector never registers or names them.
 
 ## 7. `serve`
 

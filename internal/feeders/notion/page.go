@@ -45,6 +45,14 @@ type pagesPayload struct {
 	// Gap says why it is not complete.
 	Gap   string         `json:"gap,omitempty"`
 	Pages []observedPage `json:"pages"`
+	// Properties are the configured property names at least one listed page carried: what the
+	// operator's report calls resolved. A name no page carries is a typo or a renamed column.
+	Properties []string `json:"properties_found,omitempty"`
+	// Outside counts listed pages whose parent is not a configured database (a linked view). They
+	// are reported as a count only.
+	Outside int `json:"outside,omitempty"`
+	// EndOfCycle marks the last read of a cycle.
+	EndOfCycle bool `json:"end_of_cycle,omitempty"`
 }
 
 // observedPage is one page as a read saw it, or a registered page found gone.

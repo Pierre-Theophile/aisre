@@ -142,6 +142,15 @@ func validKind(kind string) bool {
 	return false
 }
 
+// properties are the property names the binding reads, in configuration order.
+func (b *Binding) properties() []string {
+	names := append([]string{b.EntityProperty}, b.SummaryProperties...)
+	if b.AuthoredProperty != "" {
+		names = append(names, b.AuthoredProperty)
+	}
+	return names
+}
+
 // Map returns the entity refs the values name, deduplicated in value order, and the values the map
 // does not name.
 func (b *Binding) Map(values []string) (refs []*graphv1.Ref, unmapped []string) {
