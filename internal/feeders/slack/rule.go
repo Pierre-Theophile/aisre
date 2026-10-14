@@ -5,6 +5,7 @@ package slack
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -48,6 +49,29 @@ var DefaultRule = Rule{
 	Pattern:        regexp.MustCompile(`^sev(?P<sev>[0-9])-(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})(?:-(?P<slug>[a-z0-9][a-z0-9_-]*))?$`),
 	SeverityFormat: "sev%s",
 	Exclusions:     []string{"test", "drill", "gameday"},
+}
+
+// PublishedRules are the rules a deployment may name, by reference. A rule is added here, never
+// edited: a replay names the version its events carry.
+var PublishedRules = map[string]Rule{DefaultRule.Ref(): DefaultRule}
+
+// RuleByRef returns a published rule.
+func RuleByRef(ref string) (Rule, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return DefaultRule, nil
+	}
+	rule, ok := PublishedRules[ref]
+	if !ok {
+		refs := make([]string, 0, len(PublishedRules))
+		for r := range PublishedRules {
+			refs = append(refs, r)
+		}
+		sort.Strings(refs)
+		return Rule{}, fmt.Errorf("slack: %q is not a published naming rule; the published ones are %s",
+			ref, strings.Join(refs, ", "))
+	}
+	return rule, nil
 }
 
 // Ref is the rule's published reference, `slack/<id>@<version>`.

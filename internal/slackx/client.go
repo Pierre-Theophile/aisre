@@ -72,6 +72,9 @@ type Options struct {
 	// History enables conversations.history. Off, the operation is refused before it is issued, so
 	// a deployment that has not turned the chat reader on cannot read a message even by mistake.
 	History bool
+	// Budget paces the calls per method tier (FR-014). Nil issues every call Slack will take; a
+	// process whose intake and chat reader share one app shares one budget.
+	Budget *Budget
 }
 
 // Client issues the published operations.
@@ -81,6 +84,7 @@ type Client struct {
 	http    *http.Client
 	now     func() time.Time
 	history bool
+	budget  *Budget
 }
 
 // New returns a client, refusing an incomplete configuration.
@@ -108,7 +112,7 @@ func New(opts Options) (*Client, error) {
 	if now == nil {
 		now = time.Now
 	}
-	return &Client{base: base, token: token, http: client, now: now, history: opts.History}, nil
+	return &Client{base: base, token: token, http: client, now: now, history: opts.History, budget: opts.Budget}, nil
 }
 
 // ErrHistoryDisabled is a history read on a client built without History.
@@ -151,6 +155,11 @@ func (c *Client) Do(ctx context.Context, op feeder.ReadOperation, query map[stri
 	if op == OpConversationsHistory && !c.history {
 		return nil, ErrHistoryDisabled
 	}
+	if c.budget != nil {
+		if err := c.budget.allow(ctx, op); err != nil {
+			return nil, err
+		}
+	}
 	_, path, _ := strings.Cut(string(op), " ")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
 	if err != nil {
@@ -192,6 +201,15 @@ func (c *Client) Do(ctx context.Context, op feeder.ReadOperation, query map[stri
 		}
 		if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && secs > 0 {
 			apiErr.RetryAfter = time.Duration(secs) * time.Second
+		}
+		if apiErr.RateLimited() && c.budget != nil {
+			// Slack said the method's limit is crossed: nothing more is drawn from it until the
+			// instant it named, or for a minute when it named none.
+			wait := apiErr.RetryAfter
+			if wait <= 0 {
+				wait = time.Minute
+			}
+			c.budget.limitedUntil(op, out.At.Add(wait))
 		}
 		return out, apiErr
 	}

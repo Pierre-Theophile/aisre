@@ -25,6 +25,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/sanitise"
 	"github.com/Pierre-Theophile/aisre/internal/slackx"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder/doorbell"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/emit"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/source"
 )
@@ -50,6 +51,7 @@ func init() { addFeedSubcommand(newFeedSlackCommand) }
 const (
 	EnvSlackReaderToken = "SRE_AGENT_SLACK_READER_TOKEN" //nolint:gosec // the name of a variable, not a credential
 	EnvSlackIdentityKey = "SRE_AGENT_SLACK_IDENTITY_KEY" //nolint:gosec // the name of a variable, not a credential
+	EnvSlackAppToken    = "SRE_AGENT_SLACK_APP_TOKEN"    //nolint:gosec // the name of a variable, not a credential
 )
 
 type feedSlackOptions struct {
@@ -61,6 +63,8 @@ type feedSlackOptions struct {
 	services      []string
 	people        []string
 	includeShared bool
+	rule          string
+	doorbell      bool
 	check         bool
 	investigate   bool
 	deliver       bool
@@ -90,7 +94,11 @@ func newFeedSlackCommand(global *globalOptions) *cobra.Command {
 			"The reader token is read from $" + EnvSlackReaderToken + " and must hold read scopes only.\n" +
 			"An unmapped creator is recorded as a workspace pseudonym under the key in\n" +
 			"$" + EnvSlackIdentityKey + " (32 hex-encoded bytes), never as a Slack user id.\n\n" +
-			"--check verifies the reader token and the configuration and reads no channel.",
+			"--doorbell also opens a Socket Mode connection with the reader app's app-level token in\n" +
+			"$" + EnvSlackAppToken + "; an event only makes the next poll come sooner, and carries nothing.\n\n" +
+			"--check verifies every credential it is given and the configuration, reads the channel list\n" +
+			"once, and says which channels the rule matches and which it skips and why. It reads no\n" +
+			"message and emits nothing.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runFeedSlack(cmd.Context(), global, opts, cmd)
@@ -111,7 +119,11 @@ func newFeedSlackCommand(global *globalOptions) *cobra.Command {
 		"a Slack user id and the deployment's OIDC subject for them, as <user id>=<subject>; repeatable")
 	flags.BoolVar(&opts.includeShared, "include-shared", false,
 		"also declare channels shared with another organisation (Slack Connect)")
-	flags.BoolVar(&opts.check, "check", false, "verify the reader token and the configuration, read no channel, and exit")
+	flags.StringVar(&opts.rule, "rule", slackfeeder.DefaultRule.Ref(), "the published naming rule")
+	flags.BoolVar(&opts.doorbell, "doorbell", false,
+		"open a Socket Mode connection with $"+EnvSlackAppToken+"; its events only bring the next poll sooner")
+	flags.BoolVar(&opts.check, "check", false, "verify the credentials and the configuration, show what the "+
+		"rule matches in the channel list, emit nothing, and exit")
 	flags.BoolVar(&opts.investigate, "investigate", true, "open an investigation for each declaration (live runs only)")
 	flags.BoolVar(&opts.deliver, "deliver", false, "post each investigation's report into its channel, edited in place")
 	flags.StringVar(&opts.sinkID, "sink", render.SinkSlack,
@@ -141,12 +153,22 @@ func runFeedSlack(ctx context.Context, global *globalOptions, opts *feedSlackOpt
 	if err != nil {
 		return exitErrorf(ExitUsage, "feed slack: %v", err)
 	}
+	rule, err := slackfeeder.RuleByRef(opts.rule)
+	if err != nil {
+		return exitErrorf(ExitUsage, "feed slack: --rule: %v", err)
+	}
 	live := opts.replayDir == ""
+	if opts.doorbell && !live {
+		return exitErrorf(ExitUsage, "feed slack: --doorbell is for a live run; a replay reads its polls from the recording")
+	}
 
 	var client *slackx.Client
+	var budget *slackx.Budget
 	team := strings.TrimSpace(opts.team)
 	if live {
-		client, err = slackx.New(slackx.Options{Token: os.Getenv(EnvSlackReaderToken), BaseURL: opts.slackAPI})
+		budget = slackx.NewBudget(nil)
+		client, err = slackx.New(slackx.Options{Token: os.Getenv(EnvSlackReaderToken), BaseURL: opts.slackAPI,
+			Budget: budget})
 		if err != nil {
 			return exitErrorf(ExitUsage, "feed slack: $%s: %v", EnvSlackReaderToken, err)
 		}
@@ -164,19 +186,15 @@ func runFeedSlack(ctx context.Context, global *globalOptions, opts *feedSlackOpt
 		}
 		team = id.TeamID
 		if opts.check {
-			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "reader token: workspace %s (%s), scopes %s — read-only\n",
+			fmt.Fprintf(cmd.OutOrStdout(), "reader token: workspace %s (%s), scopes %s — read-only\n",
 				id.TeamID, id.Team, strings.Join(id.Scopes, ", "))
-			fmt.Fprintf(out, "source id: %s%s\n", slackfeeder.SourceIDPrefix, team)
-			fmt.Fprintf(out, "rule: %s; poll every %s; horizon %s; review mode after %s\n",
-				slackfeeder.DefaultRule.Ref(), opts.interval, opts.horizon, opts.lateAfter)
-			fmt.Fprintf(out, "services mapped: %d; people mapped: %d\n", len(services), len(people))
-			fmt.Fprintf(out, "no channel was read and no event was emitted\n")
-			return nil
 		}
 	} else if team == "" {
 		return exitErrorf(ExitUsage, "feed slack --replay: --team is required; it is the source id's suffix "+
 			"and a recording carries it pseudonymised")
+	}
+	if opts.check {
+		return runSlackCheck(ctx, cmd, opts, client, team, rule, services, people)
 	}
 
 	var identityKey []byte
@@ -205,7 +223,7 @@ func runFeedSlack(ctx context.Context, global *globalOptions, opts *feedSlackOpt
 		cmd: cmd, global: global, opts: opts, sem: make(chan struct{}, max(1, opts.parallel)),
 	}
 	feederOpts := slackfeeder.Options{
-		TeamID: team, Services: services, People: people, IdentityKey: identityKey,
+		TeamID: team, Rule: rule, Services: services, People: people, IdentityKey: identityKey,
 		Horizon: opts.horizon, LateAfter: opts.lateAfter, PollInterval: opts.interval,
 		IncludeShared: opts.includeShared,
 	}
@@ -219,9 +237,18 @@ func runFeedSlack(ctx context.Context, global *globalOptions, opts *feedSlackOpt
 
 	var src feeder.Source
 	var recording *deployrecord.Tee
+	var bell *doorbell.Bell
 	if live {
+		var ring chan struct{}
+		if opts.doorbell {
+			ring = make(chan struct{}, 1)
+			if bell, err = startSlackDoorbell(ctx, cmd, opts.slackAPI, ring); err != nil {
+				return exitErrorf(ExitUsage, "feed slack: --doorbell: %v", err)
+			}
+		}
 		poller, err := slackfeeder.NewPoller(slackfeeder.PollerOptions{
 			Client: client, TeamID: team, Interval: opts.interval, Horizon: opts.horizon, Cycles: opts.cycles,
+			Ring: ring,
 		})
 		if err != nil {
 			return exitErrorf(ExitUsage, "feed slack: %v", err)
@@ -232,7 +259,7 @@ func runFeedSlack(ctx context.Context, global *globalOptions, opts *feedSlackOpt
 			if err != nil {
 				return exitErrorf(ExitUsage, "feed slack: %v", err)
 			}
-			recording = tee.WithPrepare(slackfeeder.PreparePayload(slackfeeder.DefaultRule))
+			recording = tee.WithPrepare(slackfeeder.PreparePayload(rule))
 			src = recording
 		}
 	} else {
@@ -260,7 +287,7 @@ func runFeedSlack(ctx context.Context, global *globalOptions, opts *feedSlackOpt
 			return exitErrorf(ExitUsage, "feed slack: %v", err)
 		}
 		shadow, err := slackfeeder.New(slackfeeder.Options{
-			TeamID: pseudoTeam, Services: services, Horizon: opts.horizon, LateAfter: opts.lateAfter,
+			TeamID: pseudoTeam, Rule: rule, Services: services, Horizon: opts.horizon, LateAfter: opts.lateAfter,
 			PollInterval: opts.interval, IncludeShared: opts.includeShared,
 		})
 		if err != nil {
@@ -278,6 +305,137 @@ func runFeedSlack(ctx context.Context, global *globalOptions, opts *feedSlackOpt
 		return exitErrorf(ExitTransport, "feed slack: %v", runErr)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "slack intake: %s\n", f.Report().Note())
+	if budget != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "slack budget: %s\n", budget.Report())
+	}
+	if bell != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "slack doorbell: %s\n", bell.Report())
+	}
+	return nil
+}
+
+// startSlackDoorbell opens the Socket Mode doorbell and drains it into the poller's ring once a
+// second, through a bell that honours one early poll per DoorbellMinInterval. The doorbell failing
+// stops nothing: polling is the truth, and the bell's report says the doorbell was unreachable.
+func startSlackDoorbell(ctx context.Context, cmd *cobra.Command, baseURL string, ring chan<- struct{}) (*doorbell.Bell, error) {
+	cred, err := slackx.NewDoorbellCredential(os.Getenv(EnvSlackAppToken))
+	if err != nil {
+		return nil, fmt.Errorf("$%s: %w", EnvSlackAppToken, err)
+	}
+	socket, err := slackx.NewSocket(slackx.SocketOptions{Credential: cred, BaseURL: baseURL})
+	if err != nil {
+		return nil, err
+	}
+	bell, err := doorbell.New(doorbell.Options{
+		Channel: "socket-mode", ChannelLabel: "connection", MinInterval: slackfeeder.DoorbellMinInterval,
+	})
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		if err := socket.Run(ctx); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "feed slack: the doorbell is off and polling carries on: %v\n", err)
+		}
+	}()
+	go func() {
+		tick := time.NewTicker(time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+			if bell.Drain(ctx, socket).PollNow {
+				select {
+				case ring <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+	return bell, nil
+}
+
+// runSlackCheck is US5: every credential it is given, the rule, and what the rule makes of the
+// channel list — matched, and skipped with the clause that excluded each — from one read of the
+// list, or from a recording's polls with --replay. Nothing is emitted and no message is read.
+func runSlackCheck(
+	ctx context.Context, cmd *cobra.Command, opts *feedSlackOptions, client *slackx.Client, team string,
+	rule slackfeeder.Rule, services map[string]*graphv1.Ref, people map[string]string,
+) error {
+	out := cmd.OutOrStdout()
+	var refused []string
+	if client != nil {
+		if secret := os.Getenv(EnvDeliveryToken); secret == "" {
+			fmt.Fprintf(out, "reporter token: not set — reports are not delivered ($%s; --deliver needs it)\n",
+				EnvDeliveryToken)
+		} else {
+			cred, err := render.NewCredential(slackfeeder.SourceIDPrefix+team, render.DeliveryScope, secret)
+			if err == nil {
+				err = slacksink.New(slacksink.Options{BaseURL: opts.slackAPI}).Check(ctx, cred)
+			}
+			if err != nil {
+				fmt.Fprintf(out, "reporter token: REFUSED — %v\n", err)
+				refused = append(refused, "the reporter token")
+			} else {
+				fmt.Fprintf(out, "reporter token: workspace %s, holds only %s — it writes the report and nothing else\n",
+					team, strings.Join(slacksink.AllowedScopes, ", "))
+			}
+		}
+		if secret := os.Getenv(EnvSlackAppToken); secret == "" {
+			fmt.Fprintf(out, "doorbell: off — the channel list is polled every %s\n", opts.interval)
+		} else if _, err := slackx.NewDoorbellCredential(secret); err != nil {
+			fmt.Fprintf(out, "doorbell: REFUSED — %v\n", err)
+			refused = append(refused, "the doorbell token")
+		} else {
+			fmt.Fprintf(out, "doorbell: an app-level token is set; with --doorbell it opens a Socket Mode connection "+
+				"and nothing else (not opened by --check)\n")
+		}
+	}
+	fmt.Fprintf(out, "source id: %s%s\n", slackfeeder.SourceIDPrefix, team)
+	fmt.Fprintf(out, "rule: %s; poll every %s; horizon %s; review mode after %s\n",
+		rule.Ref(), opts.interval, opts.horizon, opts.lateAfter)
+	fmt.Fprintf(out, "services mapped: %d; people mapped: %d\n", len(services), len(people))
+
+	f, err := slackfeeder.New(slackfeeder.Options{
+		TeamID: team, Rule: rule, Services: services, Horizon: opts.horizon, LateAfter: opts.lateAfter,
+		PollInterval: opts.interval, IncludeShared: opts.includeShared,
+	})
+	if err != nil {
+		return exitErrorf(ExitUsage, "feed slack: %v", err)
+	}
+	var src feeder.Source
+	if client != nil {
+		if src, err = slackfeeder.NewPoller(slackfeeder.PollerOptions{
+			Client: client, TeamID: team, Interval: opts.interval, Horizon: opts.horizon, Cycles: 1,
+		}); err != nil {
+			return exitErrorf(ExitUsage, "feed slack: %v", err)
+		}
+	} else if src, err = source.NewFileSource(opts.replayDir); err != nil {
+		return exitErrorf(ExitUsage, "feed slack: %v", err)
+	}
+	if err := f.Run(ctx, src, emit.NewMemoryEmitter(f.Describe())); err != nil {
+		return exitErrorf(ExitTransport, "feed slack: reading the channel list: %v", err)
+	}
+	report := f.Report()
+	fmt.Fprintf(out, "channels created in the last %s: %d matched\n", opts.horizon, len(report.Declared))
+	for _, name := range report.Declared {
+		fmt.Fprintf(out, "  matched: %s\n", name)
+	}
+	for _, ex := range report.Excluded {
+		fmt.Fprintf(out, "  skipped: %s — %s\n", ex.Name, ex.Reason)
+	}
+	if n := report.Skipped[slackfeeder.SkipNoMatch]; n > 0 {
+		fmt.Fprintf(out, "  skipped: %d channel(s) — %s (not named)\n", n, slackfeeder.SkipNoMatch)
+	}
+	if n := report.Skipped[slackfeeder.SkipPrivate]; n > 0 {
+		fmt.Fprintf(out, "  skipped: %d channel(s) — %s (not named)\n", n, slackfeeder.SkipPrivate)
+	}
+	fmt.Fprintf(out, "no message was read and no event was emitted\n")
+	if len(refused) > 0 {
+		return exitErrorf(ExitUsage, "feed slack --check: %s refused", strings.Join(refused, " and "))
+	}
 	return nil
 }
 
@@ -331,7 +489,14 @@ func (s *slackInvestigations) run(ctx context.Context, d slackfeeder.Declared) e
 	}
 	var last *investigationv1.Investigation
 	var previous string
+	get := investigationGetter(client)
 	deliver := func(inv *investigationv1.Investigation) {
+		if previous == "" {
+			// A declaration the graph already had — a restart, a second feeder — answers with the
+			// investigation it opened then, and its report is already in the channel: edit it.
+			system, ref := deliverySplit(inv)
+			previous = previousMessageRef(ctx, get, inv, system, ref)
+		}
 		body, err := renderReportBody(inv)
 		if err != nil {
 			fmt.Fprintf(s.cmd.ErrOrStderr(), "feed slack: rendering %s: %v\n", inv.GetInvestigationId(), err)

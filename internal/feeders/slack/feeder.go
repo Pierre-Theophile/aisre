@@ -115,8 +115,8 @@ type Feeder struct {
 	log  *slog.Logger
 
 	mu       sync.Mutex
-	declared map[string]string // channel id → name at declaration
-	skipped  map[string]string // channel id → why it is not declared, as of the last poll
+	declared map[string]string  // channel id → name at declaration
+	skipped  map[string]skipped // channel id → why it is not declared, as of the last poll
 	report   Report
 }
 
@@ -151,7 +151,7 @@ func New(opts Options) (*Feeder, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	f := &Feeder{opts: opts, log: logger, declared: map[string]string{}, skipped: map[string]string{}}
+	f := &Feeder{opts: opts, log: logger, declared: map[string]string{}, skipped: map[string]skipped{}}
 	f.desc = feeder.Description{
 		SourceID: SourceIDPrefix + team,
 		Kind:     Kind,
@@ -186,6 +186,10 @@ type observedChannel struct {
 	Creator  string    `json:"creator,omitempty"`
 	Archived bool      `json:"archived,omitempty"`
 	Shared   bool      `json:"shared,omitempty"`
+	// Private is a channel Slack lists as private. The live poller lists public channels only, so
+	// one appears when a channel is made private, or in a list read with a token that sees them;
+	// either way it is not declared, and its name is not shown.
+	Private bool `json:"private,omitempty"`
 }
 
 // Run reads polls from src and writes declarations to em.
@@ -197,7 +201,7 @@ func (f *Feeder) Run(ctx context.Context, src feeder.Source, em feeder.Emitter) 
 	// remember (the key makes a re-declaration a no-op), not this value's.
 	f.mu.Lock()
 	f.declared = map[string]string{}
-	f.skipped = map[string]string{}
+	f.skipped = map[string]skipped{}
 	f.report = Report{}
 	f.mu.Unlock()
 	defer func() {
@@ -270,16 +274,22 @@ func (f *Feeder) observe(ctx context.Context, em feeder.Emitter, ch observedChan
 	}
 	f.mu.Unlock()
 
+	// Private first: whether a private channel's name would have matched is nobody's business, so a
+	// recording may blank it and the replay still says the same thing.
+	if ch.Private {
+		f.skip(ch.ID, "", SkipPrivate)
+		return nil
+	}
 	match := f.opts.Rule.Match(ch.Name)
 	switch {
 	case !match.Matched:
-		f.skip(ch.ID, match.Reason)
+		f.skip(ch.ID, ch.Name, match.Reason)
 		return nil
 	case ch.Shared && !f.opts.IncludeShared:
-		f.skip(ch.ID, SkipShared)
+		f.skip(ch.ID, ch.Name, SkipShared)
 		return nil
 	case at.Sub(ch.Created) > f.opts.Horizon:
-		f.skip(ch.ID, SkipOutsideWindow)
+		f.skip(ch.ID, ch.Name, SkipOutsideWindow)
 		return nil
 	}
 
@@ -370,11 +380,14 @@ func DeclarerPseudonym(key []byte, team, user string) string {
 	return "u_" + hex.EncodeToString(mac.Sum(nil))[:16]
 }
 
+// skipped is one channel not declared, and the clause that excluded it.
+type skipped struct{ name, reason string }
+
 // skip records why a channel is not declared. It is per channel, not per poll: a test channel listed
 // by forty polls is one skipped channel.
-func (f *Feeder) skip(channel, reason string) {
+func (f *Feeder) skip(channel, name, reason string) {
 	f.mu.Lock()
-	f.skipped[channel] = reason
+	f.skipped[channel] = skipped{name: name, reason: reason}
 	f.mu.Unlock()
 }
 
@@ -413,6 +426,17 @@ type Report struct {
 	Renamed  int
 	// Skipped counts channels, by the reason each is not declared.
 	Skipped map[string]int
+	// Excluded names each channel the rule's pattern matched and a clause then excluded — a test
+	// marker, the horizon, a shared channel — with that clause, sorted by name (US5 scenario 2).
+	// Channels that do not match at all, and private ones, are counted and never named: their names
+	// are other people's business. It is for `--check` and never enters a checkpoint.
+	Excluded []Excluded
+}
+
+// Excluded is one channel the rule matched and did not declare.
+type Excluded struct {
+	Name   string
+	Reason string
 }
 
 // Note renders the report for a checkpoint and a log line.
@@ -438,9 +462,18 @@ func (f *Feeder) Report() Report {
 	out := f.report
 	out.Declared = append([]string(nil), f.report.Declared...)
 	out.Skipped = make(map[string]int, len(f.skipped))
-	for _, reason := range f.skipped {
-		out.Skipped[reason]++
+	for _, s := range f.skipped {
+		out.Skipped[s.reason]++
+		if s.name != "" && s.reason != SkipNoMatch && s.reason != SkipPrivate {
+			out.Excluded = append(out.Excluded, Excluded{Name: s.name, Reason: s.reason})
+		}
 	}
+	sort.Slice(out.Excluded, func(i, j int) bool {
+		if out.Excluded[i].Name != out.Excluded[j].Name {
+			return out.Excluded[i].Name < out.Excluded[j].Name
+		}
+		return out.Excluded[i].Reason < out.Excluded[j].Reason
+	})
 	return out
 }
 

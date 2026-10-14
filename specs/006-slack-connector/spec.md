@@ -209,7 +209,9 @@ empty, double-delivered and shuffled.
 Riley runs `aisre feed slack --check` and sees: the app's scopes, split into the read credential
 and the delivery credential; the naming rule and its version; the channels matched in the last
 backfill horizon and the ones skipped with the reason (`test channel`, `no rule match`,
-`outside horizon`, `archived before declaration`).
+`outside horizon`, `shared with another organisation`, `private channel`). An archived channel is
+declared like any other — archive is evidence, never a reason to skip (Edge Cases); amended
+2026-10-14.
 
 **Why this priority**: it is how a skeptical operator trusts an automatic trigger, but nothing in
 Stories 1–4 depends on it.

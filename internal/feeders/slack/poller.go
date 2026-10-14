@@ -26,6 +26,11 @@ import (
 // declared (FR-012), so carrying it would only carry another team's channel name into the process and,
 // on a recording run, towards the disk.
 
+// DoorbellMinInterval is the shortest gap between two polls the doorbell may cause: a third of the
+// default interval, so a flood of Socket Mode events costs at most three reads of the list a poll
+// interval, against tier 2's twenty a minute (FR-011, FR-014).
+const DoorbellMinInterval = 10 * time.Second
+
 // Lister is the one read the poller makes. *slackx.Client satisfies it.
 type Lister interface {
 	ListChannels(ctx context.Context, cursor string, limit int) (slackx.ChannelPage, error)
@@ -137,11 +142,7 @@ func (p *Poller) poll(ctx context.Context) (feeder.Payload, time.Duration, error
 	for page := 0; page < p.opts.MaxPages; page++ {
 		got, err := p.opts.Client.ListChannels(ctx, cursor, 200)
 		if err != nil {
-			var apiErr *slackx.APIError
-			if errors.As(err, &apiErr) {
-				return feeder.Payload{}, apiErr.RetryAfter, err
-			}
-			return feeder.Payload{}, 0, err
+			return feeder.Payload{}, retryAfter(err, at), err
 		}
 		for _, ch := range got.Channels {
 			created := ch.CreatedAt()
@@ -150,7 +151,7 @@ func (p *Poller) poll(ctx context.Context) (feeder.Payload, time.Duration, error
 			}
 			out.Channels = append(out.Channels, observedChannel{
 				ID: ch.ID, Name: ch.Name, Created: created, Creator: ch.Creator,
-				Archived: ch.IsArchived, Shared: ch.IsShared,
+				Archived: ch.IsArchived, Shared: ch.IsShared, Private: ch.IsPrivate,
 			})
 		}
 		cursor = got.NextCursor
@@ -164,6 +165,22 @@ func (p *Poller) poll(ctx context.Context) (feeder.Payload, time.Duration, error
 	}
 	p.gap = cursor != ""
 	return feeder.Payload{Kind: PayloadChannels, At: at, Bytes: raw}, 0, nil
+}
+
+// retryAfter is how long Slack, or the budget, asked the poller to wait.
+func retryAfter(err error, now time.Time) time.Duration {
+	var apiErr *slackx.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.RetryAfter
+	}
+	if yield, ok := feeder.YieldedForQuota(err); ok && !yield.RetryAt.IsZero() {
+		return yield.RetryAt.Sub(now)
+	}
+	var deferred *slackx.DeferredError
+	if errors.As(err, &deferred) && !deferred.RetryAt.IsZero() {
+		return deferred.RetryAt.Sub(now)
+	}
+	return 0
 }
 
 // PreparePayload is the pre-pass a live recording runs before the sanitisation table (FR-050).
@@ -185,9 +202,12 @@ func PreparePayload(rule Rule) func(kind string, raw []byte) ([]byte, error) {
 			return nil, fmt.Errorf("slack: decoding a %s payload: %w", kind, err)
 		}
 		for i := range poll.Channels {
+			// A private channel's name is blanked whatever it is; the feeder skips it as private
+			// before it reads the name, so the replay says the same.
 			// The pattern, not the match: an excluded test channel keeps its name, so a replay
 			// reports it as excluded rather than as no match.
-			if !rule.Pattern.MatchString(strings.ToLower(strings.TrimSpace(poll.Channels[i].Name))) {
+			if poll.Channels[i].Private ||
+				!rule.Pattern.MatchString(strings.ToLower(strings.TrimSpace(poll.Channels[i].Name))) {
 				poll.Channels[i].Name = ""
 			}
 		}

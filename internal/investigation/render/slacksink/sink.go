@@ -214,6 +214,27 @@ type apiResponse struct {
 	scopes  []string
 }
 
+// Check is the preflight on its own, for `feed slack --check`: the reporter credential must be a
+// bot token, authenticate as its target's workspace and hold nothing beyond AllowedScopes. It issues
+// auth.test and nothing else, so it writes nothing.
+func (s *Sink) Check(ctx context.Context, cred *render.Credential) error {
+	if cred == nil {
+		return render.ErrCredentialTarget
+	}
+	team, ok := strings.CutPrefix(cred.TargetSystem, "slack:")
+	if !ok || team == "" {
+		return fmt.Errorf("slacksink: target system %q is not slack:<team>", cred.TargetSystem)
+	}
+	token, err := cred.Secret(render.DeliveryScope)
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(token, "xoxb-") {
+		return errors.New("slacksink: the reporter credential must be the reporter app's bot token (xoxb-)")
+	}
+	return s.verify(ctx, token, team)
+}
+
 // verify is the preflight: the token must authenticate as the target's workspace and hold nothing
 // beyond AllowedScopes. It is asked once per token per process.
 func (s *Sink) verify(ctx context.Context, token, team string) error {
