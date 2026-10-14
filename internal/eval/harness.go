@@ -29,6 +29,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model/modeltest"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/replay"
 	graphworker "github.com/Pierre-Theophile/aisre/internal/investigation/workers/graph"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/metrics"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/traces"
@@ -135,6 +136,7 @@ type Harness struct {
 	manifest *fixture.Manifest
 	prior    audit.PriorRecord
 	graph    graphworker.QueryService
+	corpus   knowledge.Corpus
 	world    *sdk.World
 	cleanup  func()
 
@@ -220,7 +222,9 @@ func (h *Harness) openGraph(ctx context.Context) error {
 	// and both were shims over engine defects that Phase 7 Track F fixed at the source:
 	// `engine.DecodeCall` now stamps both instants on every graph read, and the engine learns the
 	// id ↔ reference translation from the neighbourhood it reads first (engine/catalogue.go).
-	h.graph = graphworker.NewEngineService(query.NewEngine(store))
+	queries := query.NewEngine(store)
+	h.graph = graphworker.NewEngineService(queries)
+	h.corpus = knowledge.GraphCorpus{Engine: queries}
 	return nil
 }
 
@@ -265,6 +269,7 @@ func (h *Harness) Run(ctx context.Context) (*RunOutcome, error) {
 		Manifest:        h.manifest,
 		Prior:           h.prior,
 		Graph:           h.graph,
+		Knowledge:       h.corpus,
 		Telemetry:       telemetry,
 		Kind:            h.opts.Kind,
 		Client:          client,
@@ -298,6 +303,7 @@ func (h *Harness) Engine(telemetry sdk.TelemetryBackend) (*engine.Engine, error)
 		Manifest:        h.manifest,
 		Prior:           h.prior,
 		Graph:           h.graph,
+		Knowledge:       h.corpus,
 		Telemetry:       telemetry,
 		Kind:            h.opts.Kind,
 		Client:          client,
@@ -726,6 +732,9 @@ type EngineWiring struct {
 	Prior audit.PriorRecord
 	// Graph is feature 001's read surface over this fixture's own replayed events.
 	Graph graphworker.QueryService
+	// Knowledge is the knowledge worker's corpus over the same graph. Nil leaves the worker out,
+	// as for a harness handed a Graph it did not build (007 FR-005).
+	Knowledge knowledge.Corpus
 	// Telemetry is the one backend the metrics, logs and traces workers are bound to.
 	Telemetry sdk.TelemetryBackend
 	// Kind is KindModelFree, KindFakeModel or KindLive.
@@ -748,12 +757,16 @@ func NewEngine(w EngineWiring) (*engine.Engine, error) {
 		return nil, errors.New("eval: an engine needs a fixture with an `incident:` block")
 	}
 	registry := worker.NewRegistry()
-	for _, each := range []worker.Worker{
+	registered := []worker.Worker{
 		graphworker.New(w.Graph),
 		metrics.New(w.Telemetry),
 		logs.New(w.Telemetry),
 		traces.New(w.Telemetry),
-	} {
+	}
+	if w.Knowledge != nil {
+		registered = append(registered, knowledge.New(w.Knowledge))
+	}
+	for _, each := range registered {
 		if err := registry.Register(each); err != nil {
 			return nil, fmt.Errorf("eval: %s: register %T: %w", m.ID, each, err)
 		}

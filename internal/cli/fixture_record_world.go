@@ -23,6 +23,7 @@ import (
 	algebra "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/engine"
 	graphworker "github.com/Pierre-Theophile/aisre/internal/investigation/workers/graph"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
@@ -255,6 +256,7 @@ func fixtureEnginePass(m *fixture.Manifest, prior audit.PriorRecord, queryEngine
 			Manifest:  m,
 			Prior:     prior,
 			Graph:     graphworker.NewEngineService(queryEngine),
+			Knowledge: knowledge.GraphCorpus{Engine: queryEngine},
 			Telemetry: taping,
 			Kind:      eval.KindModelFree,
 			// The pass records what a *live* backend answered: these bytes become the recording,
@@ -301,6 +303,7 @@ func fixtureLivePass(
 				Manifest:   m,
 				Prior:      prior,
 				Graph:      graphworker.NewEngineService(queryEngine),
+				Knowledge:  knowledge.GraphCorpus{Engine: queryEngine},
 				Telemetry:  taping,
 				Kind:       eval.KindLive,
 				ModelYAML:  opts.modelYAML,

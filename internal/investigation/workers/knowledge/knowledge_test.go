@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
@@ -23,15 +25,21 @@ var authored = time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
 // corpus is an in-memory stand-in for the graph's CONCERNS edges. The worker's contract is that
 // it retrieves only what is linked, so the test's corpus deliberately holds documents that are
 // linked to entities outside the requested set: SC-014 is that they are never cited.
+//
+// It also honours the instants the way the graph does, with AuthoredAt standing in for the link's
+// start: a document written after the valid instant is not a candidate (007 FR-006).
 type corpus struct{ documents []knowledge.Document }
 
-func (c corpus) Scoped(_ context.Context, entityIDs []string) ([]knowledge.Document, error) {
+func (c corpus) Scoped(_ context.Context, entityIDs []string, at knowledge.Instants) ([]knowledge.Document, error) {
 	wanted := make(map[string]struct{}, len(entityIDs))
 	for _, id := range entityIDs {
 		wanted[id] = struct{}{}
 	}
 	out := make([]knowledge.Document, 0, len(c.documents))
 	for _, doc := range c.documents {
+		if doc.AuthoredAt.After(at.Valid) {
+			continue
+		}
 		for _, linked := range doc.LinkedEntityIDs {
 			if _, ok := wanted[linked]; ok {
 				out = append(out, doc)
@@ -46,7 +54,7 @@ func (c corpus) Scoped(_ context.Context, entityIDs []string) ([]knowledge.Docum
 // make. The worker must still cite only what is linked.
 type leakyCorpus struct{ documents []knowledge.Document }
 
-func (c leakyCorpus) Scoped(context.Context, []string) ([]knowledge.Document, error) {
+func (c leakyCorpus) Scoped(context.Context, []string, knowledge.Instants) ([]knowledge.Document, error) {
 	return c.documents, nil
 }
 
@@ -200,6 +208,69 @@ func TestEveryKnowledgeDigestSaysItIsUnconfirmed(t *testing.T) {
 	}
 	if !strings.HasPrefix(text, engine.FreeTextPrefix) {
 		t.Errorf("the note is not flagged unverified: %q", text)
+	}
+}
+
+// instantsCorpus records the instants it was asked at.
+type instantsCorpus struct{ asked *knowledge.Instants }
+
+func (c instantsCorpus) Scoped(_ context.Context, _ []string, at knowledge.Instants) ([]knowledge.Document, error) {
+	*c.asked = at
+	return nil, nil
+}
+
+// TestTheCorpusIsAskedAtTheRequestsInstants: the worker passes the request's valid and observed
+// instants through, so a replay asks the graph what the original run could have read (007 FR-006,
+// FR-007; ADR-0013 item 3).
+func TestTheCorpusIsAskedAtTheRequestsInstants(t *testing.T) {
+	t.Parallel()
+
+	valid := time.Date(2026, 9, 1, 14, 32, 0, 0, time.UTC)
+	observed := valid.Add(5 * time.Minute)
+	for _, tc := range []struct {
+		name         string
+		observed     *time.Time
+		wantObserved time.Time
+	}{
+		{"observed given", &observed, observed},
+		{"observed unset means valid", nil, valid},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var asked knowledge.Instants
+			request := knowledge.SearchTerm([]string{"entity-checkout"}, []string{"checkout"}, 10, "hyp-1", "known?")
+			request.ValidAt = timestamppb.New(valid)
+			if tc.observed != nil {
+				request.ObservedAt = timestamppb.New(*tc.observed)
+			}
+			w := knowledge.New(instantsCorpus{asked: &asked})
+			if _, err := w.Call(context.Background(), worker.Request{
+				Capability: engine.TermKnowledgeSearch, Mode: worker.ModeRecorded, Algebra: request,
+			}); err != nil {
+				t.Fatalf("call: %v", err)
+			}
+			if !asked.Valid.Equal(valid) || !asked.Observed.Equal(tc.wantObserved) {
+				t.Errorf("corpus asked at %+v, want valid %s observed %s", asked, valid, tc.wantObserved)
+			}
+		})
+	}
+}
+
+// TestADocumentWrittenAfterTheInstantIsNotCited: retrieval is as of the investigation's instant.
+func TestADocumentWrittenAfterTheInstantIsNotCited(t *testing.T) {
+	t.Parallel()
+
+	request := knowledge.SearchTerm([]string{"entity-checkout"}, []string{"checkout"}, 10, "hyp-1", "known?")
+	request.ValidAt = timestamppb.New(authored.Add(-24 * time.Hour))
+	w := knowledge.New(corpus{documents: documents()})
+	resp, err := w.Call(context.Background(), worker.Request{
+		Capability: engine.TermKnowledgeSearch, Mode: worker.ModeRecorded, Algebra: request,
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if n := len(resp.Algebra.GetDigest().GetKnowledge().GetItems()); n != 0 {
+		t.Errorf("cited %d documents written after the instant asked about", n)
 	}
 }
 

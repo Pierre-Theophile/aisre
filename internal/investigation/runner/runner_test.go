@@ -29,6 +29,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/replay"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/runner"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/metrics"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/traces"
@@ -1694,5 +1695,29 @@ func TestACallerThatGoesAwayStillGetsAConcludedRow(t *testing.T) {
 	}
 	if row.GetVerdictLine() == "" {
 		t.Error("the concluded row carries no verdict line")
+	}
+}
+
+// TestTheKnowledgeWorkerIsRegisteredByDefault: a running deployment answers `knowledge_search`
+// from the graph unless the operator leaves the worker out (007 FR-005, US2 scenarios 1–2).
+func TestTheKnowledgeWorkerIsRegisteredByDefault(t *testing.T) {
+	store := pgtest.Open(t)
+	for _, tc := range []struct {
+		name string
+		off  bool
+	}{{"by default", false}, {"left out", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := worker.NewRegistry()
+			if _, err := runner.New(runner.Config{
+				Store: store, Graph: stubGraph{}, Workers: registry, NoKnowledgeWorker: tc.off,
+				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+			}); err != nil {
+				t.Fatalf("new runner: %v", err)
+			}
+			_, registered := registry.Lookup(knowledge.Name)
+			if registered == tc.off {
+				t.Errorf("knowledge worker registered = %v with NoKnowledgeWorker = %v", registered, tc.off)
+			}
+		})
 	}
 }

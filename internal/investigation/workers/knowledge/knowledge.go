@@ -114,14 +114,24 @@ func (d Document) SearchableText() string {
 	return strings.TrimSpace(d.Title + " " + d.Summary)
 }
 
+// Instants is when a retrieval is asked: the valid instant the investigation is about, and the
+// observed instant that bounds what was known (ADR-0013 item 3). A zero Observed means "what is
+// known now", which is what a live run asks and a replay never does.
+type Instants struct {
+	Valid    time.Time
+	Observed time.Time
+}
+
 // Corpus is the scoped set the worker ranks. Implementations resolve `CONCERNS` edges against
 // the graph; the interface exists so the worker can be tested without a database and so a later
 // feature can widen the corpus without touching the ranking.
 type Corpus interface {
-	// Scoped returns the documents linked by CONCERNS to any of entityIDs. It returns only
-	// linked documents: an implementation that returned anything else would defeat the scoping
-	// the constitution requires.
-	Scoped(ctx context.Context, entityIDs []string) ([]Document, error)
+	// Scoped returns the documents linked by CONCERNS to any of entityIDs, as of at. It returns
+	// only linked documents, and only links valid at at.Valid and known at at.Observed: an
+	// implementation that returned anything else would defeat the scoping the constitution
+	// requires, or let a replay cite what the original run could not have read (FR-006, FR-007
+	// of 007). Each document's LinkedEntityIDs are spelled as the caller spelled entityIDs.
+	Scoped(ctx context.Context, entityIDs []string, at Instants) ([]Document, error)
 }
 
 // Worker is the knowledge worker.
@@ -171,7 +181,7 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 	}
 
 	started := time.Now()
-	documents, err := w.corpus.Scoped(ctx, term.GetEntityIds())
+	documents, err := w.corpus.Scoped(ctx, term.GetEntityIds(), instantsOf(req))
 	if err != nil {
 		return worker.Response{}, err
 	}
@@ -300,6 +310,24 @@ func sortedCopy(values []string) []string {
 	out := append([]string(nil), values...)
 	sort.Strings(out)
 	return out
+}
+
+// instantsOf reads the request's two instants. An unset observed instant means the valid one,
+// as everywhere in the algebra (002 FR-004); a request with neither asks about now.
+func instantsOf(req worker.Request) Instants {
+	var at Instants
+	if ts := req.Algebra.GetValidAt(); ts != nil {
+		at.Valid = ts.AsTime().UTC()
+	}
+	if ts := req.Algebra.GetObservedAt(); ts != nil {
+		at.Observed = ts.AsTime().UTC()
+	} else {
+		at.Observed = at.Valid
+	}
+	if at.Valid.IsZero() {
+		at.Valid = time.Now().UTC()
+	}
+	return at
 }
 
 func searchedWindow(req worker.Request) *engine.Window {

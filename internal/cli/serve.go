@@ -93,7 +93,9 @@ type serveOptions struct {
 	// channel through the reader app; over a recorded world, it answers from the world.
 	chatReader    bool
 	chatRetention time.Duration
-	slackAPI      string
+	// noKnowledgeWorker leaves the knowledge worker out; it is registered by default (007 FR-005).
+	noKnowledgeWorker bool
+	slackAPI          string
 }
 
 func newServeCommand(global *globalOptions) *cobra.Command {
@@ -154,6 +156,9 @@ func newServeCommand(global *globalOptions) *cobra.Command {
 			"never returns a message; reads $"+EnvSlackReaderToken+" (--enable-investigation only; 006 US3)")
 	flags.DurationVar(&opts.chatRetention, "chat-retention", 0,
 		"how much history the Slack workspace's plan keeps; older windows are reported truncated (0: unlimited)")
+	flags.BoolVar(&opts.noKnowledgeWorker, "no-knowledge-worker", false,
+		"leave out the knowledge worker, which cites documents and reviewed investigations linked in the "+
+			"graph to the entities under investigation (--enable-investigation only; 007 FR-005)")
 	flags.StringVar(&opts.slackAPI, "slack-api", "", "Slack API base URL, for tests against a twin")
 	_ = flags.MarkHidden("slack-api")
 
@@ -500,10 +505,11 @@ func newInvestigationRunner(
 		RecordingRoot: opts.recordingRoot,
 		// The world the telemetry backend above is answering from, so an export carries the
 		// layer 2 the run actually read rather than looking for one nothing writes.
-		WorldDir: worldDirOf(opts.recordingRoot),
-		Prior:    prior,
-		Mode:     mode,
-		Logger:   logger,
+		WorldDir:          worldDirOf(opts.recordingRoot),
+		Prior:             prior,
+		Mode:              mode,
+		NoKnowledgeWorker: opts.noKnowledgeWorker,
+		Logger:            logger,
 	})
 	if err != nil {
 		return nil, exitWith(ExitUsage, err)
