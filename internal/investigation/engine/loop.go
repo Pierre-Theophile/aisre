@@ -14,6 +14,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/engine/prompt"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
+	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 )
 
 // The hand-rolled agent loop (T063, FR-009, FR-013, FR-013a, FR-045b, research §3).
@@ -146,8 +147,8 @@ func (e *Engine) turn(ctx context.Context, number int) (*model.Response, *Stop, 
 
 	request := model.Request{
 		Role:     model.RoleInvestigator,
-		Tools:    ToolSet(),
-		System:   prompt.Prefix(),
+		Tools:    ToolSetFor(e.chatOffered()),
+		System:   prompt.PrefixFor(e.chatOffered()),
 		Messages: e.History(),
 	}
 
@@ -251,11 +252,22 @@ func (e *Engine) dispatch(ctx context.Context, use model.Block) (string, error) 
 		return "", err
 	}
 	answer, err := e.Call(ctx, req)
+	if noWorker := (*NoWorkerError)(nil); errors.As(err, &noWorker) {
+		if err := e.recordUntested(req.GetServesHypothesisId(), req, fmt.Sprintf(
+			"the query that would test it is not answered in this deployment: no registered worker "+
+				"declares %s", noWorker.Capability)); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("not issued: no worker in this deployment answers %s (it answers %s). "+
+			"The question is not covered here, which is not a negative answer; the hypothesis it "+
+			"would have tested is recorded untested with this query attached.",
+			noWorker.Capability, strings.Join(noWorker.Registered, ", ")), nil
+	}
 	if err != nil {
 		return "", err
 	}
 	if answer.Refused != nil {
-		if err := e.recordUntested(req.GetServesHypothesisId(), req, answer.Refused); err != nil {
+		if err := e.recordUntested(req.GetServesHypothesisId(), req, budgetReason(answer.Refused)); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("not issued: the %s budget would have been breached (%s). "+
@@ -393,7 +405,7 @@ func (e *Engine) rankerScore(changeEntityID string) float64 {
 // This is what turns "we ran out of budget" from a silence into a finding: the hypothesis is
 // reported untested, with the reason and with the query a person can run themselves. It is never
 // scored as refuted and never dropped.
-func (e *Engine) recordUntested(hypothesisID string, req *investigationv1.AlgebraRequest, decision *budget.Decision) error {
+func (e *Engine) recordUntested(hypothesisID string, req *investigationv1.AlgebraRequest, reason string) error {
 	if hypothesisID == "" {
 		return nil
 	}
@@ -402,11 +414,23 @@ func (e *Engine) recordUntested(hypothesisID string, req *investigationv1.Algebr
 	}
 	link, _ := e.links.Link(req)
 	return e.ledger.SetStatus(hypothesisID, ledger.StatusUntested, ledger.StatusUpdate{
-		Reason: fmt.Sprintf("the query that would test it was not issued: the %s budget would have been "+
-			"breached (%s)", decision.Budget, decision.Reason),
+		Reason:            reason,
 		NextQuery:         req.GetTerm(),
 		NextQueryDeepLink: link,
 	})
+}
+
+// chatOffered reports whether the chat family is offered to this investigation: it has a declared
+// chat channel and the deployment registers a worker that reads one (006 FR-030, ADR-0012). It is
+// fixed for the life of the investigation, so the prefix it selects is cached like any other.
+func (e *Engine) chatOffered() bool {
+	return e.catalogue.ChatChannel() != "" && e.workers != nil && e.workers.OffersFamily(sdk.FamilyChat)
+}
+
+// budgetReason is the untested reason a refused admission records.
+func budgetReason(decision *budget.Decision) string {
+	return fmt.Sprintf("the query that would test it was not issued: the %s budget would have been "+
+		"breached (%s)", decision.Budget, decision.Reason)
 }
 
 // hasModelJudgment reports whether the model has proposed any judgment yet.

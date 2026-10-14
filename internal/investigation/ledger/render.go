@@ -279,6 +279,10 @@ func termSummary(h Hypothesis) string {
 		return "graph"
 	case term.GetKnowledgeSearch() != nil:
 		return "knowledge_search"
+	case term.GetChatMentions() != nil:
+		return "chat_mentions"
+	case term.GetChatTimeline() != nil:
+		return "chat_timeline"
 	default:
 		return "term"
 	}

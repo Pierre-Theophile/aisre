@@ -153,6 +153,16 @@ func (w *Workers) Capabilities() []string {
 	return out
 }
 
+// OffersFamily reports whether a registered worker answers any term of the family.
+func (w *Workers) OffersFamily(family sdk.Family) bool {
+	for _, term := range sdk.Terms(family) {
+		if len(w.byCapability[term]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Backend returns the source of truth a worker speaks for, which is what a per-backend budget and
 // a quota share are measured against.
 func (w *Workers) Backend(workerName string) string { return w.backendOf[workerName] }
@@ -225,6 +235,22 @@ func (e *Engine) Call(ctx context.Context, req *investigationv1.AlgebraRequest) 
 	return answer, nil
 }
 
+// NoWorkerError is a published term no registered worker answers in this deployment: the knowledge
+// worker not installed, say. It is a refusal, not a failure — the question is not covered here,
+// which is different from a question answered in the negative — and the loop answers it to the
+// model as such and records the hypothesis it served as untested.
+type NoWorkerError struct {
+	// Capability is the term that was asked.
+	Capability string
+	// Registered is what this deployment does answer.
+	Registered []string
+}
+
+func (e *NoWorkerError) Error() string {
+	return fmt.Sprintf("engine: no registered worker declares %s; the registered capabilities are %s",
+		e.Capability, strings.Join(e.Registered, ", "))
+}
+
 // admitted is one call that has passed admission and is not yet issued: everything the issuing
 // needs, resolved once, plus the reservation the budget booked for it.
 //
@@ -259,8 +285,7 @@ func (e *Engine) preAdmit(req *investigationv1.AlgebraRequest) (*admitted, *Answ
 	}
 	workerName, ok := e.workers.route(capability, req.GetTerm())
 	if !ok {
-		return nil, nil, fmt.Errorf("engine: no registered worker declares %s; the registered capabilities are %s",
-			capability, strings.Join(e.workers.Capabilities(), ", "))
+		return nil, nil, &NoWorkerError{Capability: capability, Registered: e.workers.Capabilities()}
 	}
 	backendName := e.workers.Backend(workerName)
 	costClass := sdk.CostClassName(e.workers.costClassOf[workerName][capability])
@@ -679,6 +704,8 @@ func evidenceKind(capability string) string {
 		return "resolution_audit"
 	case "knowledge_search":
 		return "knowledge_item"
+	case "chat_mentions", "chat_timeline":
+		return "chat_digest"
 	case "subgraph", "diff", "impact", "pointers", "node_history", "extent":
 		return "graph_answer"
 	default:
@@ -717,6 +744,10 @@ func windowWidth(term *investigationv1.AlgebraTerm) time.Duration {
 		consider(body.ErrorsByVersion.GetWindow())
 	case *investigationv1.AlgebraTerm_MonitorState:
 		consider(body.MonitorState.GetWindow())
+	case *investigationv1.AlgebraTerm_ChatMentions:
+		consider(body.ChatMentions.GetWindow())
+	case *investigationv1.AlgebraTerm_ChatTimeline:
+		consider(body.ChatTimeline.GetWindow())
 	case *investigationv1.AlgebraTerm_Graph:
 		if diff := body.Graph.GetDiff(); diff != nil && diff.GetT1() != nil && diff.GetT2() != nil {
 			if d := diff.GetT2().AsTime().Sub(diff.GetT1().AsTime()); d > widest {

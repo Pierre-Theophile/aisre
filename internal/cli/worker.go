@@ -8,12 +8,14 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/chat"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/metrics"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/traces"
@@ -62,8 +64,8 @@ func newWorkerCommand(global *globalOptions) *cobra.Command {
 	return cmd
 }
 
-// workerSet builds the workers that do not need a database: the three telemetry workers over one
-// backend. The graph worker needs a query engine and is built where one exists (`worker record`,
+// workerSet builds the workers that do not need a database: the three telemetry workers and the
+// chat worker over one backend. The graph worker needs a query engine and is built where one exists (`worker record`,
 // and Phase 6's engine loop).
 func workerSet(b sdk.TelemetryBackend) (*worker.Registry, error) {
 	registry := worker.NewRegistry()
@@ -71,6 +73,7 @@ func workerSet(b sdk.TelemetryBackend) (*worker.Registry, error) {
 		metrics.New(b),
 		traces.New(b),
 		logs.New(b),
+		chat.New(chat.RecordedSource, b),
 	} {
 		if err := registry.Register(w); err != nil {
 			return nil, err
@@ -348,6 +351,18 @@ func renderDigestBody(d *investigationv1.Digest) string {
 		for _, item := range body.Knowledge.GetItems() {
 			fmt.Fprintf(&b, "  %.6f  %s\n", item.GetScore(), item.GetCitation())
 		}
+	case *investigationv1.Digest_ChatMentions:
+		m := body.ChatMentions
+		fmt.Fprintf(&b, "  %s (%s): %d messages, %d participants, %d instruction-like\n",
+			m.GetTermClass(), m.GetVocabulary(), m.GetMessages(), m.GetParticipants(), m.GetInstructionLike())
+		for _, link := range m.GetPermalinks() {
+			fmt.Fprintf(&b, "  %s\n", link)
+		}
+	case *investigationv1.Digest_ChatTimeline:
+		for _, bucket := range body.ChatTimeline.GetBuckets() {
+			fmt.Fprintf(&b, "  %s  %d messages  %d participants\n",
+				bucket.GetStart().AsTime().Format("15:04:05"), bucket.GetMessages(), bucket.GetParticipants())
+		}
 	default:
 		fmt.Fprintf(&b, "  (no digest body)\n")
 	}
@@ -422,6 +437,19 @@ func termFromArgs(termName, args string) (*engine.Term, error) {
 			return nil, fmt.Errorf("--args for %s: %w", termName, err)
 		}
 		return engine.KnowledgeSearch(msg.GetEntityIds(), msg.GetQueryTerms(), msg.GetLimit()), nil
+	case engine.TermChatMentions:
+		msg := &investigationv1.ChatMentionsTerm{}
+		if err := unmarshal.Unmarshal([]byte(args), msg); err != nil {
+			return nil, fmt.Errorf("--args for %s: %w", termName, err)
+		}
+		return engine.ChatMentions(msg.GetChannelRef(), msg.GetTermClass(), msg.GetWindow()), nil
+	case engine.TermChatTimeline:
+		msg := &investigationv1.ChatTimelineTerm{}
+		if err := unmarshal.Unmarshal([]byte(args), msg); err != nil {
+			return nil, fmt.Errorf("--args for %s: %w", termName, err)
+		}
+		return engine.ChatTimeline(msg.GetChannelRef(), msg.GetWindow(),
+			time.Duration(msg.GetBucketSeconds())*time.Second), nil
 	default:
 		return nil, engine.OutsideAlgebra(termName)
 	}

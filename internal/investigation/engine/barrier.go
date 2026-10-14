@@ -203,12 +203,32 @@ func DetectInjections(resp *investigationv1.AlgebraResponse) []Injection {
 	for _, exemplar := range digest.GetExemplars().GetExemplars() {
 		out = append(out, scan("exemplar", exemplar.GetText())...)
 	}
+	// The chat worker never returns a message, so it reports the count of messages that read as
+	// instructions instead, and each such answer is one recorded attempt (006 FR-035).
+	if n := digest.GetChatMentions().GetInstructionLike(); n > 0 {
+		out = append(out, Injection{
+			Field:   "chat",
+			Pattern: "instruction_like",
+			Excerpt: fmt.Sprintf("%d message(s) in the incident channel; their text is not carried", n),
+		})
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Field != out[j].Field {
 			return out[i].Field < out[j].Field
 		}
 		return out[i].Pattern < out[j].Pattern
 	})
+	return out
+}
+
+// InstructionPatterns names the published injection patterns text matches, in a fixed order. A
+// worker whose source's prose never crosses the boundary — the chat worker reads messages and
+// returns only counts — uses it to count what it would otherwise have had to quote.
+func InstructionPatterns(text string) []string {
+	var out []string
+	for _, found := range scan("", text) {
+		out = append(out, found.Pattern)
+	}
 	return out
 }
 

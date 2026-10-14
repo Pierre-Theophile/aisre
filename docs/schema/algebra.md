@@ -16,15 +16,19 @@ The machine-readable source of truth is
 normalisation, the key) and `internal/investigation/backend/algebra.go` (a typed constructor per
 term, and the validation that decides whether a term is answerable at all).
 
-**Algebra version: `1.0.0`.**
+**Algebra version: `1.1.0`.** Each term carries the version that introduced it: `1.0.0` for the
+graph, telemetry and knowledge families, `1.1.0` for the chat family. A term's key is computed
+under its own version, so 1.1.0 moved no existing key and no world was migrated
+([ADR-0012](../decisions/ADR-0012-algebra-1.1.0-the-chat-family.md)).
 
-## The three families
+## The four families
 
 | family | terms | recorded into a world? | who answers it |
 |---|---|---|---|
 | **graph** | `subgraph`, `diff`, `impact`, `pointers`, `node_history`, `resolution_audit`, `extent` | no — answered by replaying the event log | the graph worker, over feature 001's `QueryService` |
 | **telemetry** | `compare`, `onset`, `new_log_patterns`, `error_spans`, `errors_by_version`, `monitor_state`, `exemplars`, `drill_down` | yes — the cross product over the neighbourhood × the window grid | a telemetry backend, through the metrics, traces and logs workers |
 | **knowledge** | `knowledge_search` | yes — small, keyed like telemetry | the knowledge worker, over documents the graph links |
+| **chat** (1.1.0) | `chat_mentions`, `chat_timeline` | yes — counts and instants only, keyed like telemetry | the chat worker, over the incident's own Slack channel (006) |
 
 A backend serves the **telemetry family only** — all eight of its terms. One that declares a
 graph or knowledge term is rejected at registration: it has mistaken itself for a worker, and
@@ -42,6 +46,18 @@ the boundary it would blur is the one everything else rests on.
 | `monitor_state` | pointer, window | transitions, start and end state, per-group states | `cheap` |
 | `exemplars` | handle, limit | bounded, sanitised exemplars — **only on explicit request** | `expensive` |
 | `drill_down` | handle | the narrower answer behind a handle a previous digest minted | `cheap` |
+
+### The two chat terms (1.1.0)
+
+| term | arguments | answers | cost class |
+|---|---|---|---|
+| `chat_mentions` | channel, term class, window | messages matching one class of `slack/terms@1`, first and last instants, distinct participants, up to 10 permalinks, and how many messages in the window read as instructions | `standard` |
+| `chat_timeline` | channel, window, bucket ≥ 60 s | messages and distinct participants per bucket | `standard` |
+
+The channel is never the model's: the engine fills the investigation's own declared channel, and
+offers the chat family only to an investigation declared in one, on a deployment that registers
+the chat worker. Everywhere else the tool list and the prompt are the 1.0.0 ones. The term classes
+are `deploy`, `flag`, `mitigated`, `restart`, `rollback`, `scale` and `vendor`.
 
 `exemplars` and `drill_down` take a **handle a previous answer minted**, never a selector a
 caller composed. That is what keeps their argument space finite, and therefore what keeps a
@@ -195,6 +211,10 @@ The algebra version is carried on every term, recorded in every world index, and
   but raises the fixture's miss rate and may push it past the admission threshold.
 - **Changing the meaning or the encoding of an existing term** is a MAJOR bump, because it moves
   every term key and therefore invalidates every world.
+- **A new term carries the version that introduced it**, and `Normalise` keys every term under its
+  own version, so a MINOR bump moves no existing key. A family is offered to the model only where a
+  registered worker can answer it, so the prompt and tool list of an investigation that is not
+  offered the new family are unchanged (ADR-0012).
 
 Adding a term is never something a worker improvises. It is a published schema change, reviewed
 like any other.
@@ -210,7 +230,8 @@ $ aisre worker call metrics run_this_promql --args '{}' --recording fixtures/rol
 sre-agent: outside_algebra: run_this_promql is not a published algebra term; the algebra is
 telemetry [compare drill_down error_spans errors_by_version exemplars monitor_state
 new_log_patterns onset], graph [diff extent impact node_history pointers resolution_audit
-subgraph], knowledge [knowledge_search], and nothing else may be asked of a worker
+subgraph], knowledge [knowledge_search], chat [chat_mentions chat_timeline], and nothing else may
+be asked of a worker
 $ echo $?
 1
 ```

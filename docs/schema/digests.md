@@ -81,6 +81,8 @@ retrying: *"this organisation has no trace data; the question cannot be checked 
 | errors by version | `ErrorsByVersionDigest` | `VersionBreakdown` (version, errors, total, error rate, join keys, drill-down, and `deploy_ref` or `deploy_ref_absent_reason`) plus the version attribute |
 | exemplars | `ExemplarDigest` | `Exemplar` (masked text, redaction applied, join keys) plus the cap |
 | knowledge | `KnowledgeDigest` | `KnowledgeItem` (document id, kind, linked entities, link provenance, authored at, age, score, citation, excerpt) plus the scorer version |
+| chat mentions (1.1.0) | `ChatMentionsDigest` | term class and vocabulary, messages, first and last instants, distinct participants, permalinks, and `instruction_like`: how many messages in the window read as instructions. Never a message's text or an author |
+| chat timeline (1.1.0) | `ChatTimelineDigest` | `ChatBucket` (start, messages, distinct participants), every bucket in the window present, plus the bucket width |
 
 ### A version group's deploy reference
 
@@ -116,6 +118,8 @@ field. It never means "none". How a service gets a stamp at all is
 | version breakdowns | 25 |
 | monitor transitions | 100 |
 | knowledge items | 20 |
+| chat permalinks | 10 |
+| chat timeline buckets | 288 |
 | exemplars | 10, and 512 bytes each |
 | the one free-text field | 512 bytes |
 | the whole response, canonically encoded | 64 KiB |

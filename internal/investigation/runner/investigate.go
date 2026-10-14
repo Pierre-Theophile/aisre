@@ -19,10 +19,12 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/budget"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/engine"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/engine/prompt"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
+	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 )
 
 // One investigation, end to end.
@@ -232,7 +234,7 @@ func (r *Runner) newInvestigation(rn *run, reopens string) investigationstore.Ne
 		Profile:                rn.profile.Name,
 		Requester:              rn.requester,
 		ModelConfig:            r.modelConfig,
-		AlgebraVersion:         engine.AlgebraVersion,
+		AlgebraVersion:         prompt.VersionFor(r.chatOffered(rn)),
 		LedgerRuleVersion:      ledgerRuleVersion,
 		SchemaVersion:          SchemaVersion,
 		StartedAt:              rn.startedAt,
@@ -269,6 +271,8 @@ func (r *Runner) execute(ctx context.Context, rn *run, emit emitFunc) (*investig
 			Window:    rn.intake.Window,
 			Origin:    originOf(rn.intake),
 			Priority:  rn.intake.Symptom.GetSeverity(),
+			// The chat family is offered only when the deployment can answer it as well.
+			ChatChannel: chatChannelOf(rn.intake),
 		},
 		Instants: engine.Instants{ValidAt: rn.intake.ValidAt, ObservedAt: rn.intake.ObservedAt},
 		Prior:    r.cfg.Prior,
@@ -749,6 +753,24 @@ func originOf(in *intake.Intake) string {
 	default:
 		return ref
 	}
+}
+
+// chatChannelOf is the incident channel an investigation was declared in, "slack:<team>/<channel>",
+// or empty. Only a declaration whose origin is a Slack workspace has one, and only its own
+// channel: the reference must sit inside the origin system that declared it (006 FR-031).
+func chatChannelOf(in *intake.Intake) string {
+	system := in.Symptom.GetOriginSystem()
+	ref := in.Symptom.GetOriginRef()
+	if !strings.HasPrefix(system, "slack:") || !strings.HasPrefix(ref, system+"/") || len(ref) == len(system)+1 {
+		return ""
+	}
+	return ref
+}
+
+// chatOffered reports whether the chat family is offered to this run, which decides the algebra
+// version the run is recorded under: 1.0.0 everywhere the chat family is not offered (ADR-0012).
+func (r *Runner) chatOffered(rn *run) bool {
+	return chatChannelOf(rn.intake) != "" && r.workers != nil && r.workers.OffersFamily(sdk.FamilyChat)
 }
 
 func groupingWindow(rule intake.GroupingRule) time.Duration {

@@ -109,7 +109,30 @@ aisre feed slack --deliver --service checkout=service.name=checkout
 
 Polling every 30 s is the truth. Socket Mode, when it is added, will only cut that wait short.
 
-## 5. Recording
+## 5. The chat reader (off by default)
+
+`aisre serve --enable-investigation --chat-reader` registers the **chat worker**. It reads the
+incident channel's history through the reader app, which then needs `channels:history` and must be
+**invited to the channel by a person**: it never joins one, and a channel it is not in is answered
+`not_member`. The worker counts and never quotes:
+
+| term | answers |
+|---|---|
+| `chat_mentions` | how many messages matched one class of `slack/terms@1` (`deploy`, `flag`, `mitigated`, `restart`, `rollback`, `scale`, `vendor`), when the first and last were, how many people wrote them, links to up to 10 of them, and how many messages in the window read as instructions |
+| `chat_timeline` | messages and people per bucket (one minute or wider) over a window |
+
+No message text, author id or name leaves the call that read it. Bot messages, the report this
+deployment posts, join notices and thread replies are not counted. The model never names a channel:
+the engine passes the investigation's own, and the chat tools are offered only to an investigation
+declared in this workspace ([ADR-0012](../decisions/ADR-0012-algebra-1.1.0-the-chat-family.md)).
+What people said is a reason to look, never a finding; a message that reads as an instruction is
+counted and recorded as an attempt, and changes nothing.
+
+An answer that could not read says why: `not_enabled`, `not_member`, `private_channel`,
+`retention_truncated` (set `--chat-retention` to the plan's history limit), `rate_limited` or
+`outside_origin`.
+
+## 6. Recording
 
 `--record <dir>` writes a fixture sanitised before anything touches disk, under the corpus key in
 `SRE_AGENT_CORPUS_KEY`: the workspace and channel ids become pseudonyms, channel names the rule's

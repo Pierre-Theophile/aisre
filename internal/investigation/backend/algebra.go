@@ -4,6 +4,8 @@ package backend
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -31,6 +33,9 @@ import (
 const (
 	// AlgebraVersion is the version of the published algebra this build implements.
 	AlgebraVersion = sdk.AlgebraVersion
+	// BaseAlgebraVersion is the version that introduced every term outside the chat family; a
+	// term carries the version that introduced it (ADR-0012).
+	BaseAlgebraVersion = sdk.BaseAlgebraVersion
 	// ReasonOutsideAlgebra is a request whose term the algebra does not publish.
 	ReasonOutsideAlgebra = sdk.ReasonOutsideAlgebra
 	// ReasonMissingCoverage is a digest with no coverage block.
@@ -107,10 +112,36 @@ const (
 	TermDrillDown = sdk.TermDrillDown
 	// TermKnowledgeSearch is graph-scoped retrieval over durable knowledge.
 	TermKnowledgeSearch = sdk.TermKnowledgeSearch
+	// TermChatMentions is a class of terms said in the incident channel (1.1.0).
+	TermChatMentions = sdk.TermChatMentions
+	// TermChatTimeline is the incident channel's activity per bucket (1.1.0).
+	TermChatTimeline = sdk.TermChatTimeline
 )
+
+// The chat family's published vocabulary (006 FR-032). The classes are what may be asked; the
+// patterns that match them are the chat worker's, versioned with this name, so that a digest
+// says which vocabulary produced its count.
+const ChatVocabulary = "slack/terms@1"
+
+// ChatTermClasses are the published classes, sorted.
+var ChatTermClasses = []string{"deploy", "flag", "mitigated", "restart", "rollback", "scale", "vendor"}
+
+// MinChatBucket is the narrowest chat_timeline bucket: finer than a minute, a bucket counts a
+// handful of messages and says more about who typed than about what happened.
+const MinChatBucket = time.Minute
+
+// MaxChatPermalinks bounds a chat_mentions digest's permalinks.
+const MaxChatPermalinks = 10
+
+// MaxChatBuckets bounds a chat_timeline digest: a day at five-minute buckets, or four hours at
+// one-minute buckets.
+const MaxChatBuckets = 288
 
 // TermName returns the published name of a typed term, or "" when it names none.
 func TermName(term *Term) string { return sdk.TermNameOf(term) }
+
+// TermVersion is the algebra version that introduced the named term.
+func TermVersion(name string) string { return sdk.TermVersion(name) }
 
 // FamilyOf returns the family a published term belongs to.
 func FamilyOf(name string) sdk.Family { return sdk.FamilyOf(name) }
@@ -159,7 +190,7 @@ func NewWindowPair(reference time.Time, width time.Duration) *WindowPair {
 // selector, with direction, magnitude and separability.
 func Compare(pointer *Pointer, windows *WindowPair, statistic investigationv1.Statistic) *Term {
 	return &Term{
-		AlgebraVersion: AlgebraVersion,
+		AlgebraVersion: BaseAlgebraVersion,
 		Term: &investigationv1.AlgebraTerm_Compare{Compare: &investigationv1.CompareTerm{
 			Pointer:   pointer,
 			Windows:   windows,
@@ -172,7 +203,7 @@ func Compare(pointer *Pointer, windows *WindowPair, statistic investigationv1.St
 // computed backend-side so the series never crosses the digest boundary.
 func Onset(pointer *Pointer, search *Window, method investigationv1.OnsetMethod) *Term {
 	return &Term{
-		AlgebraVersion: AlgebraVersion,
+		AlgebraVersion: BaseAlgebraVersion,
 		Term: &investigationv1.AlgebraTerm_Onset{Onset: &investigationv1.OnsetTerm{
 			Pointer:      pointer,
 			SearchWindow: search,
@@ -185,7 +216,7 @@ func Onset(pointer *Pointer, search *Window, method investigationv1.OnsetMethod)
 // counts, and which of them are new in the window.
 func NewLogPatterns(pointer *Pointer, window, baseline *Window) *Term {
 	return &Term{
-		AlgebraVersion: AlgebraVersion,
+		AlgebraVersion: BaseAlgebraVersion,
 		Term: &investigationv1.AlgebraTerm_NewLogPatterns{NewLogPatterns: &investigationv1.NewLogPatternsTerm{
 			Pointer:        pointer,
 			Window:         window,
@@ -198,7 +229,7 @@ func NewLogPatterns(pointer *Pointer, window, baseline *Window) *Term {
 // error kind on one graph edge.
 func ErrorSpans(srcEntityID, dstEntityID string, edgeType graphv1.EdgeType, window *Window) *Term {
 	return &Term{
-		AlgebraVersion: AlgebraVersion,
+		AlgebraVersion: BaseAlgebraVersion,
 		Term: &investigationv1.AlgebraTerm_ErrorSpans{ErrorSpans: &investigationv1.ErrorSpansTerm{
 			SrcEntityId: srcEntityID,
 			DstEntityId: dstEntityID,
@@ -212,7 +243,7 @@ func ErrorSpans(srcEntityID, dstEntityID string, edgeType graphv1.EdgeType, wind
 // split by the deployed version tag named by Pointer.join_keys["version"] (ADR-0005 D4).
 func ErrorsByVersion(pointer *Pointer, window *Window, versionAttribute string) *Term {
 	return &Term{
-		AlgebraVersion: AlgebraVersion,
+		AlgebraVersion: BaseAlgebraVersion,
 		Term: &investigationv1.AlgebraTerm_ErrorsByVersion{ErrorsByVersion: &investigationv1.ErrorsByVersionTerm{
 			Pointer:          pointer,
 			Window:           window,
@@ -225,7 +256,7 @@ func ErrorsByVersion(pointer *Pointer, window *Window, versionAttribute string) 
 // per-group states.
 func MonitorState(pointer *Pointer, window *Window) *Term {
 	return &Term{
-		AlgebraVersion: AlgebraVersion,
+		AlgebraVersion: BaseAlgebraVersion,
 		Term: &investigationv1.AlgebraTerm_MonitorState{MonitorState: &investigationv1.MonitorStateTerm{
 			Pointer: pointer,
 			Window:  window,
@@ -238,7 +269,7 @@ func MonitorState(pointer *Pointer, window *Window) *Term {
 // what keeps the argument space finite and therefore a recorded world finite.
 func Exemplars(handle *Handle, limit uint32) *Term {
 	return &Term{
-		AlgebraVersion: AlgebraVersion,
+		AlgebraVersion: BaseAlgebraVersion,
 		Term: &investigationv1.AlgebraTerm_Exemplars{Exemplars: &investigationv1.ExemplarsTerm{
 			Handle: handle,
 			Limit:  limit,
@@ -250,7 +281,7 @@ func Exemplars(handle *Handle, limit uint32) *Term {
 // minted.
 func DrillDown(handle *Handle) *Term {
 	return &Term{
-		AlgebraVersion: AlgebraVersion,
+		AlgebraVersion: BaseAlgebraVersion,
 		Term: &investigationv1.AlgebraTerm_DrillDown{DrillDown: &investigationv1.DrillDownTerm{
 			Handle: handle,
 		}},
@@ -262,7 +293,7 @@ func DrillDown(handle *Handle) *Term {
 // refused by the knowledge worker (FR-049).
 func KnowledgeSearch(entityIDs, queryTerms []string, limit uint32) *Term {
 	return &Term{
-		AlgebraVersion: AlgebraVersion,
+		AlgebraVersion: BaseAlgebraVersion,
 		Term: &investigationv1.AlgebraTerm_KnowledgeSearch{KnowledgeSearch: &investigationv1.KnowledgeSearchTerm{
 			EntityIds:  entityIDs,
 			QueryTerms: queryTerms,
@@ -271,11 +302,33 @@ func KnowledgeSearch(entityIDs, queryTerms []string, limit uint32) *Term {
 	}
 }
 
+// ChatMentions is `chat_mentions(channel, term class, window)`: how often, when and by how many
+// people a published class of terms was said in the incident's own channel (algebra 1.1.0).
+func ChatMentions(channelRef, termClass string, window *Window) *Term {
+	return &Term{
+		AlgebraVersion: sdk.TermVersion(TermChatMentions),
+		Term: &investigationv1.AlgebraTerm_ChatMentions{ChatMentions: &investigationv1.ChatMentionsTerm{
+			ChannelRef: channelRef, TermClass: termClass, Window: window,
+		}},
+	}
+}
+
+// ChatTimeline is `chat_timeline(channel, window, bucket)`: the incident channel's message and
+// participant counts per bucket (algebra 1.1.0).
+func ChatTimeline(channelRef string, window *Window, bucket time.Duration) *Term {
+	return &Term{
+		AlgebraVersion: sdk.TermVersion(TermChatTimeline),
+		Term: &investigationv1.AlgebraTerm_ChatTimeline{ChatTimeline: &investigationv1.ChatTimelineTerm{
+			ChannelRef: channelRef, Window: window, BucketSeconds: uint32(bucket / time.Second),
+		}},
+	}
+}
+
 // Graph wraps one of feature 001's published query requests as a graph-family term. Both time
 // dimensions travel inside the request, exactly as 001 published them.
 func Graph(term *investigationv1.GraphTerm) *Term {
 	return &Term{
-		AlgebraVersion: AlgebraVersion,
+		AlgebraVersion: BaseAlgebraVersion,
 		Term:           &investigationv1.AlgebraTerm_Graph{Graph: term},
 	}
 }
@@ -398,6 +451,27 @@ func Validate(term *Term) error {
 	case *investigationv1.AlgebraTerm_KnowledgeSearch:
 		if len(t.KnowledgeSearch.GetEntityIds()) == 0 {
 			return badTerm(name, "names no entities; retrieval is scoped by the graph and an unscoped search would retrieve documents linked to nothing (FR-049)")
+		}
+	case *investigationv1.AlgebraTerm_ChatMentions:
+		if t.ChatMentions.GetChannelRef() == "" {
+			return badTerm(name, "names no channel; the chat family reads the investigation's own declared channel and nothing else (006 FR-031)")
+		}
+		if !slices.Contains(ChatTermClasses, strings.ToLower(strings.TrimSpace(t.ChatMentions.GetTermClass()))) {
+			return badTerm(name, fmt.Sprintf("asks for term class %q; the published classes of %s are %v",
+				t.ChatMentions.GetTermClass(), ChatVocabulary, ChatTermClasses))
+		}
+		if err := requireWindow(name, "window", t.ChatMentions.GetWindow()); err != nil {
+			return err
+		}
+	case *investigationv1.AlgebraTerm_ChatTimeline:
+		if t.ChatTimeline.GetChannelRef() == "" {
+			return badTerm(name, "names no channel; the chat family reads the investigation's own declared channel and nothing else (006 FR-031)")
+		}
+		if time.Duration(t.ChatTimeline.GetBucketSeconds())*time.Second < MinChatBucket {
+			return badTerm(name, fmt.Sprintf("asks for %ds buckets; the narrowest is %s", t.ChatTimeline.GetBucketSeconds(), MinChatBucket))
+		}
+		if err := requireWindow(name, "window", t.ChatTimeline.GetWindow()); err != nil {
+			return err
 		}
 	}
 	return nil

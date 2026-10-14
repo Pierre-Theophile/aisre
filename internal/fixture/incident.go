@@ -187,7 +187,7 @@ var predicateOps = []string{
 // predicate naming a family that does not exist is a predicate nothing can ever evaluate.
 var termFamilies = []string{
 	"graph", "compare", "onset", "new_log_patterns", "error_spans", "errors_by_version",
-	"monitor_state", "exemplars", "drill_down", "knowledge_search",
+	"monitor_state", "exemplars", "drill_down", "knowledge_search", "chat_mentions", "chat_timeline",
 }
 
 // IncidentOnset is the labelled onset and the tolerance an estimate is graded within.

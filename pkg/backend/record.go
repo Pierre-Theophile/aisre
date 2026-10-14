@@ -323,7 +323,9 @@ func (r *recorder) Close(_ context.Context) (string, error) {
 	sort.Strings(keys)
 
 	index := &WorldIndex{
-		AlgebraVersion:         AlgebraVersion,
+		// A world holds telemetry terms, which 1.0.0 published; its keys are computed under that
+		// version whatever the build's (ADR-0012).
+		AlgebraVersion:         TermVersion(TermCompare),
 		HopRadius:              r.opts.HopRadius,
 		DrillDownDepth:         r.opts.DrillDownDepth,
 		TermKeyToFile:          make(map[string]string, len(keys)),
@@ -497,10 +499,10 @@ func LoadWorld(dir string) (*World, error) {
 	if err := json.Unmarshal(raw, index); err != nil {
 		return nil, fmt.Errorf("backend: parse %s: %w", filepath.Join(dir, IndexFile), err)
 	}
-	if index.AlgebraVersion != AlgebraVersion {
+	if !SupportsAlgebraVersion(index.AlgebraVersion) {
 		return nil, Reject(ReasonUnknownAlgebraVersion,
-			"world %s was recorded against algebra version %s; this build publishes %s, and a world of another version is refused rather than reinterpreted",
-			dir, index.AlgebraVersion, AlgebraVersion)
+			"world %s was recorded against algebra version %s; this build implements %v, and a world of another version is refused rather than reinterpreted",
+			dir, index.AlgebraVersion, supportedAlgebraVersions)
 	}
 
 	world := &World{
