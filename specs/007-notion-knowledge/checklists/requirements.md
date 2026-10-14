@@ -35,7 +35,7 @@
   (`KNOWLEDGE_DOC`, `CONCERNS`, `feeder.ReadOnlySurface`, `knowledge_search`) because the
   constitution makes them the boundary a connector is judged against; no language, library or
   vendor API shape is prescribed.
-- The five forks (Q1–Q5) carry defaults instead of clarification markers. They are proposed, not
-  approved: the owner's approval is required before `/speckit-plan`.
+- The five forks (Q1–Q5) carry defaults instead of clarification markers; the owner approved all
+  five on 2026-10-14.
 - Story 2 (the knowledge worker registered live) was added after reading the code: no non-test
   code builds a graph-backed corpus or registers the worker, so without it Story 1 cannot be met.

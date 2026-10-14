@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-14
 
-**Status**: Draft, awaiting the owner's approval of the scope and the five defaults below
+**Status**: Approved by the owner 2026-10-14 (scope and all five defaults); planning
 
 **Input**: User description: "007 document connectors: a read-only Notion connector that feeds the
 investigation engine's knowledge index with postmortems and runbooks, so an investigation can cite
@@ -42,10 +42,10 @@ What it adds, in priority order:
 
 ## Clarifications
 
-### Session 2026-10-14 — defaults proposed for the owner's approval
+### Session 2026-10-14 — defaults approved by the owner
 
 These forks change scope or security posture. Each default is written into the requirements below;
-none is final until the owner approves it.
+the owner approved all five as written on 2026-10-14.
 
 - Q1: Which pages are knowledge? → **Default: only pages inside Notion databases the operator names
   by id, each database declared as one published kind (`postmortem` or `runbook`).** Pages shared
