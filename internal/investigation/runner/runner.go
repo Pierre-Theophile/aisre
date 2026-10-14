@@ -45,8 +45,10 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	graphworker "github.com/Pierre-Theophile/aisre/internal/investigation/workers/graph"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
+	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
@@ -79,6 +81,10 @@ type Config struct {
 	// over Graph when the registry does not already declare one, so a caller only has to supply
 	// the telemetry workers.
 	Workers *worker.Registry
+	// NoKnowledgeWorker leaves the knowledge worker out. By default it is registered over Store
+	// beside the graph worker, so registered documents and reviewed investigations are cited
+	// (007 FR-005); without it `knowledge_search` is reported unavailable, like any absent worker.
+	NoKnowledgeWorker bool
 	// Profiles are the budget profiles by name (budget.LoadProfiles). Empty means the published
 	// two.
 	Profiles map[string]budget.Profile
@@ -190,6 +196,13 @@ func New(cfg Config) (*Runner, error) {
 	if _, ok := cfg.Workers.Lookup(graphworker.Name); !ok {
 		if err := cfg.Workers.Register(graphworker.New(cfg.Graph)); err != nil {
 			return nil, fmt.Errorf("runner: register the graph worker: %w", err)
+		}
+	}
+	// The knowledge worker likewise needs nothing but the store: its corpus is the graph's
+	// CONCERNS and INVESTIGATED edges (007 FR-005, ADR-0013 item 3).
+	if _, ok := cfg.Workers.Lookup(knowledge.Name); !ok && !cfg.NoKnowledgeWorker {
+		if err := cfg.Workers.Register(knowledge.New(knowledge.GraphCorpus{Engine: query.NewEngine(cfg.Store)})); err != nil {
+			return nil, fmt.Errorf("runner: register the knowledge worker: %w", err)
 		}
 	}
 	workers, err := engine.NewWorkers(cfg.Workers, worker.RetryPolicy{})
