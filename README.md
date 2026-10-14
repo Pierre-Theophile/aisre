@@ -34,6 +34,7 @@ cloud platform and the deploys an organisation actually runs.
 | [004 Deploy feeders](specs/004-deploy-feeders/spec.md) (GitHub, Vercel) | built and verified on synthetic twins; waits on the same campaign, and on a real project-scoped Vercel token to establish the token regime |
 | [005 Datadog connector](specs/005-datadog-connector/spec.md) | specified; not yet planned |
 | [006 Slack connector](specs/006-slack-connector/spec.md) (incident-channel intake, report in the channel, chat reader) | built and verified on synthetic twins ([docs](docs/connectors/slack.md)); the recording campaign and the live quickstart wait on the two apps being installed in the workspace and a named signatory |
+| [007 Notion knowledge](specs/007-notion-knowledge/spec.md) (postmortems and runbooks cited by investigations) | built and verified on a synthetic twin ([docs](docs/connectors/notion.md)), connector experimental; the recording of a real workspace and the audit re-run wait on the integration being created and where the postmortems live being confirmed |
 
 Each feature's `tasks.md` says exactly what is open and why. What follows is feature 001's part.
 

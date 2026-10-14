@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -45,7 +47,6 @@ const (
 	SkipNoMappedEntity = "no mapped entity"
 	SkipUnmappedValue  = "unmapped value"
 	SkipOtherDatabase  = "in another bound database"
-	SkipArchived       = "archived"
 	SkipUntitled       = "untitled"
 )
 
@@ -151,6 +152,17 @@ func (f *Feeder) apply(ctx context.Context, em feeder.Emitter, payload feeder.Pa
 
 	f.mu.Lock()
 	f.report.Reads++
+	d := &f.report.Databases[read.Binding]
+	if read.DataSource != "" && !slices.Contains(d.DataSources, read.DataSource) {
+		d.DataSources = append(d.DataSources, read.DataSource)
+	}
+	for _, name := range read.Properties {
+		d.PropertiesFound[name] = true
+	}
+	if read.Mode == ModeReconcile && read.DataSource != "" {
+		// A reconciliation lists every page, so its count replaces the last one.
+		d.outside[read.DataSource] = read.Outside
+	}
 	if !read.Complete {
 		f.report.Gaps = append(f.report.Gaps, fmt.Sprintf("%s: %s", binding.Database, read.Gap))
 	}
@@ -158,7 +170,20 @@ func (f *Feeder) apply(ctx context.Context, em feeder.Emitter, payload feeder.Pa
 		f.report.LastReconciled = at
 	}
 	note := f.report.noteLocked()
+	var skipped []string
+	if read.Mode == ModeReconcile && read.EndOfCycle {
+		skipped = f.report.skippedLocked()
+	}
 	f.mu.Unlock()
+
+	if read.Mode == ModeReconcile && read.EndOfCycle {
+		// The registration report at the end of each reconciliation (contracts §6, T033): counts, then
+		// each page not registered with its title and reason. Never a summary or a body.
+		f.log.InfoContext(ctx, "notion: reconciliation report", "report", note)
+		for _, line := range skipped {
+			f.log.InfoContext(ctx, "notion: not registered", "page", line)
+		}
+	}
 
 	from := read.From
 	if from.IsZero() || !from.Before(at) {
@@ -407,6 +432,22 @@ type DatabaseReport struct {
 	// Skipped maps page id → the page's title and why it is not registered, as of its last read.
 	Skipped map[string]Skip
 	Gone    int
+	// DataSources are the data sources read; PropertiesFound the configured property names some
+	// listed page carried.
+	DataSources     []string
+	PropertiesFound map[string]bool
+	// outside is, per data source, the listed pages whose parent is not a configured database, as of
+	// its last reconciliation.
+	outside map[string]int
+}
+
+// Outside is how many listed pages are outside the configured databases (a count only).
+func (d DatabaseReport) Outside() int {
+	n := 0
+	for _, c := range d.outside {
+		n += c
+	}
+	return n
 }
 
 func newReport(cfg *Config) Report {
@@ -414,6 +455,7 @@ func newReport(cfg *Config) Report {
 	for _, b := range cfg.Databases {
 		r.Databases = append(r.Databases, DatabaseReport{
 			Database: b.Database, Kind: b.Kind, Registered: map[string]string{}, Skipped: map[string]Skip{},
+			PropertiesFound: map[string]bool{}, outside: map[string]int{},
 		})
 	}
 	return r
@@ -451,15 +493,23 @@ func (f *Feeder) Report() Report {
 	out.Databases = make([]DatabaseReport, len(f.report.Databases))
 	for i, d := range f.report.Databases {
 		c := DatabaseReport{Database: d.Database, Kind: d.Kind, Gone: d.Gone,
-			Registered: map[string]string{}, Skipped: map[string]Skip{}}
-		for k, v := range d.Registered {
-			c.Registered[k] = v
-		}
-		for k, v := range d.Skipped {
-			c.Skipped[k] = v
-		}
+			Registered: maps.Clone(d.Registered), Skipped: maps.Clone(d.Skipped),
+			DataSources: slices.Clone(d.DataSources), PropertiesFound: maps.Clone(d.PropertiesFound),
+			outside: maps.Clone(d.outside)}
 		out.Databases[i] = c
 	}
+	return out
+}
+
+// skippedLocked lists each page not registered as `<database>: "<title>": <reason>`, sorted.
+func (r Report) skippedLocked() []string {
+	var out []string
+	for _, d := range r.Databases {
+		for _, s := range d.Skipped {
+			out = append(out, fmt.Sprintf("%s: %q: %s", d.Database, s.Title, s.Reason))
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
@@ -54,6 +55,9 @@ type PollerOptions struct {
 	Config *Config
 	// StatePath is where the poller keeps what it registered. Empty keeps it in memory only.
 	StatePath string
+	// ReadOnlyState loads the state file but never writes it: `--check` compares against what the
+	// connector registered without moving anything.
+	ReadOnlyState bool
 	// Once makes one reconciliation and stops.
 	Once bool
 	// Cycles stops after that many cycles; 0 runs until the context ends.
@@ -117,8 +121,10 @@ func (p *Poller) Next(ctx context.Context) (feeder.Payload, error) {
 	if p.pending != nil {
 		p.state = p.pending
 		p.pending = nil
-		if err := p.state.Save(p.opts.StatePath); err != nil {
-			return feeder.Payload{}, err
+		if !p.opts.ReadOnlyState {
+			if err := p.state.Save(p.opts.StatePath); err != nil {
+				return feeder.Payload{}, err
+			}
 		}
 	}
 	for len(p.queue) == 0 {
@@ -156,14 +162,25 @@ func (p *Poller) cycle(ctx context.Context, now time.Time) error {
 	}
 	next := p.state.clone()
 	claimed := map[string]int{} // page id → binding that holds it this cycle
+	type read struct {
+		out pagesPayload
+		at  time.Time
+	}
+	var reads []read
 	for i := range p.opts.Config.Databases {
 		for _, ds := range p.sources[i] {
-			payload, err := p.read(ctx, i, ds, reconcile, next, claimed)
-			if err != nil {
-				return err
-			}
-			p.queue = append(p.queue, payload)
+			out, at := p.read(ctx, i, ds, reconcile, next, claimed)
+			reads = append(reads, read{out, at})
 		}
+	}
+	// The last read says the cycle is over, so the feeder can report a reconciliation once, whole.
+	reads[len(reads)-1].out.EndOfCycle = true
+	for _, r := range reads {
+		payload, err := marshal(r.out, r.at)
+		if err != nil {
+			return err
+		}
+		p.queue = append(p.queue, payload)
 	}
 	p.cycles++
 	p.nextPoll = now.Add(p.opts.Config.PollInterval)
@@ -201,7 +218,7 @@ func (p *Poller) resolve(ctx context.Context) error {
 
 // read reads one data source of one binding.
 func (p *Poller) read(ctx context.Context, binding int, ds string, reconcile bool, next *State,
-	claimed map[string]int) (feeder.Payload, error) {
+	claimed map[string]int) (pagesPayload, time.Time) {
 	b := &p.opts.Config.Databases[binding]
 	at := p.opts.Now().UTC()
 	out := pagesPayload{Workspace: p.opts.Config.Workspace, Binding: binding, Database: b.Database, DataSource: ds,
@@ -211,7 +228,7 @@ func (p *Poller) read(ctx context.Context, binding int, ds string, reconcile boo
 	}
 	if ds == "" {
 		out.Complete, out.Gap = false, "the database could not be read"
-		return marshal(out, at)
+		return out, at
 	}
 	filter := notionx.QueryFilter{}
 	if !reconcile {
@@ -232,6 +249,14 @@ func (p *Poller) read(ctx context.Context, binding int, ds string, reconcile boo
 		for _, page := range got.Pages {
 			id := NormaliseID(page.ID)
 			listed[id] = true
+			for _, name := range b.properties() {
+				if _, ok := page.Properties[name]; ok && !slices.Contains(out.Properties, name) {
+					out.Properties = append(out.Properties, name)
+				}
+			}
+			if !p.bound(page.Parent.DataSourceID) {
+				out.Outside++
+			}
 			obs, err := p.observe(ctx, b, page, next)
 			if err != nil {
 				out.Complete, out.Gap = false, gapOf(err)
@@ -267,7 +292,22 @@ func (p *Poller) read(ctx context.Context, binding int, ds string, reconcile boo
 		}
 		out.Pages = append(out.Pages, gone...)
 	}
-	return marshal(out, at)
+	return out, at
+}
+
+// bound reports a data source of a configured database. A page listed by a bound data source
+// whose parent is another (a linked view) is outside the configured databases.
+func (p *Poller) bound(dataSource string) bool {
+	parent := NormaliseID(dataSource)
+	if parent == "" {
+		return true
+	}
+	for _, sources := range p.sources {
+		if slices.Contains(sources, parent) {
+			return true
+		}
+	}
+	return false
 }
 
 // holder is the binding a page belongs to.

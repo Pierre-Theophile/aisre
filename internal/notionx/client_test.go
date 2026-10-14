@@ -118,13 +118,13 @@ func TestTheOperationsReadWhatTheConnectorNeeds(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"object":"list","results":[{"object":"page","id":"p1","url":"https://www.notion.so/p1",` +
 				`"created_time":"2026-05-14T11:00:00.000Z","last_edited_time":"2026-05-15T09:00:00.000Z",` +
-				`"created_by":{"object":"user","id":"SHOULD-NOT-BE-DECODED"},` +
+				`"created_by":{"object":"user","id":"sreagentcanary0c4e7a19","person":{"email":"sreagentcanary0c4e7a19@shop.io"}},` +
 				`"parent":{"type":"data_source_id","data_source_id":"ds1","database_id":"db1"},"properties":{` +
 				`"Name":{"id":"title","type":"title","title":[{"type":"text","plain_text":"Checkout outage"}]},` +
 				`"Summary":{"id":"s1","type":"rich_text","rich_text":[{"type":"text","plain_text":"Pool exhausted, "},` +
 				`{"type":"mention","plain_text":"@Dana","mention":{"type":"user"}},{"type":"text","plain_text":" rolled back"}]},` +
 				`"Services":{"id":"sv","type":"multi_select","multi_select":[{"name":"Checkout"},{"name":"Payments"}]},` +
-				`"Owner":{"id":"ow","type":"people","people":[{"object":"user","id":"SHOULD-NOT-BE-DECODED"}]}}}],` +
+				`"Owner":{"id":"ow","type":"people","people":[{"object":"user","id":"sreagentcanary7d21b3e8","name":"sreagentcanary7d21b3e8"}]}}}],` +
 				`"has_more":false,"next_cursor":null}`))
 		default:
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
@@ -157,7 +157,8 @@ func TestTheOperationsReadWhatTheConnectorNeeds(t *testing.T) {
 		t.Errorf("a people property was read: %v", got)
 	}
 	raw, _ := json.Marshal(p)
-	if strings.Contains(string(raw), "SHOULD-NOT-BE-DECODED") {
+	// The canaries are planted where Notion writes a person (SC-005); none may survive decoding.
+	if strings.Contains(string(raw), "sreagentcanary") {
 		t.Errorf("a person reached the decoded page: %s", raw)
 	}
 }

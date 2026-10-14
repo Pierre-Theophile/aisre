@@ -39,6 +39,7 @@ type feedNotionOptions struct {
 	config    string
 	state     string
 	once      bool
+	check     bool
 	cycles    int
 	recordDir string
 	replayDir string
@@ -61,6 +62,9 @@ func newFeedNotionCommand(global *globalOptions) *cobra.Command {
 			"The integration secret is read from $" + EnvNotionToken + ". Notion does not report an\n" +
 			"integration's capabilities, so the configuration must acknowledge notion.capabilities\n" +
 			"(created with Read content only), or the command exits 3 before any call.\n\n" +
+			"--check reads every configured database once and prints, per database, its data sources,\n" +
+			"which configured properties were found, the pages registered and each page that was not,\n" +
+			"with the reason; it sends nothing to the graph.\n\n" +
 			"See docs/connectors/notion.md.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -72,6 +76,8 @@ func newFeedNotionCommand(global *globalOptions) *cobra.Command {
 	flags.StringVar(&opts.state, "state", "", "where the connector keeps what it registered "+
 		"(default notion-state.json beside --config)")
 	flags.BoolVar(&opts.once, "once", false, "one reconciliation, then exit")
+	flags.BoolVar(&opts.check, "check", false, "read everything, emit nothing, print what would be registered and why, and exit; "+
+		"the state file is read and never written")
 	flags.IntVar(&opts.cycles, "cycles", 0, "how many cycles to run; 0 runs until interrupted")
 	flags.StringVar(&opts.recordDir, "record", "", "also record the run, sanitised, to this fixture directory "+
 		"($SRE_AGENT_CORPUS_KEY is the pseudonym key)")
@@ -84,6 +90,9 @@ func newFeedNotionCommand(global *globalOptions) *cobra.Command {
 }
 
 func runFeedNotion(ctx context.Context, global *globalOptions, opts *feedNotionOptions, cmd *cobra.Command) error {
+	if opts.check && opts.recordDir != "" {
+		return exitErrorf(ExitUsage, "feed notion: --check emits nothing, so there is nothing for --record to record")
+	}
 	if opts.recordDir != "" && opts.replayDir != "" {
 		return exitErrorf(ExitUsage, "feed notion: --record and --replay are mutually exclusive; "+
 			"re-recording a replay would produce a fixture of a fixture")
@@ -108,6 +117,7 @@ func runFeedNotion(ctx context.Context, global *globalOptions, opts *feedNotionO
 	var recording *deployrecord.Tee
 	var budget *notionx.Budget
 	var san *sanitise.Sanitiser
+	var integrationWorkspace string
 	if live {
 		secret, err := notionx.NewSecret(os.Getenv(EnvNotionToken))
 		if err != nil {
@@ -129,12 +139,14 @@ func runFeedNotion(ctx context.Context, global *globalOptions, opts *feedNotionO
 			return exitErrorf(ExitAuth, "feed notion: the configuration names workspace %q, but the integration "+
 				"belongs to %q; a secret from another workspace cannot feed this source", cfg.Workspace, me.Workspace)
 		}
+		integrationWorkspace = me.Workspace
 		statePath := opts.state
 		if statePath == "" {
 			statePath = filepath.Join(filepath.Dir(opts.config), "notion-state.json")
 		}
 		poller, err := notionfeeder.NewPoller(notionfeeder.PollerOptions{
-			Client: client, Config: cfg, StatePath: statePath, Once: opts.once, Cycles: opts.cycles,
+			Client: client, Config: cfg, StatePath: statePath, Once: opts.once || opts.check, Cycles: opts.cycles,
+			ReadOnlyState: opts.check,
 		})
 		if err != nil {
 			return exitErrorf(ExitUsage, "feed notion: %v", err)
@@ -158,6 +170,15 @@ func runFeedNotion(ctx context.Context, global *globalOptions, opts *feedNotionO
 			return exitErrorf(ExitUsage, "feed notion: %v", err)
 		}
 		src = fileSource
+	}
+
+	if opts.check {
+		// Everything is read and nothing leaves the process: the events go to memory and are dropped.
+		if err := f.Run(ctx, src, emit.NewMemoryEmitter(f.Describe())); err != nil {
+			return exitErrorf(ExitTransport, "feed notion --check: %v", err)
+		}
+		renderNotionCheck(cmd, cfg, opts.config, integrationWorkspace, f.Report(), budget)
+		return nil
 	}
 
 	connectEm, err := emit.NewConnectEmitter(global.Server, global.Token, f.Describe(), emit.WithBatchSize(opts.batchSize))
@@ -215,5 +236,69 @@ func renderNotionReport(cmd *cobra.Command, r notionfeeder.Report) {
 	}
 	for _, gap := range r.Gaps {
 		fmt.Fprintf(out, "coverage gap: %s\n", gap)
+	}
+}
+
+// renderNotionCheck prints `--check` (contracts §6, spec US5): what the integration's capabilities
+// rest on, the workspace, and per database its data sources, the configured properties found, the
+// pages registered and each page not registered with its reason. Titles are printed; summaries and
+// bodies never are.
+func renderNotionCheck(cmd *cobra.Command, cfg *notionfeeder.Config, configPath, workspace string,
+	r notionfeeder.Report, budget *notionx.Budget) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "notion check: nothing was sent to the graph\n")
+	fmt.Fprintf(out, "capabilities: not verifiable through Notion's API; %s acknowledges %s "+
+		"(an integration created with Read content only)\n", configPath, notionx.CapabilitiesAcknowledgement)
+	if workspace != "" {
+		fmt.Fprintf(out, "workspace: %q, the integration's own (source notion:%s)\n", workspace, cfg.Workspace)
+	} else {
+		fmt.Fprintf(out, "workspace: %q, not asked of Notion: this check read a recording\n", cfg.Workspace)
+	}
+	for i, d := range r.Databases {
+		b := cfg.Databases[i]
+		fmt.Fprintf(out, "\ndatabase %s (%s)\n", d.Database, d.Kind)
+		sources := "none could be read"
+		if len(d.DataSources) > 0 {
+			sources = strings.Join(d.DataSources, ", ")
+		}
+		fmt.Fprintf(out, "  data sources: %s\n", sources)
+		property := func(role, name string) {
+			found := "found"
+			if !d.PropertiesFound[name] {
+				found = "NOT FOUND on any page; check the spelling"
+			}
+			fmt.Fprintf(out, "  property %q (%s): %s\n", name, role, found)
+		}
+		property("entities", b.EntityProperty)
+		for _, name := range b.SummaryProperties {
+			property("summary", name)
+		}
+		if b.AuthoredProperty != "" {
+			property("authored", b.AuthoredProperty)
+		}
+		printSorted := func(header string, lines []string) {
+			fmt.Fprintf(out, "  %s: %d\n", header, len(lines))
+			sort.Strings(lines)
+			for _, line := range lines {
+				fmt.Fprintln(out, "    "+line)
+			}
+		}
+		var registered, skipped []string
+		for _, title := range d.Registered {
+			registered = append(registered, fmt.Sprintf("%q", title))
+		}
+		for _, s := range d.Skipped {
+			skipped = append(skipped, fmt.Sprintf("%q: %s", s.Title, s.Reason))
+		}
+		printSorted("registered", registered)
+		printSorted("not registered", skipped)
+		fmt.Fprintf(out, "  ended (trashed, moved or deleted): %d\n", d.Gone)
+		fmt.Fprintf(out, "  outside the configured databases: %d\n", d.Outside())
+	}
+	for _, gap := range r.Gaps {
+		fmt.Fprintf(out, "coverage gap: %s\n", gap)
+	}
+	if budget != nil {
+		fmt.Fprintf(out, "notion budget: %s\n", budget.Report())
 	}
 }

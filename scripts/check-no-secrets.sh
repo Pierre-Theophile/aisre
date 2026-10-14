@@ -240,7 +240,7 @@ scan hard "database-password" \
 
 scan hard "api-key" \
   "a vendor API key. Rotate it, then remove it; no recording and no fixture needs one." \
-  '\b(sk|pk|rk)-[A-Za-z0-9_-]{20,}|\bglpat-[A-Za-z0-9_-]{16,}|\bnpm_[A-Za-z0-9]{30,}|\bhf_[A-Za-z0-9]{30,}|\b(api[_-]?key|apikey|access[_-]?token|secret[_-]?key)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/_+-]{20,}'
+  '\b(sk|pk|rk)-[A-Za-z0-9_-]{20,}|\bntn_[A-Za-z0-9]{40,}|\bsecret_[A-Za-z0-9]{43}\b|\bglpat-[A-Za-z0-9_-]{16,}|\bnpm_[A-Za-z0-9]{30,}|\bhf_[A-Za-z0-9]{30,}|\b(api[_-]?key|apikey|access[_-]?token|secret[_-]?key)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/_+-]{20,}'
 
 # --- people, and telemetry bodies (T116) ------------------------------------------------
 #
@@ -296,6 +296,14 @@ scan hard "essential-contact" \
 scan hard "unkeyed-pseudonym" \
   "a pseudonym with no kind tag. This feature's tokens are px_<kind>_<base32>; an untyped px_ token in a 003 recording means a service and an instance sharing a name would have merged (contract §2.3)." \
   '"(project_id|service_name|revision_name|instance_connection_name|alert_policy_id)"[[:space:]]*:[[:space:]]*"px_[0-9a-f]{16}"'
+
+# Notion (007 T029, SC-005). Notion writes a person as a user object: the page's creator and last
+# editor, a people property, a person's e-mail. A user id is a UUID like every page id, so the value
+# cannot be told from a page's; the shape around it can. The connector drops every one of these at
+# decoding (internal/notionx), so a sanitised recording has none and the shape itself is the finding.
+scan hard "notion-person" \
+  "a Notion user object: a page's creator or editor, a people property, or a person's e-mail. The connector reads no person (FR-023); a recording with one is not sanitised." \
+  '"(created_by|last_edited_by)"[[:space:]]*:|"object"[[:space:]]*:[[:space:]]*"user"|"people"[[:space:]]*:[[:space:]]*\[|"type"[[:space:]]*:[[:space:]]*"people"|"person"[[:space:]]*:[[:space:]]*\{'
 
 scan_unwaivable "canary-token" \
   "a canary token seeded into the source data before the campaign. A surviving canary fails the commit rather than raising a warning (FR-139, SC-018): every rule above it was wrong about this value, so the recording is not safe to keep. There is no baseline entry and no allow marker for this rule." \
