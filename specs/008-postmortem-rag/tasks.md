@@ -19,7 +19,7 @@ dependency order. US2 and US3 (scope as boost, as-of sections) come first becaus
 worker's contract and are testable on the memory store alone; US1 needs Notion sections (PR 2) and
 embeddings (PR 3) to be met in full.
 
-**Status**: spec, plan and these tasks approved by the owner on 2026-10-15 (all three PRs); in implementation. PR 1 (T001–T012, T014–T017) merged as #43, PR 2 (T018–T028) as #44, PR 3 (T013, T029–T041) built. T042–T043 wait on the owner's go.
+**Status**: spec, plan and these tasks approved by the owner on 2026-10-15 (all three PRs); in implementation. PR 1 (T001–T012, T014–T017) merged as #43, PR 2 (T018–T028) as #44, PR 3 (T013, T029–T041) as #45; T042–T043 done on the owner's go. Feature complete.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -188,8 +188,8 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 
 # Owner-gated
 
-- [ ] T042 Record the owner's LDMA "SRE Agent Post Mortem" database with `aisre feed notion --record` (007 T030, now carrying sections), keep it private, and build the private retrieval set from its seven postmortems; needs the owner's go and the service-to-entity map; fixture: private LDMA recording
-- [ ] T043 Measure SC-002 on the private set: every postmortem with a section past character 600 is retrieved in the top three from a symptom taken from that section, and report 007's retrieval on the same queries for comparison; re-run the investigation audit (007 T031); fixture: private LDMA recording
+- [x] T042 Record the owner's LDMA "SRE Agent Post Mortem" database with `aisre feed notion --record` (007 T030, now carrying sections), keep it private, and build the private retrieval set from its seven postmortems; needs the owner's go and the service-to-entity map; fixture: private LDMA recording — **Done (2026-10-15), owner's go.** Recorded as `campaign-2026-10-15/notion-ldma-01` in the private corpus; Service mapped to placeholder entities until the real map is given. The retrieval set has a scoped and an unscoped fixture per postmortem. `fixture campaign record` gained a Notion scope (`--notion-workspace`, `--notion-database`), since a Notion campaign has no project and no mailbox.
+- [x] T043 Measure SC-002 on the private set: every postmortem with a section past character 600 is retrieved in the top three from a symptom taken from that section, and report 007's retrieval on the same queries for comparison; re-run the investigation audit (007 T031); fixture: private LDMA recording — **Done (2026-10-15).** 008 retrieves all seven at rank 1, lexical and hybrid; 007's summary match finds 4 of 7 scoped and 3 of 7 unscoped. No audited incident has a postmortem in the database (all were authored 2026-10-15, after the audit window), so the audit's attribution is unchanged; aggregate in `docs/evaluation/coverage-audit-2026-09.md`.
 
 ---
 
