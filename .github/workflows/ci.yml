@@ -272,7 +272,8 @@ jobs:
       - name: knowledge retrieval gate
         # 008 FR-042: recall@3 and MRR of the knowledge worker on fixtures/retrieval, per retrieval
         # mode, gated on the floors in internal/eval/retrieval/thresholds.go. No database, no model,
-        # no network: every fixture is an in-memory corpus and store. `go test` above runs the same
+        # no network: every fixture is an in-memory corpus and store, and hybrid replays the
+        # committed vectors.jsonl. `go test` above runs the same
         # gate and its planted regression; this step publishes the table in the job summary.
         shell: bash
         run: |

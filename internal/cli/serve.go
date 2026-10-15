@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Pierre-Theophile/aisre/internal/embedding"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/budget"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
@@ -31,6 +32,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 	"github.com/Pierre-Theophile/aisre/pkg/knowledge"
+	knowledgememory "github.com/Pierre-Theophile/aisre/pkg/knowledge/memory"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
 
@@ -96,7 +98,10 @@ type serveOptions struct {
 	chatRetention time.Duration
 	// noKnowledgeWorker leaves the knowledge worker out; it is registered by default (007 FR-005).
 	noKnowledgeWorker bool
-	slackAPI          string
+	// knowledgeStore names the knowledge store implementation: postgres (default) or memory
+	// (008 SC-008). Swapping it is this flag and nothing else.
+	knowledgeStore string
+	slackAPI       string
 }
 
 func newServeCommand(global *globalOptions) *cobra.Command {
@@ -160,6 +165,9 @@ func newServeCommand(global *globalOptions) *cobra.Command {
 	flags.BoolVar(&opts.noKnowledgeWorker, "no-knowledge-worker", false,
 		"leave out the knowledge worker, which cites documents and reviewed investigations linked in the "+
 			"graph to the entities under investigation (--enable-investigation only; 007 FR-005)")
+	flags.StringVar(&opts.knowledgeStore, "knowledge-store", knowledgeStorePostgres,
+		"where document sections and their vectors are kept: postgres (the agent's own database) or memory "+
+			"(not durable: for evaluation and trials); any other pkg/knowledge.Store is plugged in from Go")
 	flags.StringVar(&opts.slackAPI, "slack-api", "", "Slack API base URL, for tests against a twin")
 	_ = flags.MarkHidden("slack-api")
 
@@ -230,8 +238,15 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 
 	// The knowledge store is the agent's own database by default (feature 008 plan §Storage):
 	// nothing to install and no network to anyone. pkg/knowledge.Store is the seam for another.
-	knowledgeStore := postgres.NewKnowledgeStore(store)
-	logger.Info("knowledge: store=postgres retrieval=lexical_only")
+	knowledgeStore, err := newKnowledgeStore(opts.knowledgeStore, store)
+	if err != nil {
+		return exitWith(ExitUsage, err)
+	}
+	knowledgeEmbedder, knowledgeReady, err := knowledgeSemantic(ctx, opts.modelConfig, knowledgeStore, logger)
+	if err != nil {
+		return err
+	}
+	logger.Info("knowledge: store="+opts.knowledgeStore, "retrieval", retrievalMode(knowledgeEmbedder))
 
 	cfg := server.Config{
 		Knowledge:       knowledgeStore,
@@ -248,7 +263,9 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 		// and the deterministic first wave, with no vendor account and no network to one
 		// (FR-067) — which is why the runner is built here unconditionally rather than only when
 		// `--model-config` is given.
-		investigations, err := newInvestigationRunner(ctx, store, knowledgeStore, cfg.Projector, opts, logger)
+		investigations, err := newInvestigationRunner(ctx, store, knowledgeRetrieval{
+			store: knowledgeStore, embedder: knowledgeEmbedder, ready: knowledgeReady,
+		}, cfg.Projector, opts, logger)
 		if err != nil {
 			return err
 		}
@@ -455,11 +472,69 @@ func newLogger(level string, out interface{ Write([]byte) (int, error) }) (*slog
 //	π₀                 no published coverage audit ⇒ 1.0, so every candidate sits at prior 0 and
 //	                   the honest answer is `unknown` until a ceiling is measured (FR-069a).
 
+// The published knowledge stores (008 SC-008).
+const (
+	knowledgeStorePostgres = "postgres"
+	knowledgeStoreMemory   = "memory"
+)
+
+// knowledgeRetrieval is the knowledge worker's store and, when configured, its semantic half.
+type knowledgeRetrieval struct {
+	store    knowledge.Store
+	embedder knowledge.Embedder
+	ready    func() bool
+}
+
+// newKnowledgeStore builds the store --knowledge-store names.
+func newKnowledgeStore(name string, store *postgres.Store) (knowledge.Store, error) {
+	switch name {
+	case knowledgeStorePostgres, "":
+		return postgres.NewKnowledgeStore(store), nil
+	case knowledgeStoreMemory:
+		return knowledgememory.New(), nil
+	default:
+		return nil, fmt.Errorf("--knowledge-store %q: the shipped stores are %s and %s; another is a Go package implementing pkg/knowledge.Store",
+			name, knowledgeStorePostgres, knowledgeStoreMemory)
+	}
+}
+
+// knowledgeSemantic builds the embedder the model configuration's `embedding:` block names and
+// starts the indexer that keeps the store's vectors current (008 FR-026–FR-029, T032). With no
+// --model-config, no block, or its key unset, it returns nothing and retrieval stays lexical
+// only, which is logged once here and stated in every digest (FR-027).
+func knowledgeSemantic(ctx context.Context, configPath string, store knowledge.Store, logger *slog.Logger) (knowledge.Embedder, func() bool, error) {
+	if strings.TrimSpace(configPath) == "" {
+		return nil, nil, nil
+	}
+	config, err := model.LoadConfig(configPath)
+	if err != nil {
+		return nil, nil, exitWith(ExitUsage, err)
+	}
+	embedder, reason, err := embedding.FromConfig(config.Embedding)
+	if err != nil {
+		return nil, nil, exitWith(ExitUsage, err)
+	}
+	if embedder == nil {
+		logger.Info("knowledge: retrieval is lexical only: " + reason)
+		return nil, nil, nil
+	}
+	indexer := embedding.NewIndexer(store, embedder, logger)
+	go indexer.Run(ctx)
+	return embedder, indexer.Ready, nil
+}
+
+func retrievalMode(embedder knowledge.Embedder) string {
+	if embedder == nil {
+		return "lexical_only"
+	}
+	return "hybrid " + embedder.Model().String()
+}
+
 // newInvestigationRunner assembles the engine `serve --enable-investigation` hands the service.
 func newInvestigationRunner(
 	ctx context.Context,
 	store *postgres.Store,
-	knowledgeStore knowledge.Store,
+	knowledgeRetrieval knowledgeRetrieval,
 	proj *projector.Projector,
 	opts *serveOptions,
 	logger *slog.Logger,
@@ -517,7 +592,9 @@ func newInvestigationRunner(
 		Prior:             prior,
 		Mode:              mode,
 		NoKnowledgeWorker: opts.noKnowledgeWorker,
-		KnowledgeStore:    knowledgeStore,
+		KnowledgeStore:    knowledgeRetrieval.store,
+		KnowledgeEmbedder: knowledgeRetrieval.embedder,
+		KnowledgeReady:    knowledgeRetrieval.ready,
 		Logger:            logger,
 	})
 	if err != nil {

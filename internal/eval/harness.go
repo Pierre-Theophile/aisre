@@ -140,6 +140,7 @@ type Harness struct {
 	prior    audit.PriorRecord
 	graph    graphworker.QueryService
 	corpus   knowledge.Corpus
+	embedder kstore.Embedder
 	sections kstore.Store
 	world    *sdk.World
 	cleanup  func()
@@ -229,11 +230,38 @@ func (h *Harness) openGraph(ctx context.Context) error {
 	queries := query.NewEngine(store)
 	h.graph = graphworker.NewEngineService(queries)
 	h.corpus = knowledge.GraphCorpus{Engine: queries}
-	if h.sections, err = FixtureKnowledgeStore(ctx, h.manifest.Dir); err != nil {
+	if h.sections, h.embedder, err = FixtureKnowledge(ctx, h.manifest.Dir); err != nil {
 		h.Close()
 		return err
 	}
 	return nil
+}
+
+// FixtureKnowledge is FixtureKnowledgeStore plus, when the fixture carries a vectors.jsonl, the
+// recorded embedder that replays it, with every section version in the store given its recorded
+// vector: the fixture's knowledge search then runs hybrid, with no provider and no key (008 T036,
+// research R10). Without vectors.jsonl the embedder is nil and retrieval is lexical only.
+func FixtureKnowledge(ctx context.Context, dir string) (kstore.Store, kstore.Embedder, error) {
+	path := filepath.Join(dir, retrieval.DocumentsFile)
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil, nil, nil
+	}
+	documents, err := retrieval.LoadDocuments(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	store, err := documents.Store(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	vectors, err := retrieval.LoadVectors(dir)
+	if err != nil || vectors == nil {
+		return store, nil, err
+	}
+	if err := documents.IndexVectors(ctx, store, vectors); err != nil {
+		return nil, nil, err
+	}
+	return store, vectors, nil
 }
 
 // FixtureKnowledgeStore returns an in-memory knowledge store holding the sections of the fixture's
@@ -294,6 +322,7 @@ func (h *Harness) Run(ctx context.Context) (*RunOutcome, error) {
 		Graph:           h.graph,
 		Knowledge:       h.corpus,
 		KnowledgeStore:  h.sections,
+		Embedder:        h.embedder,
 		Telemetry:       telemetry,
 		Kind:            h.opts.Kind,
 		Client:          client,
@@ -329,6 +358,7 @@ func (h *Harness) Engine(telemetry sdk.TelemetryBackend) (*engine.Engine, error)
 		Graph:           h.graph,
 		Knowledge:       h.corpus,
 		KnowledgeStore:  h.sections,
+		Embedder:        h.embedder,
 		Telemetry:       telemetry,
 		Kind:            h.opts.Kind,
 		Client:          client,
@@ -763,6 +793,8 @@ type EngineWiring struct {
 	// KnowledgeStore holds the fixture's document sections, from its documents.yaml (008 T011).
 	// Nil matches every document on what the graph holds about it alone.
 	KnowledgeStore kstore.Store
+	// Embedder is the fixture's recorded embedder, from its vectors.jsonl; nil runs lexical only.
+	Embedder kstore.Embedder
 	// Telemetry is the one backend the metrics, logs and traces workers are bound to.
 	Telemetry sdk.TelemetryBackend
 	// Kind is KindModelFree, KindFakeModel or KindLive.
@@ -795,6 +827,9 @@ func NewEngine(w EngineWiring) (*engine.Engine, error) {
 		var opts []knowledge.Option
 		if w.KnowledgeStore != nil {
 			opts = append(opts, knowledge.WithStore(w.KnowledgeStore))
+		}
+		if w.Embedder != nil {
+			opts = append(opts, knowledge.WithEmbedder(w.Embedder, nil))
 		}
 		registered = append(registered, knowledge.New(w.Knowledge, opts...))
 	}

@@ -153,6 +153,9 @@ unchanged section is a no-op, a changed one opens a new version, and a section t
 closed, so a search as of an earlier instant reads what the page said then. A page that is trashed,
 moved or deleted has its sections closed with its links.
 
+How those sections are ranked, which store keeps them and how to add an embedding model (hosted or
+self-hosted) is in [the retrieval guide](../knowledge/retrieval.md).
+
 ## 5. What it costs
 
 Notion allows an average of three requests per second per integration and reports nothing about what

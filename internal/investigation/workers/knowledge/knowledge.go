@@ -163,8 +163,10 @@ type Corpus interface {
 
 // Worker is the knowledge worker.
 type Worker struct {
-	corpus Corpus
-	store  kstore.Store
+	corpus   Corpus
+	store    kstore.Store
+	embedder kstore.Embedder
+	ready    func() bool
 }
 
 var _ worker.Worker = (*Worker)(nil)
@@ -175,6 +177,16 @@ type Option func(*Worker)
 // WithStore names the knowledge store sections are searched in. Without one, every candidate is
 // matched on its synthesised section alone, which is what 007 matched on.
 func WithStore(store kstore.Store) Option { return func(w *Worker) { w.store = store } }
+
+// WithEmbedder turns on the semantic half of knowledge/hybrid@1 (008 FR-020): the query is embedded
+// by e and the store's sections are also ranked by cosine to it. ready says whether the store's
+// vectors for e's model have been backfilled (the indexer's Ready); while it says no, searches run
+// lexical only and say why, so one search never ranks by a half-built index (FR-028). A nil ready
+// means always ready, which is what a fixture whose vectors are recorded wants. Without a store the
+// option does nothing: there is nothing to rank semantically.
+func WithEmbedder(e kstore.Embedder, ready func() bool) Option {
+	return func(w *Worker) { w.embedder, w.ready = e, ready }
+}
 
 // New returns the knowledge worker over a corpus.
 func New(corpus Corpus, opts ...Option) *Worker {
@@ -231,7 +243,7 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 	if limit <= 0 || limit > engine.MaxKnowledgeItems {
 		limit = engine.MaxKnowledgeItems
 	}
-	ranked, err := w.search(ctx, documents, term, at)
+	ranked, retrieval, err := w.search(ctx, documents, term, at)
 	if err != nil {
 		return worker.Response{}, err
 	}
@@ -264,12 +276,15 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 	}
 
 	coverage, err := engine.CoverageInput{
-		SearchedEntities:  sortedCopy(term.GetEntityIds()),
-		DataSource:        SourceOfTruth,
-		WindowCovered:     searchedWindow(req),
-		VolumeConsidered:  int64(len(documents)),
-		Sampling:          "none",
-		ExecutedAt:        started.UTC(),
+		SearchedEntities: sortedCopy(term.GetEntityIds()),
+		DataSource:       SourceOfTruth,
+		WindowCovered:    searchedWindow(req),
+		VolumeConsidered: int64(len(documents)),
+		Sampling:         "none",
+		// The answer is a function of the graph and the store as of the observed instant, so that
+		// is the instant it speaks for, as the graph worker's does; the wall clock would make two
+		// identical answers differ by their digest.
+		ExecutedAt:        executedAt(at),
 		QuotaUndetermined: true,
 		// The graph side has no indexing lag: a document is a candidate as soon as its CONCERNS
 		// edge is in the graph, and matched on its synthesised section from then on.
@@ -281,9 +296,10 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 
 	outcome := engine.Outcome(engine.DigestOutcome{Body: &investigationv1.Digest{
 		Body: &investigationv1.Digest_Knowledge{Knowledge: &investigationv1.KnowledgeDigest{
-			Items:         items,
-			ScorerVersion: ScorerVersion,
-			RetrievalMode: ModeLexicalOnly,
+			Items:          items,
+			ScorerVersion:  ScorerVersion,
+			RetrievalMode:  retrieval.mode,
+			EmbeddingModel: retrieval.model,
 		}},
 		Coverage: coverage,
 	}})
@@ -302,7 +318,7 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 		Duration:       time.Since(started),
 		BackendVersion: Version,
 		Vocabulary:     ScorerVersion,
-		ExecutedQuery:  fmt.Sprintf("knowledge_search(entities=%v, terms=%v)", term.GetEntityIds(), term.GetQueryTerms()),
+		ExecutedQuery:  executedQuery(term, retrieval),
 		FreeText:       UnconfirmedNotice,
 	})
 	if err != nil {
@@ -311,11 +327,50 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 	return worker.Response{Worker: Name, Capability: req.Capability, Mode: req.Mode, Algebra: resp}, nil
 }
 
+// executedAt is the instant an answer speaks for: the observed instant, or the valid one when the
+// request asked about now.
+func executedAt(at Instants) time.Time {
+	if !at.Observed.IsZero() {
+		return at.Observed
+	}
+	return at.Valid
+}
+
 // UnconfirmedNotice is the bounded free-text field every knowledge digest carries. It is the
 // sentence FR-051 turns into a rule, said in the digest so that a reader of the evidence sees it
 // where the citation is rather than only in the report's footnotes.
 const UnconfirmedNotice = "knowledge-derived: a document says this. A hypothesis resting only on a document " +
 	"is unconfirmed and may not reach `supported` until a source-of-truth worker agrees (FR-051)."
+
+// retrieval says how a search was ranked, for the digest and the evidence chain (FR-027, FR-032).
+type retrieval struct {
+	// query is the text ranked by: the query terms joined by spaces, at most MaxQueryChars.
+	query string
+	// mode is ModeHybrid or ModeLexicalOnly.
+	mode string
+	// model is the embedding model's id when mode is hybrid.
+	model string
+	// fallback says why a search with an embedder configured ran lexical only.
+	fallback string
+}
+
+// QueryText is the text a search ranks by: the query terms joined by spaces, cut to MaxQueryChars.
+func QueryText(term *investigationv1.KnowledgeSearchTerm) string {
+	return truncateRunes(strings.Join(term.GetQueryTerms(), " "), MaxQueryChars)
+}
+
+// executedQuery is the evidence chain's record of the search: the scope, the query text it ranked
+// by and, when the semantic half was configured but not used, why (FR-027, FR-032).
+func executedQuery(term *investigationv1.KnowledgeSearchTerm, r retrieval) string {
+	out := fmt.Sprintf("knowledge_search(entities=%v, query=%q) %s", term.GetEntityIds(), r.query, r.mode)
+	if r.model != "" {
+		out += " " + r.model
+	}
+	if r.fallback != "" {
+		out += "; semantic ranking not used: " + r.fallback
+	}
+	return out
+}
 
 // result is one ranked document, before the digest is built.
 type result struct {
@@ -329,7 +384,7 @@ type result struct {
 // is in scope; an in-scope document nothing in which matched is returned after them at score 0,
 // because "this is what the organisation wrote about these entities" is still worth a citation,
 // and it is what 007 returned. An out-of-scope document that matched nothing is not returned.
-func (w *Worker) search(ctx context.Context, documents []Document, term *investigationv1.KnowledgeSearchTerm, at Instants) ([]result, error) {
+func (w *Worker) search(ctx context.Context, documents []Document, term *investigationv1.KnowledgeSearchTerm, at Instants) ([]result, retrieval, error) {
 	requested := make(map[string]struct{}, len(term.GetEntityIds()))
 	for _, id := range term.GetEntityIds() {
 		requested[id] = struct{}{}
@@ -354,12 +409,13 @@ func (w *Worker) search(ctx context.Context, documents []Document, term *investi
 	}
 	sort.Strings(refs)
 
-	query := truncateRunes(strings.Join(term.GetQueryTerms(), " "), MaxQueryChars)
+	query := QueryText(term)
+	info := retrieval{query: query, mode: ModeLexicalOnly}
 	var stored []kstore.Hit
 	if w.store != nil && len(refs) > 0 {
 		hits, err := w.store.Lexical(ctx, query, refs, at.Observed, RankingDepth)
 		if err != nil {
-			return nil, fmt.Errorf("knowledge: lexical search: %w", err)
+			return nil, info, fmt.Errorf("knowledge: lexical search: %w", err)
 		}
 		for _, hit := range hits {
 			// Defence in depth: the store was asked for candidates only, and a hit outside them
@@ -370,7 +426,11 @@ func (w *Worker) search(ctx context.Context, documents []Document, term *investi
 		}
 	}
 
-	fused := fuse([][]rankedSection{lexicalRanking(query, synthesised, stored)}, inScope)
+	rankings := [][]rankedSection{lexicalRanking(query, synthesised, stored)}
+	if semantic, ok := w.semanticRanking(ctx, query, refs, byRef, at, &info); ok {
+		rankings = append(rankings, semantic)
+	}
+	fused := fuse(rankings, inScope)
 	out := make([]result, 0, len(fused))
 	matched := make(map[string]struct{}, len(fused))
 	for _, f := range fused {
@@ -384,7 +444,49 @@ func (w *Worker) search(ctx context.Context, documents []Document, term *investi
 		}
 		out = append(out, result{document: byRef[ref], inScope: true})
 	}
-	return out, nil
+	return out, info, nil
+}
+
+// semanticRanking is the semantic half of knowledge/hybrid@1: the store's sections of the
+// candidates, known at the observed instant, by cosine to the query's vector. It returns ok=false,
+// with info saying why when there is a why, whenever the search must run lexical only: no embedder
+// or no store configured, the model's index not yet built, an empty query, or the embedding call
+// failing. None of those fails the search (FR-027).
+func (w *Worker) semanticRanking(ctx context.Context, query string, refs []string, byRef map[string]Document, at Instants, info *retrieval) ([]rankedSection, bool) {
+	if w.embedder == nil || w.store == nil || len(refs) == 0 || strings.TrimSpace(query) == "" {
+		return nil, false
+	}
+	model := w.embedder.Model()
+	if w.ready != nil && !w.ready() {
+		info.fallback = "the semantic index for " + model.String() + " is still being built"
+		return nil, false
+	}
+	vectors, err := w.embedder.Embed(ctx, []string{query}, kstore.PurposeQuery)
+	if err == nil && len(vectors) != 1 {
+		err = fmt.Errorf("the embedder returned %d vectors for one query", len(vectors))
+	}
+	if err != nil {
+		info.fallback = "embedding the query failed: " + err.Error()
+		return nil, false
+	}
+	hits, err := w.store.Semantic(ctx, vectors[0], model, refs, at.Observed, RankingDepth)
+	if err != nil {
+		info.fallback = "the semantic search failed: " + err.Error()
+		return nil, false
+	}
+	ranking := make([]rankedSection, 0, len(hits))
+	for _, hit := range hits {
+		if _, ok := byRef[hit.DocumentRef]; !ok {
+			continue // defence in depth, as for the lexical hits
+		}
+		ranking = append(ranking, rankedSection{
+			key:    sectionKey{document: hit.DocumentRef, label: hit.Label, part: hit.Part},
+			text:   hit.Text,
+			origin: hit.Origin,
+		})
+	}
+	info.mode, info.model = ModeHybrid, model.String()
+	return ranking, true
 }
 
 func citationOf(doc Document) string {

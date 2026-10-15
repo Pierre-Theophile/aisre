@@ -77,3 +77,10 @@ func Cosine(a, b []float32) float64 {
 	}
 	return Round6(dot / (math.Sqrt(na) * math.Sqrt(nb)))
 }
+
+// EmbeddingText is the text a section is embedded as: its label, a blank line, its text. The label
+// carries meaning a heading's body often leaves implicit ("Root cause"), and one function keeps
+// every store, indexer and recording embedding the same string for the same section.
+func EmbeddingText(label, text string) string {
+	return label + "\n\n" + text
+}

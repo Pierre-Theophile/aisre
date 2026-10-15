@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,10 +17,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
+	"github.com/Pierre-Theophile/aisre/internal/embedding"
 	"github.com/Pierre-Theophile/aisre/internal/eval"
+	"github.com/Pierre-Theophile/aisre/internal/eval/retrieval"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
@@ -35,6 +40,8 @@ const (
 	knowledgeScopeIncident = repoRoot + "/fixtures/incidents/knowledge-scope-01"
 	// knowledge-notion-01's graph with the sections twin 02 records for its postmortems.
 	notionSectionsIncident = repoRoot + "/fixtures/incidents/knowledge-notion-02"
+	// knowledge-notion-02 with a section rewritten after the pin and a page trashed before it.
+	asofIncident = repoRoot + "/fixtures/incidents/knowledge-asof-01"
 
 	citedPostmortem = "notion.page=c3000000-0000-4000-8000-000000000001"
 	citedLocation   = "https://www.notion.so/c3000000000040008000000000000001"
@@ -330,5 +337,194 @@ func TestASymptomPastTheSummaryIsFoundBySection(t *testing.T) {
 	}
 	if checked != 3 {
 		t.Errorf("%d knowledge predicates checked, want 3", checked)
+	}
+}
+
+// rewordedSymptom is the alert's symptom in words the May postmortem never uses: no term of it
+// appears anywhere in knowledge-notion-02's sections, so a lexical ranking cannot match it, and
+// the postmortem is found only by meaning (008 T036, US1 scenario 2).
+const rewordedSymptom = "remote peer abruptly closed sockets; JDBC handouts stalled thirty seconds"
+
+// TestRecordKnowledgeVectors writes the vectors.jsonl of the incident fixtures whose knowledge
+// search runs hybrid (knowledge-notion-02, knowledge-asof-01) from the embedding model
+// config/model.yaml names. It runs only when asked (SRE_AGENT_RECORD_VECTORS=1, with the provider's
+// key set): CI replays the recordings and never reaches a provider.
+func TestRecordKnowledgeVectors(t *testing.T) {
+	if os.Getenv("SRE_AGENT_RECORD_VECTORS") != "1" {
+		t.Skip("set SRE_AGENT_RECORD_VECTORS=1 to re-record the incident fixtures' vectors.jsonl")
+	}
+	cfg, err := model.LoadConfig(modelYAML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedder, reason, err := embedding.FromConfig(cfg.Embedding)
+	if err != nil || embedder == nil {
+		t.Fatalf("no embedding model: %v %s", err, reason)
+	}
+	for _, dir := range []string{notionSectionsIncident, asofIncident} {
+		documents, err := retrieval.LoadDocuments(dir + "/" + retrieval.DocumentsFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest, err := fixture.LoadManifest(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		statement := manifest.Incident.Question.Statement
+		// Every spelling a search can rank by: as written, and as the algebra's canonical form
+		// lower-cases a term.
+		queries := []string{statement, strings.ToLower(statement)}
+		if dir == notionSectionsIncident {
+			queries = append(queries, rewordedSymptom, strings.ToLower(rewordedSymptom))
+		}
+		if err := retrieval.RecordVectors(context.Background(), dir, documents, queries, embedder); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestARewordedSymptomIsFoundByMeaning is 008 T036 (US1 scenario 2): the symptom in other words is
+// cited in the top three from the May postmortem's sections in hybrid mode, replayed from the
+// fixture's recorded vectors, and is not retrieved at all lexically.
+func TestARewordedSymptomIsFoundByMeaning(t *testing.T) {
+	harness, store := notionHarness(t, notionSectionsIncident)
+	sections, embedder, err := eval.FixtureKnowledge(context.Background(), notionSectionsIncident)
+	if err != nil || embedder == nil {
+		t.Fatalf("the fixture's recorded vectors: %v", err)
+	}
+	lexicalStore, err := eval.FixtureKnowledgeStore(context.Background(), notionSectionsIncident)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asked := harness.Manifest().Incident.Question.FiredAt
+	predicate := fixture.EvidencePredicate{Term: map[string]any{"knowledge_search": map[string]any{
+		"entity_ids":  []any{"otel.service.name=checkout", "otel.service.name=payments"},
+		"query_terms": []any{rewordedSymptom},
+		"limit":       10,
+	}}}
+
+	_, lexical := knowledgeSearch(t, store, predicate, asked, knowledge.WithStore(lexicalStore))
+	for i, item := range lexical.items {
+		if item.GetDocumentId() == citedPostmortem && item.GetSectionLabel() != "" && i < 3 {
+			t.Errorf("lexical only matched the May postmortem on %q; the reworded query must share no word with it", item.GetSectionLabel())
+		}
+	}
+
+	citation, hybrid := knowledgeSearch(t, store, predicate, asked, knowledge.WithStore(sections), knowledge.WithEmbedder(embedder, nil))
+	found := -1
+	for i, item := range hybrid.items {
+		if item.GetDocumentId() == citedPostmortem && item.GetSectionLabel() != "" {
+			found = i
+			t.Logf("hybrid cites the May postmortem at %d on %q", i+1, item.GetSectionLabel())
+			break
+		}
+	}
+	if found < 0 || found > 2 {
+		t.Errorf("hybrid: the May postmortem is at %d, want the top three: %v", found, hybrid.items)
+	}
+	if !strings.Contains(string(citation.Digest), `"retrieval_mode":"hybrid"`) ||
+		!strings.Contains(string(citation.Digest), `"embedding_model":"openai_compatible:mistral-embed@1024"`) {
+		t.Errorf("the digest does not say it was hybrid and by which model: %s", citation.Digest)
+	}
+	for _, item := range hybrid.items {
+		if item.GetDocumentId() == "notion.page=c3000000-0000-4000-8000-000000000003" {
+			t.Errorf("the postmortem written after the alert was cited: semantic retrieval is as of the pin too")
+		}
+	}
+}
+
+// TestTheFirstWaveAsksTheKnowledgeQuestion is 008 T035 (FR-031, research R8): before any model
+// turn, the deterministic first wave asks one knowledge_search with the alert's own words, scoped to
+// the subject and the top candidates' targets, and its items enter the ledger as knowledge-derived
+// evidence that judges nothing.
+func TestTheFirstWaveAsksTheKnowledgeQuestion(t *testing.T) {
+	harness, _ := notionHarness(t, notionSectionsIncident)
+	out, err := harness.Run(context.Background())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if out.WorkerCalls["knowledge/knowledge_search"] != 1 {
+		t.Fatalf("worker calls %v; the first wave asks exactly one knowledge question", out.WorkerCalls)
+	}
+	var digest *investigationv1.Digest
+	for _, c := range out.Citations {
+		if c.Capability == engine.TermKnowledgeSearch {
+			digest = &investigationv1.Digest{}
+			if err := protojson.Unmarshal(c.Digest, digest); err != nil {
+				t.Fatalf("decode the knowledge digest: %v", err)
+			}
+		}
+	}
+	if digest == nil {
+		t.Fatalf("no knowledge evidence among %d citations", len(out.Citations))
+	}
+	statement := harness.Manifest().Incident.Question.Statement
+	if executed := digest.GetExecutedQuery(); !strings.Contains(executed, strings.ToLower(statement)) {
+		t.Errorf("the executed query %q does not carry the alert's words %q (FR-032)", executed, statement)
+	}
+	knowledgeDigest := digest.GetKnowledge()
+	if knowledgeDigest.GetRetrievalMode() != knowledge.ModeHybrid {
+		t.Errorf("retrieval mode %q; the fixture's recorded vectors make it hybrid", knowledgeDigest.GetRetrievalMode())
+	}
+	items := knowledgeDigest.GetItems()
+	if len(items) == 0 || len(items) > 5 || items[0].GetDocumentId() != citedPostmortem {
+		t.Errorf("the first wave cited %d item(s) starting %v; want the May postmortem first, at most 5", len(items), items)
+	}
+	var knowledgeEvidence string
+	for _, c := range out.Citations {
+		if c.Capability == engine.TermKnowledgeSearch {
+			knowledgeEvidence = c.EvidenceID
+		}
+	}
+	for _, h := range out.Ledger {
+		if slices.Contains(h.SupportingEvidenceIDs, knowledgeEvidence) || slices.Contains(h.RefutingEvidenceIDs, knowledgeEvidence) {
+			t.Errorf("hypothesis %s was judged on the knowledge evidence %s", h.ID, knowledgeEvidence)
+		}
+	}
+}
+
+// TestNothingKnownAfterThePinIsCited is 008 T013 (US3, SC-003) as an incident: the first wave's
+// knowledge question, replayed with no model, cites the May postmortem as it read at the pin, and
+// neither the postmortem written after the alert nor the draft trashed before it. Every decisive
+// predicate on the knowledge answer holds, and no matched text is one written after the pin.
+func TestNothingKnownAfterThePinIsCited(t *testing.T) {
+	harness, _ := notionHarness(t, asofIncident)
+	out, err := harness.Run(context.Background())
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	var knowledgeCitations []eval.Citation
+	for _, c := range out.Citations {
+		if c.Capability == engine.TermKnowledgeSearch {
+			knowledgeCitations = append(knowledgeCitations, c)
+		}
+	}
+	if len(knowledgeCitations) != 1 {
+		t.Fatalf("%d knowledge citations; the first wave asks one", len(knowledgeCitations))
+	}
+	var checked int
+	for _, predicate := range harness.Manifest().Incident.GroundTruth.DecisiveEvidence {
+		if _, ok := predicate.Term["knowledge_search"]; !ok {
+			continue
+		}
+		checked++
+		if result := eval.SatisfiedBy(predicate, knowledgeCitations); !result.Satisfied {
+			t.Errorf("%s %s %v is not satisfied: %s", result.FieldPath, result.Op, result.Value, result.Detail)
+		}
+	}
+	if checked != 4 {
+		t.Errorf("%d knowledge predicates checked, want 4", checked)
+	}
+	digest := &investigationv1.Digest{}
+	if err := protojson.Unmarshal(knowledgeCitations[0].Digest, digest); err != nil {
+		t.Fatal(err)
+	}
+	if mode := digest.GetKnowledge().GetRetrievalMode(); mode != knowledge.ModeHybrid {
+		t.Errorf("retrieval mode %q: the semantic ranking must be held to the pin too, so this runs hybrid", mode)
+	}
+	for _, item := range digest.GetKnowledge().GetItems() {
+		if strings.Contains(item.GetMatchedText(), "rewritten after that alert") || strings.Contains(item.GetMatchedText(), "Written after the 2026-09-01 alert") {
+			t.Errorf("%s matched on text written after the pin: %q", item.GetDocumentId(), item.GetMatchedText())
+		}
 	}
 }

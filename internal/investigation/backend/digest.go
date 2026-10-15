@@ -59,6 +59,10 @@ const (
 	MaxMonitorTransitions = 100
 	// MaxKnowledgeItems caps cited documents in a knowledge digest.
 	MaxKnowledgeItems = 20
+	// MaxKnowledgeQueryChars caps a knowledge search's query text: its query terms joined by
+	// spaces. A term may be a word or free text, a symptom in the investigator's own words
+	// (008 FR-030).
+	MaxKnowledgeQueryChars = 1000
 	// MaxExemplars caps exemplars, which are the one raw-ish thing that may cross the boundary
 	// and are therefore capped hardest.
 	MaxExemplars = 10

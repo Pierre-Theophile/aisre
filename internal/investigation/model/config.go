@@ -110,6 +110,9 @@ type Config struct {
 	// PriceTableVersion links this configuration to the price table cost figures are derived
 	// from, so a historical monetary figure stays interpretable (FR-048).
 	PriceTableVersion string `yaml:"price_table_version"`
+	// Embedding is the embedding model knowledge retrieval places sections and queries with
+	// (feature 008 FR-026, contracts §3). Optional: without it retrieval is lexical only.
+	Embedding *EmbeddingConfig `yaml:"embedding,omitempty"`
 }
 
 // Validate refuses a configuration that would fail somewhere less convenient — mid-run, or
@@ -148,6 +151,11 @@ func (c Config) Validate() error {
 				return fmt.Errorf("model config %s: role %s declares thinking display %q; the published set is summarized, omitted, updates",
 					c.Version, role, rc.ThinkingDisplay)
 			}
+		}
+	}
+	if c.Embedding != nil {
+		if err := c.Embedding.Validate(); err != nil {
+			return fmt.Errorf("model config %s: %w", c.Version, err)
 		}
 	}
 	for role := range c.Roles {

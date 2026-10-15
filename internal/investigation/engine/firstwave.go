@@ -4,7 +4,9 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -46,9 +48,18 @@ const FirstWaveTarget = 30 * time.Second
 // because the fixture recorder asserts at record time that a fixture's recorded world holds every
 // one of them for every top candidate — a world missing a first-wave query is a world that cannot
 // answer the investigation it was recorded for.
+//
+// knowledge_search is the wave's one question that is not per candidate and not telemetry (008
+// FR-031, research R8): asked once, after the telemetry questions, of the knowledge worker, which
+// answers it from documents the graph links rather than from a recorded world. The record-time
+// audit therefore never asks a world for it (AuditWorldForFirstWave).
 var FirstWaveQueries = []string{
 	"compare:error_rate", "compare:p95", "new_log_patterns", "error_spans", "errors_by_version",
+	"knowledge_search",
 }
+
+// FirstWaveKnowledgeLimit is how many documents the wave's knowledge question cites.
+const FirstWaveKnowledgeLimit = 5
 
 // FirstWave is what the wave produced.
 type FirstWave struct {
@@ -67,6 +78,10 @@ type FirstWave struct {
 	// Untested names the candidates the wave did not test — beyond its cap, or too old to be a
 	// cause — each recorded with its reason and the exact next query (FR-031).
 	Untested []string
+	// Knowledge is the wave's knowledge question, nil when this deployment has no knowledge
+	// worker. Its items are knowledge-derived evidence: no hypothesis is judged from them
+	// (002 FR-051, 008 FR-031).
+	Knowledge *Answer
 }
 
 // RunFirstWave runs the wave over the top candidates in the ledger.
@@ -216,8 +231,53 @@ func (e *Engine) RunFirstWave(ctx context.Context) (*FirstWave, error) {
 			wave.Untested = append(wave.Untested, plan.hypothesisID)
 		}
 	}
+	knowledge, err := e.firstWaveKnowledge(ctx, plans)
+	if err != nil {
+		return nil, err
+	}
+	if knowledge != nil {
+		wave.Knowledge = knowledge
+		wave.Answers = append(wave.Answers, knowledge)
+	}
 	wave.Elapsed = e.now().Sub(started)
 	return wave, nil
+}
+
+// firstWaveKnowledge asks the wave's one knowledge question (008 FR-031, research R8): which
+// durable documents — postmortems, runbooks, reviewed investigations — read like this symptom,
+// scoped to the subject and the entities the top candidates landed on. It runs after the telemetry
+// questions and before any model turn, so the investigator starts with the most similar
+// postmortems already in the ledger without spending a turn asking for them.
+//
+// The query is the symptom statement as the monitor or the person stated it: the alert's own
+// words. Its items enter the ledger as knowledge-derived evidence and no hypothesis is judged from
+// them; a document is a reason to look, never a finding (002 FR-051). A deployment with no
+// knowledge worker simply has no knowledge question, and a budget that refuses it leaves the
+// refusal recorded like any other.
+func (e *Engine) firstWaveKnowledge(ctx context.Context, plans []candidatePlan) (*Answer, error) {
+	if strings.TrimSpace(e.subject.Statement) == "" {
+		return nil, nil //nolint:nilnil // no symptom text, no question to ask
+	}
+	entities := []string{e.subject.EntityRef}
+	for _, plan := range plans {
+		if !slices.Contains(entities, plan.targetRef) {
+			entities = append(entities, plan.targetRef)
+		}
+	}
+	sort.Strings(entities)
+	answer, err := e.first(ctx, "knowledge_search", map[string]any{
+		"entity_refs":             entities,
+		"query_terms":             []string{e.subject.Statement},
+		"limit":                   FirstWaveKnowledgeLimit,
+		"discriminating_question": "has the organisation written down a failure that reads like this one?",
+	})
+	if noWorker := (*NoWorkerError)(nil); errors.As(err, &noWorker) {
+		return nil, nil //nolint:nilnil // no knowledge worker in this deployment: nothing was asked
+	}
+	if err != nil {
+		return nil, err
+	}
+	return answer, nil
 }
 
 // candidatePlan is one candidate's share of the wave: which hypothesis, which entity's pointers,
@@ -760,6 +820,11 @@ func (w *FirstWave) Render() string {
 		fmt.Fprintf(&b, "not tested by the wave, each with its reason and next query (FR-031): %s\n",
 			strings.Join(w.Untested, ", "))
 	}
+	if w.Knowledge != nil && w.Knowledge.EvidenceID != "" {
+		items := w.Knowledge.Response.GetDigest().GetKnowledge().GetItems()
+		fmt.Fprintf(&b, "knowledge: %d document(s) that read like this symptom, evidence %s; knowledge-derived, "+
+			"a reason to look and never a finding (FR-051)\n", len(items), w.Knowledge.EvidenceID)
+	}
 	return b.String()
 }
 
@@ -805,6 +870,9 @@ func AuditWorldForFirstWave(world *sdk.World, metricSelector, logSelector, srcEn
 
 	var missing []string
 	for _, query := range FirstWaveQueries {
+		if query == "knowledge_search" {
+			continue // answered by the knowledge worker from the graph, never from a world
+		}
 		if !held[query] {
 			missing = append(missing, query)
 		}

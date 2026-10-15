@@ -26,7 +26,7 @@
 # configuration changes. Changing anything here is a change that must be evaluated: the file is
 # versioned, and `version` is recorded with every run.
 
-version: "1.1.0"
+version: "1.2.0"
 
 # Three roles, three models. The split is deliberate: the verifier runs a different model from
 # the investigator so that the error it exists to catch is decorrelated from the error that
@@ -95,3 +95,16 @@ betas: []
 # which is the provider-independent unit that aggregates over time (FR-048), and as a derived
 # monetary figure from this table — so a historical cost stays interpretable after prices move.
 price_table_version: "2026-09-18"
+
+# The embedding model knowledge retrieval places postmortem sections and queries with (feature
+# 008, FR-026). Optional: without this block, or with `$MISTRAL_API_KEY` unset, retrieval runs
+# lexical only and every knowledge digest says `retrieval_mode: lexical_only` (FR-027). Any server
+# speaking `POST {base_url}/embeddings` fits here, hosted or self-hosted — Ollama, vLLM, Hugging
+# Face TEI, LocalAI, llama.cpp — see docs/knowledge/retrieval.md. Changing the model rebuilds the
+# semantic index before it serves; until then searches stay lexical (FR-028).
+embedding:
+  provider: openai_compatible
+  base_url: https://api.mistral.ai/v1
+  model: mistral-embed
+  dimensions: 1024
+  api_key_env: MISTRAL_API_KEY

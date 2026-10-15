@@ -14,11 +14,15 @@ const (
 	LexicalRecallAt3Floor = 0.888889
 	// LexicalMRRFloor is the least lexical_only MRR the gate accepts.
 	LexicalMRRFloor = 0.888889
+	// HybridRecallAt3Floor is SC-001: with semantic scoring, the expected document is in the top
+	// three for at least 90 % of fixtures.
+	HybridRecallAt3Floor = 0.90
 )
 
 // Gate returns the reasons the aggregates fail the gate; none means pass. Every mode must cite no
 // document a fixture says must never be cited; lexical_only must meet its floors and do at least
-// as well as summary_only, 007's retrieval, on both measures.
+// as well as summary_only, 007's retrieval, on both measures; hybrid must cover every fixture, meet
+// SC-001's floor and do at least as well as lexical_only on both measures.
 func Gate(aggregates []Aggregate) []string {
 	var failures []string
 	byMode := map[string]Aggregate{}
@@ -37,6 +41,24 @@ func Gate(aggregates []Aggregate) []string {
 	}
 	if lexical.MRR < LexicalMRRFloor {
 		failures = append(failures, fmt.Sprintf("lexical_only MRR %.3f is below its floor %.3f", lexical.MRR, LexicalMRRFloor))
+	}
+	// The hybrid gate (SC-001): every fixture carries recorded vectors, hybrid meets its floor, and
+	// fusing the semantic ranking in never does worse than lexical alone in aggregate.
+	hybrid, ok := byMode[ModeHybrid]
+	switch {
+	case !ok:
+		failures = append(failures, "no hybrid results: no fixture carries recorded vectors (aisre eval retrieval --record-vectors)")
+	case hybrid.Fixtures != lexical.Fixtures:
+		failures = append(failures, fmt.Sprintf("%d of %d fixtures carry no recorded vectors; re-record them with --record-vectors",
+			lexical.Fixtures-hybrid.Fixtures, lexical.Fixtures))
+	default:
+		if hybrid.RecallAt3 < HybridRecallAt3Floor {
+			failures = append(failures, fmt.Sprintf("hybrid recall@3 %.3f is below its floor %.3f (SC-001)", hybrid.RecallAt3, HybridRecallAt3Floor))
+		}
+		if hybrid.RecallAt3 < lexical.RecallAt3 || hybrid.MRR < lexical.MRR {
+			failures = append(failures, fmt.Sprintf("hybrid (recall@3 %.3f, MRR %.3f) does worse than lexical_only (%.3f, %.3f) (SC-001)",
+				hybrid.RecallAt3, hybrid.MRR, lexical.RecallAt3, lexical.MRR))
+		}
 	}
 	if summary, ok := byMode[ModeSummaryOnly]; ok {
 		if lexical.RecallAt3 < summary.RecallAt3 || lexical.MRR < summary.MRR {

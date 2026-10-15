@@ -15,6 +15,7 @@ import (
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	kstore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge/memory"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
 
@@ -25,10 +26,27 @@ const (
 	ModeSummaryOnly = "summary_only"
 	// ModeLexicalOnly is the knowledge store's sections, ranked lexically.
 	ModeLexicalOnly = knowledge.ModeLexicalOnly
+	// ModeHybrid is knowledge/hybrid@1 in full: lexical and semantic, fused, with the fixture's
+	// recorded vectors replayed through the recorded embedder.
+	ModeHybrid = knowledge.ModeHybrid
 )
 
 // Modes is the measured set, in report order.
-func Modes() []string { return []string{ModeSummaryOnly, ModeLexicalOnly} }
+func Modes() []string { return []string{ModeSummaryOnly, ModeLexicalOnly, ModeHybrid} }
+
+// Option configures Run.
+type Option func(*runConfig)
+
+type runConfig struct {
+	newStore func(ctx context.Context) (kstore.Store, error)
+}
+
+// WithStore runs the store-backed modes over a fresh store from newStore per fixture and mode,
+// instead of the in-memory one. It is how the same corpus is evaluated over every shipped store
+// (008 SC-008): swapping the store is a configuration change, and the numbers must not move.
+func WithStore(newStore func(ctx context.Context) (kstore.Store, error)) Option {
+	return func(c *runConfig) { c.newStore = newStore }
+}
 
 // RecallDepth is the k of recall@k: the expected document must be among the first three.
 const RecallDepth = 3
@@ -67,12 +85,20 @@ type Aggregate struct {
 	Violations int
 }
 
-// Run evaluates every fixture in every mode.
-func Run(ctx context.Context, fixtures []*Fixture) ([]Result, error) {
+// Run evaluates every fixture in every mode. A fixture with no recorded vectors is not run in the
+// hybrid mode; the gate counts it.
+func Run(ctx context.Context, fixtures []*Fixture, opts ...Option) ([]Result, error) {
+	cfg := runConfig{newStore: func(context.Context) (kstore.Store, error) { return memory.New(), nil }}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	var out []Result
 	for _, f := range fixtures {
 		for _, mode := range Modes() {
-			r, err := runOne(ctx, f, mode)
+			if mode == ModeHybrid && f.Vectors == nil {
+				continue
+			}
+			r, err := runOne(ctx, f, mode, cfg)
 			if err != nil {
 				return nil, fmt.Errorf("retrieval: %s (%s): %w", f.ID, mode, err)
 			}
@@ -82,14 +108,23 @@ func Run(ctx context.Context, fixtures []*Fixture) ([]Result, error) {
 	return out, nil
 }
 
-func runOne(ctx context.Context, f *Fixture, mode string) (Result, error) {
+func runOne(ctx context.Context, f *Fixture, mode string, cfg runConfig) (Result, error) {
 	var opts []knowledge.Option
 	if mode != ModeSummaryOnly {
-		store, err := f.Documents.Store(ctx)
+		store, err := cfg.newStore(ctx)
 		if err != nil {
 			return Result{}, err
 		}
+		if err := f.Documents.Fill(ctx, store); err != nil {
+			return Result{}, err
+		}
 		opts = append(opts, knowledge.WithStore(store))
+		if mode == ModeHybrid {
+			if err := f.Documents.IndexVectors(ctx, store, f.Vectors); err != nil {
+				return Result{}, err
+			}
+			opts = append(opts, knowledge.WithEmbedder(f.Vectors, nil))
+		}
 	}
 	w := knowledge.New(corpus{documents: f.Documents.Documents}, opts...)
 
@@ -101,6 +136,11 @@ func runOne(ctx context.Context, f *Fixture, mode string) (Result, error) {
 		return Result{}, err
 	}
 
+	digest := resp.Algebra.GetDigest().GetKnowledge()
+	if mode == ModeHybrid && digest != nil && digest.GetRetrievalMode() != ModeHybrid {
+		// A recording that does not cover the fixture is a broken fixture, not a lexical result.
+		return Result{}, fmt.Errorf("the hybrid mode ran %s: %s", digest.GetRetrievalMode(), resp.Algebra.GetDigest().GetExecutedQuery())
+	}
 	r := Result{Fixture: f.ID, Mode: mode}
 	for i, item := range resp.Algebra.GetDigest().GetKnowledge().GetItems() {
 		r.Cited = append(r.Cited, item.GetDocumentId())
@@ -163,7 +203,11 @@ func Report(w io.Writer, results []Result, aggregates []Aggregate, failures []st
 	for _, id := range order {
 		cells := make([]string, 0, len(modes))
 		for _, mode := range modes {
-			r := byKey[[2]string{id, mode}]
+			r, ok := byKey[[2]string{id, mode}]
+			if !ok {
+				cells = append(cells, "not recorded")
+				continue
+			}
 			cell := "miss"
 			if r.Rank > 0 {
 				cell = fmt.Sprintf("rank %d", r.Rank)

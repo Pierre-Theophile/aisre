@@ -19,7 +19,7 @@ dependency order. US2 and US3 (scope as boost, as-of sections) come first becaus
 worker's contract and are testable on the memory store alone; US1 needs Notion sections (PR 2) and
 embeddings (PR 3) to be met in full.
 
-**Status**: spec, plan and these tasks approved by the owner on 2026-10-15 (all three PRs); in implementation. PR 1 (T001–T012, T014–T017) built; T013 moved to PR 3.
+**Status**: spec, plan and these tasks approved by the owner on 2026-10-15 (all three PRs); in implementation. PR 1 (T001–T012, T014–T017) merged as #43, PR 2 (T018–T028) as #44, PR 3 (T013, T029–T041) built. T042–T043 wait on the owner's go.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -86,7 +86,7 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 **Independent Test**: a section edited after the pin is matched in its earlier text; a page created after the pin is never returned (spec US3).
 
 - [x] T012 [US3] Pass the request's observed instant to `Store.Lexical` and `Store.Semantic` in `knowledge.go`, and assert in `internal/investigation/workers/knowledge/asof_test.go` the four acceptance scenarios of US3 (FR-023, SC-003); fixture: unit
-- [ ] T013 [US3] Add `fixtures/incidents/knowledge-asof-01/`: a postmortem written after the incident, a section rewritten after the pin, a page trashed before the pin; verified by `aisre fixture verify` (replay from empty, doubled, shuffled), asserting 0 citations of later knowledge (SC-003); fixture: knowledge-asof-01 — **Moved to PR 3, after T035.** Until `knowledge_search` is in the first wave, a model-free replay never calls it and the fixture would assert nothing; SC-003 is covered in PR 1 by `asof_test.go`, the `asof-01` retrieval fixture and the graph-backed worker tests.
+- [x] T013 [US3] Add `fixtures/incidents/knowledge-asof-01/`: a postmortem written after the incident, a section rewritten after the pin, a page trashed before the pin; verified by `aisre fixture verify` (replay from empty, doubled, shuffled), asserting 0 citations of later knowledge (SC-003); fixture: knowledge-asof-01 — **Moved to PR 3, after T035.** Until `knowledge_search` is in the first wave, a model-free replay never calls it and the fixture would assert nothing; SC-003 is covered in PR 1 by `asof_test.go`, the `asof-01` retrieval fixture and the graph-backed worker tests. — **Done (PR 3).** 28 events: a draft linked to checkout at 13:08 and its edge retracted at 14:00, the May postmortem rewritten at 14:50 with a Lessons section; four knowledge predicates (cites 001, never its Lessons section, never 003 or 004); model-free and fake-model trajectories recorded.
 
 **Checkpoint**: SC-003 holds on the memory store.
 
@@ -160,29 +160,29 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 
 **Independent Test**: a reworded symptom retrieves its postmortem in the top three with recorded vectors; the first wave's knowledge question is in the evidence chain (spec US1 scenarios 2–4).
 
-- [ ] T029 [US1] Add the optional `embedding:` block of contracts §3 to `internal/investigation/model/config.go` with its own validation (provider set `openai_compatible`, `dimensions > 0`, `base_url` parseable), recorded with the configuration (FR-026); fixture: unit
-- [ ] T030 [P] [US1] Implement `internal/embedding/openaicompat.go`: `POST {base_url}/embeddings`, optional bearer from `api_key_env`, per-purpose prefixes, batches of 32, 10-second query timeout, retries on 429 and 5xx honouring `Retry-After`, dimension check, L2 normalisation (FR-029, research R5); fixture: unit against an `httptest` server shaped like the OpenAI response
-- [ ] T031 [P] [US1] Implement `internal/embedding/recorded.go`: an `Embedder` that replays a fixture's `vectors.jsonl` and refuses unknown texts (research R10); fixture: unit
-- [ ] T032 [US1] Implement `internal/embedding/indexer.go`: a loop in `serve` that drains `Store.Pending` for the configured model, embeds, `PutVectors`, and reports pending count and lag; a model change starts a backfill and searches stay lexical until it completes (FR-028, SC-007); fixture: unit with the memory store
-- [ ] T033 [US1] Enable the semantic path in `knowledge.go`: embed the query with purpose `query`, pass `Store.Semantic`'s ranking into `knowledge/hybrid@1`, set `retrieval_mode` and `embedding_model`; any embedder error falls back to lexical for that search and is recorded (FR-020, FR-027, SC-006); fixture: unit with a failing embedder
-- [ ] T034 [US1] Accept free-text `query_terms` up to 1,000 characters in `engine.Validate` for `knowledge_search` and record the query text in `ExecutedQuery` (FR-030, FR-032); fixture: unit
-- [ ] T035 [US1] Add the knowledge question to `internal/investigation/engine/firstwave.go` per research R8: `knowledge_search` over the top candidates' entities with the alert's title and non-identifying label values, limit 5, entered as knowledge-derived evidence; add `"knowledge_search"` to `FirstWaveQueries` and update the fixture recorder's expectation (FR-031); fixture: knowledge-notion-02
-- [ ] T036 [US1] Add a reworded-symptom case to `fixtures/incidents/knowledge-notion-02/` replayed through the `recorded` embedder: the postmortem is cited in the top three in hybrid mode and missed in lexical-only mode (US1 scenario 2); fixture: knowledge-notion-02
+- [x] T029 [US1] Add the optional `embedding:` block of contracts §3 to `internal/investigation/model/config.go` with its own validation (provider set `openai_compatible`, `dimensions > 0`, `base_url` parseable), recorded with the configuration (FR-026); fixture: unit — **Done (PR 3).** `EmbeddingConfig` in `model/embedding.go`; `config/model.yaml` 1.2.0 carries Mistral (`api_key_env: MISTRAL_API_KEY`).
+- [x] T030 [P] [US1] Implement `internal/embedding/openaicompat.go`: `POST {base_url}/embeddings`, optional bearer from `api_key_env`, per-purpose prefixes, batches of 32, 10-second query timeout, retries on 429 and 5xx honouring `Retry-After`, dimension check, L2 normalisation (FR-029, research R5); fixture: unit against an `httptest` server shaped like the OpenAI response — **Done (PR 3).** 60-second timeout for document batches; the error body is never quoted (it can echo the key).
+- [x] T031 [P] [US1] Implement `internal/embedding/recorded.go`: an `Embedder` that replays a fixture's `vectors.jsonl` and refuses unknown texts (research R10); fixture: unit — **Done (PR 3).** `vectors.jsonl` is keyed by the text's sha256 and purpose, with a header naming the model.
+- [x] T032 [US1] Implement `internal/embedding/indexer.go`: a loop in `serve` that drains `Store.Pending` for the configured model, embeds, `PutVectors`, and reports pending count and lag; a model change starts a backfill and searches stay lexical until it completes (FR-028, SC-007); fixture: unit with the memory store — **Done (PR 3).** `Indexer.Run` every 30 s; `serve` logs `semantic indexer started` and `semantic index ready`.
+- [x] T033 [US1] Enable the semantic path in `knowledge.go`: embed the query with purpose `query`, pass `Store.Semantic`'s ranking into `knowledge/hybrid@1`, set `retrieval_mode` and `embedding_model`; any embedder error falls back to lexical for that search and is recorded (FR-020, FR-027, SC-006); fixture: unit with a failing embedder — **Done (PR 3).** The fallback reason is appended to `ExecutedQuery`; coverage `ExecutedAt` is now the pinned instant, so the digest replays identically.
+- [x] T034 [US1] Accept free-text `query_terms` up to 1,000 characters in `engine.Validate` for `knowledge_search` and record the query text in `ExecutedQuery` (FR-030, FR-032); fixture: unit — **Done (PR 3).** Validated in `backend/algebra.go` (`MaxKnowledgeQueryChars`), where every capability's terms are checked.
+- [x] T035 [US1] Add the knowledge question to `internal/investigation/engine/firstwave.go` per research R8: `knowledge_search` over the top candidates' entities with the alert's title and non-identifying label values, limit 5, entered as knowledge-derived evidence; add `"knowledge_search"` to `FirstWaveQueries` and update the fixture recorder's expectation (FR-031); fixture: knowledge-notion-02 — **Done (PR 3).** The alert's labels are not on the request the first wave sees, so the query is the statement; entities are the subject and each plan's target. Existing trajectories still replay (layer 1 does not re-run the engine) and were not re-recorded.
+- [x] T036 [US1] Add a reworded-symptom case to `fixtures/incidents/knowledge-notion-02/` replayed through the `recorded` embedder: the postmortem is cited in the top three in hybrid mode and missed in lexical-only mode (US1 scenario 2); fixture: knowledge-notion-02 — **Done (PR 3).** `TestARewordedSymptomIsFoundByMeaning` in `internal/eval/knowledge_notion_test.go`: rank 1 hybrid, missed lexical.
 
 ---
 
 ## Phase 10: User Story 4 — the hybrid gate (Priority: P2)
 
-- [ ] T037 [US4] Record vectors for `fixtures/retrieval/*` from one named model with `aisre eval retrieval --record-vectors`, commit `vectors.jsonl`, and add the hybrid gate (recall@3 ≥ 0.90, hybrid ≥ lexical) to `internal/eval/retrieval/thresholds.go` and `.github/workflows/eval.yml` (FR-042, SC-001); fixture: retrieval/*
-- [ ] T038 [US4] Run `storetest` and the retrieval evaluation for both shipped stores in CI, and assert a store swap needs only configuration (SC-008); fixture: retrieval/*
+- [x] T037 [US4] Record vectors for `fixtures/retrieval/*` from one named model with `aisre eval retrieval --record-vectors`, commit `vectors.jsonl`, and add the hybrid gate (recall@3 ≥ 0.90, hybrid ≥ lexical) to `internal/eval/retrieval/thresholds.go` and `.github/workflows/eval.yml` (FR-042, SC-001); fixture: retrieval/* — **Done (PR 3).** Vectors from `mistral-embed`; hybrid recall@3 1.000, MRR 0.889. The gate runs in `ci.yml` (both `go test` and the published step), not a separate `eval.yml`.
+- [x] T038 [US4] Run `storetest` and the retrieval evaluation for both shipped stores in CI, and assert a store swap needs only configuration (SC-008); fixture: retrieval/* — **Done (PR 3).** `TestTheCorpusScoresTheSameOnEveryShippedStore` runs the evaluation on Postgres and memory and requires identical scores; `serve --knowledge-store` is the only switch.
 
 ---
 
 ## Phase 11: Polish & cross-cutting
 
-- [ ] T039 [P] Write `docs/knowledge/retrieval.md`: stores (default, how to plug another and run `storetest`), embedders (the `openai_compatible` table of servers with the ones verified marked, prefixes, dimensions), lexical-only behaviour, the evaluation; link it from `docs/connectors/notion.md`; fixture: unit (`scripts/check-specs.sh`)
-- [ ] T040 [P] Update `README.md`'s feature table and `CLAUDE.md`-referenced docs for 008; run `./scripts/add-spdx-headers.sh`, `./scripts/check-no-secrets.sh`, `golangci-lint run` and `go test ./...` with `PG_DSN` set; fixture: CI
-- [ ] T041 Walk [quickstart.md](./quickstart.md) §1–§5 on the twins with a self-hosted embeddings server and record the run in `quickstart.md`; fixture: notion-knowledge-twin-02
+- [x] T039 [P] Write `docs/knowledge/retrieval.md`: stores (default, how to plug another and run `storetest`), embedders (the `openai_compatible` table of servers with the ones verified marked, prefixes, dimensions), lexical-only behaviour, the evaluation; link it from `docs/connectors/notion.md`; fixture: unit (`scripts/check-specs.sh`) — **Done (PR 3).**
+- [x] T040 [P] Update `README.md`'s feature table and `CLAUDE.md`-referenced docs for 008; run `./scripts/add-spdx-headers.sh`, `./scripts/check-no-secrets.sh`, `golangci-lint run` and `go test ./...` with `PG_DSN` set; fixture: CI — **Done (PR 3).**
+- [x] T041 Walk [quickstart.md](./quickstart.md) §1–§5 on the twins with a self-hosted embeddings server and record the run in `quickstart.md`; fixture: notion-knowledge-twin-02 — **Done (PR 3).** Walked with llama.cpp serving nomic-embed-text v1.5; recorded in quickstart.md.
 
 ---
 
