@@ -1345,11 +1345,13 @@ bulk is beside it, and the link between them is a digest.
 - **FR-049**: The knowledge worker MUST retrieve only durable knowledge — postmortems, runbooks,
   architecture decisions, past investigations — and MUST scope retrieval to documents linked to
   entities inside the investigation's subgraph or to its candidate changes. Retrieval over
-  telemetry is prohibited.
+  telemetry is prohibited. *(Amended 2026-10-15 by constitution 1.2.0 and specs/008: links to the
+  subgraph rank documents rather than gate them; see 008 FR-020–FR-025.)*
 - **FR-049a**: A human MUST be able to register a durable document as durable knowledge, by
   identifier and location, linked to the graph entities it concerns. Registration MUST create a
   knowledge-document node with an edge to each entity named and a pointer to where the document
-  lives; **the document's content MUST NOT be stored**. The registering identity, the instant of
+  lives; **the document's content MUST NOT be stored** *(in the graph; amended 2026-10-15 by
+  constitution 1.2.0 and specs/008, whose knowledge store keeps sanitised content outside it)*. The registering identity, the instant of
   registration and the provenance of each link MUST be recorded. This is what feeds the v1
   knowledge corpus alongside the past investigations this feature emits (FR-052): no feeder emits
   documents, so a corpus that is not registered is empty, and SC-014 is measured against what has

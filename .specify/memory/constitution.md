@@ -1,4 +1,17 @@
 <!--
+Sync Impact Report (amendment 2026-10-15)
+- Version change: 1.1.0 → 1.2.0 (MINOR: materially changed guidance in Scope & Non-Goals)
+- Modified sections: Scope & Non-Goals, the RAG entry. "The graph is the RAG index" becomes "the
+  graph scopes and dates the RAG index": document content may live in a knowledge store outside
+  the graph; every document stays linked to the nodes it concerns; links rank rather than gate;
+  retrieval stays as of the pinned instant; the graph still never carries document content. RAG
+  over telemetry stays prohibited. Requested by specs/008 Q1; owner decision 2026-10-15.
+- Added sections: none. Removed sections: none.
+- Made non-compliant, migrated by specs/008: specs/002 FR-049 (retrieval scoped to linked
+  documents) and FR-049a ("content MUST NOT be stored", now graph only); specs/007 Q2 and its
+  page-body exclusion; the knowledge worker's scoped-first retrieval.
+- Templates requiring updates: none.
+
 Sync Impact Report (amendment 2026-09-17)
 - Version change: 1.0.0 → 1.1.0 (MINOR: materially expanded guidance on Principle VII)
 - Modified principles: VII. Read-Only by Default — added the confined "report delivery"
@@ -235,7 +248,11 @@ The following are explicitly **out of scope** until this constitution is amended
 - Autonomous remediation against production systems (see Principle VII).
 - RAG over telemetry. Retrieval-augmented generation is permitted **only** over durable
   knowledge — postmortems, runbooks, ADRs, past agent decisions — and every such document MUST
-  be linked to the graph nodes it concerns. The graph is the RAG index.
+  be linked to the graph nodes it concerns. The graph scopes and dates the RAG index: a
+  document's content lives in a knowledge store outside the graph, versioned by the instant each
+  version became known, and retrieval MUST use the graph's links as a ranking signal and its
+  instants to answer as of the investigation's pinned instant. The graph itself MUST NOT carry
+  document content.
 
 Licensing: the project is released under **Apache-2.0**. Contributions MUST be compatible.
 
@@ -290,4 +307,4 @@ Licensing: the project is released under **Apache-2.0**. Contributions MUST be c
 - Runtime development guidance for agents and contributors lives in `CLAUDE.md` at the
   repository root and MUST defer to this document.
 
-**Version**: 1.1.0 | **Ratified**: 2026-09-15 | **Last Amended**: 2026-09-17
+**Version**: 1.2.0 | **Ratified**: 2026-09-15 | **Last Amended**: 2026-10-15
