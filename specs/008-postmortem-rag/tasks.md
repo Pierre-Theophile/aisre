@@ -19,7 +19,7 @@ dependency order. US2 and US3 (scope as boost, as-of sections) come first becaus
 worker's contract and are testable on the memory store alone; US1 needs Notion sections (PR 2) and
 embeddings (PR 3) to be met in full.
 
-**Status**: spec approved by the owner 2026-10-15; plan and tasks awaiting the owner's approval.
+**Status**: spec, plan and these tasks approved by the owner on 2026-10-15 (all three PRs); in implementation.
 
 ## Format: `[ID] [P?] [Story] Description`
 

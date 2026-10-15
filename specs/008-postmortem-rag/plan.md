@@ -3,7 +3,8 @@
 **Branch**: `008-postmortem-rag` | **Date**: 2026-10-15 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/008-postmortem-rag/spec.md`, approved by the owner on
-2026-10-15 with all five defaults (Q1–Q5) and Q6 (pluggability), and constitution 1.2.0.
+2026-10-15 with all five defaults (Q1–Q5) and Q6 (pluggability), and constitution 1.2.0. Plan and
+tasks approved by the owner on 2026-10-15.
 
 ## Summary
 
