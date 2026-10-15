@@ -232,6 +232,40 @@ func TestADatadogCampaignRecordsItsScopeWithoutProjects(t *testing.T) {
 	}
 }
 
+// A Notion-only campaign (008 T042): the window carries the Notion scope, needs no project and no
+// mailbox, and a workspace with no database is refused rather than read as "all".
+func TestANotionCampaignRecordsItsScopeWithoutProjects(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "campaign-notion")
+	_, stderr, code := run(t, t.Context(), "fixture", "campaign", "record", dir,
+		"--org", "twin", "--started-at", "2026-10-15T09:00:00Z",
+		"--notion-workspace", "twin")
+	if code == ExitOK {
+		t.Error("a Notion scope naming no database was accepted")
+	}
+	if !strings.Contains(stderr, "names no database") {
+		t.Errorf("the refusal reads %s", stderr)
+	}
+
+	_, stderr, code = run(t, t.Context(), "fixture", "campaign", "record", dir,
+		"--org", "twin", "--started-at", "2026-10-15T09:00:00Z",
+		"--notion-workspace", "twin", "--notion-database", "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+		"--signatory", "the platform owner")
+	if code != ExitOK {
+		t.Fatalf("record exited %d: %s", code, stderr)
+	}
+	r, err := campaign.Read(dir)
+	if err != nil {
+		t.Fatalf("the record does not read back: %v", err)
+	}
+	n := r.Scopes[0].Notion
+	if n == nil || n.Workspace != "twin" || len(n.Databases) != 1 {
+		t.Fatalf("the window's Notion scope reads back as %+v", n)
+	}
+	if len(r.Scopes[0].Projects) != 0 {
+		t.Errorf("a Notion-only window names projects: %v", r.Scopes[0].Projects)
+	}
+}
+
 // The second-signature rule, driven through the command, and the two ways it gets defeated.
 func TestSigningRefusesAnUndeclaredSignerAndATeamOfOne(t *testing.T) {
 	dir := campaignFixture(t)

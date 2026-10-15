@@ -109,6 +109,18 @@ type campaignRecordOptions struct {
 	ddEnvs    []string
 	ddSources []string
 	ddIndexes []string
+	// The Notion scope of the window, for a campaign recording that connector (008 T042).
+	notionWorkspace string
+	notionDatabases []string
+}
+
+// notionScope is the window's Notion scope, or nil when no Notion flag was given. A partial one is
+// kept, so the record's own validation names what is missing.
+func (o campaignRecordOptions) notionScope() *campaign.NotionScope {
+	if o.notionWorkspace == "" && len(o.notionDatabases) == 0 {
+		return nil
+	}
+	return &campaign.NotionScope{Workspace: o.notionWorkspace, Databases: o.notionDatabases}
 }
 
 // datadogScope is the window's Datadog scope, or nil when no Datadog flag was given. A partial one is
@@ -141,11 +153,13 @@ func newCampaignRecordCommand(global *globalOptions) *cobra.Command {
 	f.StringVar(&opts.id, "id", "", "campaign id, conventionally campaign-<date> (default: the directory name)")
 	f.StringVar(&opts.org, "org", "", "organisation slug the source ids carry (required on a new record)")
 	f.StringVar(&opts.startedAt, "started-at", "", "when recording began, RFC 3339 (required on a new record; FR-130 wants it before the scope was agreed)")
-	f.StringSliceVar(&opts.projects, "projects", nil, "projects in the scope window (required unless the window has a Datadog scope; no code may assume a project name — FR-131)")
+	f.StringSliceVar(&opts.projects, "projects", nil, "projects in the scope window (required unless the window has a Datadog or Notion scope; no code may assume a project name — FR-131)")
 	f.StringVar(&opts.ddSite, "datadog-site", "", "Datadog site of the scope window, e.g. datadoghq.eu (005 FR-007)")
 	f.StringSliceVar(&opts.ddEnvs, "datadog-env", nil, "environments in the window's Datadog scope; required with --datadog-site, since an empty list would read as \"all\"")
 	f.StringSliceVar(&opts.ddSources, "datadog-watch", nil, "watched log sources in the window's Datadog scope, as the feeder's --watch takes them")
 	f.StringSliceVar(&opts.ddIndexes, "datadog-index", nil, "log indexes searched; empty means the default")
+	f.StringVar(&opts.notionWorkspace, "notion-workspace", "", "Notion workspace of the scope window, as the feeder's source id carries it (008 T042)")
+	f.StringSliceVar(&opts.notionDatabases, "notion-database", nil, "databases in the window's Notion scope; required with --notion-workspace, since an empty list would read as \"all\"")
 	f.StringSliceVar(&opts.regions, "regions", nil, "regions in the scope window; empty means ALL regions, which is the first campaign's scope (FR-131)")
 	f.StringVar(&opts.mailboxPath, "mailbox-path", "", "how the notice mailbox is read: "+accessPathList())
 	f.StringVar(&opts.authorisedBy, "authorised-by", "", "named individual who authorised the mailbox read (FR-132)")
@@ -197,6 +211,7 @@ func runCampaignRecord(cmd *cobra.Command, global *globalOptions, dir string, op
 			Projects: opts.projects,
 			Regions:  opts.regions,
 			Datadog:  opts.datadogScope(),
+			Notion:   opts.notionScope(),
 			Why:      firstNonEmpty(opts.scopeWhy, "the scope in force when recording began (FR-130)"),
 		}},
 		Mailbox: campaign.Mailbox{
@@ -235,9 +250,9 @@ func extendCampaignRecord(cmd *cobra.Command, global *globalOptions, dir string,
 
 	err = campaign.Update(dir, func(r *campaign.Record) error {
 		if !addAt.IsZero() {
-			if len(opts.projects) == 0 && opts.datadogScope() == nil {
-				return fmt.Errorf("--add-scope needs --projects or a Datadog scope; a window naming " +
-					"neither is a record that says nothing rather than one meaning \"all\" (FR-131)")
+			if len(opts.projects) == 0 && opts.datadogScope() == nil && opts.notionScope() == nil {
+				return fmt.Errorf("--add-scope needs --projects, a Datadog scope or a Notion scope; a " +
+					"window naming none is a record that says nothing rather than one meaning \"all\" (FR-131)")
 			}
 			last := len(r.Scopes) - 1
 			if !r.Scopes[last].To.IsZero() {
@@ -255,6 +270,7 @@ func extendCampaignRecord(cmd *cobra.Command, global *globalOptions, dir string,
 				Projects: opts.projects,
 				Regions:  opts.regions,
 				Datadog:  opts.datadogScope(),
+				Notion:   opts.notionScope(),
 				Why:      opts.scopeWhy,
 			})
 		}
@@ -311,9 +327,13 @@ func renderCampaignRecord(cmd *cobra.Command, global *globalOptions, dir string,
 		if s.Datadog != nil {
 			datadog = s.Datadog.Site + " " + strings.Join(s.Datadog.Environments, ",")
 		}
-		rows = append(rows, []string{s.From.Format(time.RFC3339), to, strings.Join(s.Projects, ","), regions, datadog, s.Why})
+		notion := ""
+		if s.Notion != nil {
+			notion = s.Notion.Workspace + " " + strings.Join(s.Notion.Databases, ",")
+		}
+		rows = append(rows, []string{s.From.Format(time.RFC3339), to, strings.Join(s.Projects, ","), regions, datadog, notion, s.Why})
 	}
-	if err := p.writeTable([]string{"FROM", "TO", "PROJECTS", "REGIONS", "DATADOG", "WHY"}, rows); err != nil {
+	if err := p.writeTable([]string{"FROM", "TO", "PROJECTS", "REGIONS", "DATADOG", "NOTION", "WHY"}, rows); err != nil {
 		return err
 	}
 	mailbox := "none: no window names a project, so no notice mailbox is read"

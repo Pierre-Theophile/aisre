@@ -93,6 +93,9 @@ type Scope struct {
 	// Datadog is the Datadog scope in force over the window, for a campaign recording that
 	// connector (005 T025, FR-007, FR-070d). A window names projects, a Datadog scope, or both.
 	Datadog *DatadogScope `yaml:"datadog,omitempty"`
+	// Notion is the Notion scope in force over the window, for a campaign recording that connector
+	// (007 T030, 008 T042). A window names projects, a Datadog scope, a Notion scope, or several.
+	Notion *NotionScope `yaml:"notion,omitempty"`
 	// Why says what changed and why, for the reader who finds two windows and wants to know which
 	// one to trust for a given instant. Both are true; this says what happened between them.
 	Why string `yaml:"why,omitempty"`
@@ -119,6 +122,27 @@ func (d DatadogScope) validate(window int) error {
 	case len(d.Environments) == 0:
 		return fmt.Errorf("campaign: scope window %d's Datadog scope names no environment; a service "+
 			"name is unique only within one, and an empty list would read as \"all\"", window)
+	}
+	return nil
+}
+
+// NotionScope is what a Notion campaign window covered (007 FR-001): the workspace the integration
+// belongs to and the databases its configuration named. Pages are whatever those databases held, so
+// they are not listed here.
+type NotionScope struct {
+	// Workspace is the workspace label the source id carries, notion:<workspace>.
+	Workspace string `yaml:"workspace"`
+	// Databases are the configured database ids.
+	Databases []string `yaml:"databases"`
+}
+
+func (n NotionScope) validate(window int) error {
+	switch {
+	case strings.TrimSpace(n.Workspace) == "":
+		return fmt.Errorf("campaign: scope window %d's Notion scope names no workspace", window)
+	case len(n.Databases) == 0:
+		return fmt.Errorf("campaign: scope window %d's Notion scope names no database; the connector "+
+			"reads only the databases it is configured with, and an empty list would read as \"all\"", window)
 	}
 	return nil
 }
@@ -270,13 +294,19 @@ func (r Record) validateScopes() error {
 		if scope.From.IsZero() {
 			return fmt.Errorf("campaign: scope window %d has no start instant", i+1)
 		}
-		if len(scope.Projects) == 0 && scope.Datadog == nil {
-			return fmt.Errorf("campaign: scope window %d names no project and no Datadog scope; no "+
+		if len(scope.Projects) == 0 && scope.Datadog == nil && scope.Notion == nil {
+			return fmt.Errorf("campaign: scope window %d names no project, no Datadog scope and no "+
+				"Notion scope; no "+
 				"code or checked-in default may assume a project name (FR-131), so an empty list is a "+
 				"record that says nothing rather than one that means \"all\"", i+1)
 		}
 		if scope.Datadog != nil {
 			if err := scope.Datadog.validate(i + 1); err != nil {
+				return err
+			}
+		}
+		if scope.Notion != nil {
+			if err := scope.Notion.validate(i + 1); err != nil {
 				return err
 			}
 		}

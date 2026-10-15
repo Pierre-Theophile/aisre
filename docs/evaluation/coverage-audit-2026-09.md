@@ -57,3 +57,25 @@ compare` and the ledger's π₀ read; every figure above is asserted against it 
 `internal/investigation/audit`, so the two cannot drift. The input format and how a private audit
 is transcribed into it are documented in
 [`coverage-audit-format.md`](coverage-audit-format.md).
+
+## Knowledge re-run (007 T031, 008 T043), 2026-10-15
+
+The audit was re-run with the knowledge index populated from the first recording of the owner's
+postmortem database (seven postmortems, recorded 2026-10-15, kept in the private corpus).
+
+- **The thirteen incidents: 0 citations, correctly.** None of them has a postmortem in the
+  database: six postmortems describe incidents after the audit window and one an incident outside
+  its channel set, and every page was written on 2026-10-15. The as-of rule allows no citation, and
+  none is made. The attribution above is unchanged: a postmortem is retrieved knowledge, not a
+  change node, so it never moves an incident between verdicts.
+- **SC-002 on the seven postmortems: met.** Each was queried with a symptom taken from past the
+  first 600 characters of its summary properties. 008 retrieves all seven at rank 1, lexical and
+  hybrid. 007's summary match finds 4 of 7 when scoped to the postmortem's service and 3 of 7
+  when no linked entity is named.
+- **One precedent inside the database.** Two incidents on the same node the same day: with only
+  the earlier postmortems indexed, the later incident's symptoms rank the earlier postmortem 2nd,
+  behind another relevant one. It could not have been cited at the time, because it was written
+  afterwards.
+
+Seven documents is a small corpus: these figures say the sections are indexed and reachable, not
+how ranking holds over hundreds of pages.
