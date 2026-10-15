@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+id: cross-service-01
+shape: cross-service
+description: >-
+  The investigation is about orders; the postmortem with the matching failure (consumer group rebalance
+  storms and growing lag) is about billing. It must be returned, flagged out of scope (008 US2, SC-004).
+query:
+  terms:
+  - kafka
+  - consumer
+  - lag
+  - rebalance
+  entity_ids:
+  - otel.service.name=orders
+  valid_at: '2026-09-01T14:32:00Z'
+  observed_at: '2026-09-01T14:32:00Z'
+expect:
+  document: notion.page=pm-billing-kafka
+  in_scope: false

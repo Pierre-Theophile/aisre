@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+documents:
+- ref: notion.page=pm-provider-chain
+  kind: postmortem
+  title: Card payments refused in July
+  summary: Every card payment failed for twelve minutes.
+  location: https://www.notion.so/pm-provider-chain
+  authored_at: '2026-07-09T09:00:00Z'
+  links:
+  - entity: otel.service.name=payments
+    valid_from: '2026-07-09T09:00:00Z'
+  puts:
+  - at: '2026-07-09T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: >-
+        The payment provider rotated its certificate chain to a new intermediate that our client's trust
+        store did not contain, so our side refused every connection to the provider.
+    - label: Resolution
+      origin: body
+      text: Added the new intermediate to the trust store and redeployed payments.
+- ref: notion.page=pm-auth-cert
+  kind: postmortem
+  title: Login failures after a certificate rotation
+  summary: Users could not log in for fifteen minutes.
+  location: https://www.notion.so/pm-auth-cert
+  authored_at: '2026-05-02T09:00:00Z'
+  links:
+  - entity: otel.service.name=auth
+    valid_from: '2026-05-02T09:00:00Z'
+  puts:
+  - at: '2026-05-02T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: >-
+        The identity provider's certificate was rotated and the auth service pinned the old one, so every
+        TLS handshake to the provider failed until the pin was updated.
+    - label: Resolution
+      origin: body
+      text: Removed the certificate pin and redeployed auth.
+- ref: notion.page=pm-search-reindex
+  kind: postmortem
+  title: Search latency after a reindex
+  summary: Search p95 latency tripled for forty minutes during a scheduled reindex.
+  location: https://www.notion.so/pm-search-reindex
+  authored_at: '2026-04-10T09:00:00Z'
+  links:
+  - entity: otel.service.name=search
+    valid_from: '2026-04-10T09:00:00Z'
+  puts:
+  - at: '2026-04-10T09:00:00Z'
+    sections:
+    - label: Impact
+      origin: property
+      text: Search p95 latency rose from 180 ms to 600 ms; no errors were returned.
+    - label: Root cause
+      origin: body
+      text: >-
+        The nightly reindex ran during business hours and saturated disk throughput on the search nodes;
+        queries queued behind merges.
+- ref: github.file=ops/runbooks/checkout.md
+  kind: runbook
+  title: Checkout runbook
+  summary: How to page, how to roll back, and which dashboards to open.
+  location: https://github.com/shop/ops/blob/main/ops/runbooks/checkout.md
+  authored_at: '2026-03-01T09:00:00Z'
+  links:
+  - entity: otel.service.name=checkout
+    valid_from: '2026-03-01T09:00:00Z'
+  puts:
+  - at: '2026-03-01T09:00:00Z'
+    sections:
+    - label: Paging
+      origin: body
+      text: >-
+        Page the checkout on-call through the incident tool; escalate to payments if card authorisations
+        fail.
+    - label: Dashboards
+      origin: body
+      text: >-
+        Open the checkout overview, the payments dependency board and the error budget board.

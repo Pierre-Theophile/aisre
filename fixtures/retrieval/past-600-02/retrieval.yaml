@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+id: past-600-02
+shape: symptom-past-600
+description: >-
+  A postmortem written in French: the symptom (an exhausted PostgreSQL connection pool) is in the Cause
+  racine section only. The lexical index uses no stemming, so French and English score alike.
+query:
+  terms:
+  - pool
+  - connexions
+  - postgresql
+  - épuisé
+  entity_ids:
+  - otel.service.name=payments
+  valid_at: '2026-09-01T14:32:00Z'
+  observed_at: '2026-09-01T14:32:00Z'
+expect:
+  document: notion.page=pm-paiements-pool
+  in_scope: true

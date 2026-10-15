@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+id: past-600-01
+shape: symptom-past-600
+description: >-
+  The symptom (Redis evicting cart sessions) is written only in the Root cause section, after a timeline
+  longer than 600 characters, and nowhere in the title or the registered summary. 007 matched on the summary
+  and could not find it.
+query:
+  terms:
+  - redis
+  - eviction
+  - cart
+  - sessions
+  entity_ids:
+  - otel.service.name=checkout
+  valid_at: '2026-09-01T14:32:00Z'
+  observed_at: '2026-09-01T14:32:00Z'
+expect:
+  document: notion.page=pm-cart-redis
+  in_scope: true

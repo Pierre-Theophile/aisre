@@ -45,10 +45,11 @@ jobs:
   # contract. A breaking change needs a MAJOR bump and an event-log transformation, so it
   # cannot slip in unnoticed.
   #
-  # Two packages are published and both are gated: `sreagent.graph.v1` (feature 001) and
+  # Three packages are published and all are gated: `sreagent.graph.v1` (feature 001),
   # `sreagent.investigation.v1` (feature 002 — the algebra, the digest contract, the ledger,
-  # the recording format, implemented by third-party telemetry backends). One `path: api`
-  # module in buf.yaml covers both, so the step below asserts the module's file list rather
+  # the recording format, implemented by third-party telemetry backends) and
+  # `sreagent.knowledge.v1` (feature 008 — the knowledge store's write path, called by
+  # third-party knowledge sources). One `path: api` module in buf.yaml covers them all, so the step below asserts the module's file list rather
   # than trusting it: a package added outside `api/` would lint and break-check silently.
   # ---------------------------------------------------------------------------------------
   schema:
@@ -77,7 +78,8 @@ jobs:
         run: |
           expected=$(printf '%s\n' \
             'api/sreagent/graph/v1/graph.proto' \
-            'api/sreagent/investigation/v1/investigation.proto' | sort)
+            'api/sreagent/investigation/v1/investigation.proto' \
+            'api/sreagent/knowledge/v1/knowledge.proto' | sort)
           actual=$(buf ls-files | sort)
           if [ "$expected" != "$actual" ]; then
             echo '::error::buf module contents changed; update buf.yaml and this list'
@@ -266,6 +268,16 @@ jobs:
         #
         # One test, milliseconds, no database. It is what keeps the number on that page true.
         run: go test -count=1 -run TestPosteriorsAreComputedWellInsideTheBudget ./internal/investigation/ledger/
+
+      - name: knowledge retrieval gate
+        # 008 FR-042: recall@3 and MRR of the knowledge worker on fixtures/retrieval, per retrieval
+        # mode, gated on the floors in internal/eval/retrieval/thresholds.go. No database, no model,
+        # no network: every fixture is an in-memory corpus and store. `go test` above runs the same
+        # gate and its planted regression; this step publishes the table in the job summary.
+        shell: bash
+        run: |
+          set -o pipefail
+          bin/aisre eval retrieval fixtures/retrieval/ | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: examples/mcp-feeder (nested module)
         # `go test ./...` does not descend into nested modules; the MCP connector example

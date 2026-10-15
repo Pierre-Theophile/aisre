@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+id: asof-01
+shape: as-of
+description: >-
+  The inventory postmortem said deadlock until it was rewritten after the pin; at the pin it must be matched
+  on the earlier text. A postmortem written after the pin, and one whose link was only known after it,
+  match better and must never be cited (008 US3, SC-003).
+query:
+  terms:
+  - deadlock
+  - inventory
+  - reservation
+  entity_ids:
+  - otel.service.name=inventory
+  valid_at: '2026-09-01T14:32:00Z'
+  observed_at: '2026-09-01T14:32:00Z'
+expect:
+  document: notion.page=pm-inventory-deadlock
+  in_scope: true
+  never:
+  - notion.page=pm-inventory-later
+  - notion.page=pm-inventory-backfill

@@ -4,6 +4,7 @@ package knowledge_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -22,40 +23,21 @@ import (
 
 var authored = time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
 
-// corpus is an in-memory stand-in for the graph's CONCERNS edges. The worker's contract is that
-// it retrieves only what is linked, so the test's corpus deliberately holds documents that are
-// linked to entities outside the requested set: SC-014 is that they are never cited.
-//
-// It also honours the instants the way the graph does, with AuthoredAt standing in for the link's
-// start: a document written after the valid instant is not a candidate (007 FR-006).
+// corpus is an in-memory stand-in for the graph's CONCERNS edges. Like the graph since 008, it
+// returns every linked document whatever the request's scope, and the worker decides what is in
+// scope. It honours the instants the way the graph does, with AuthoredAt standing in for the
+// link's start: a document written after the valid instant is not a candidate (007 FR-006).
 type corpus struct{ documents []knowledge.Document }
 
-func (c corpus) Scoped(_ context.Context, entityIDs []string, at knowledge.Instants) ([]knowledge.Document, error) {
-	wanted := make(map[string]struct{}, len(entityIDs))
-	for _, id := range entityIDs {
-		wanted[id] = struct{}{}
-	}
+func (c corpus) Candidates(_ context.Context, _ []string, at knowledge.Instants) ([]knowledge.Document, error) {
 	out := make([]knowledge.Document, 0, len(c.documents))
 	for _, doc := range c.documents {
 		if doc.AuthoredAt.After(at.Valid) {
 			continue
 		}
-		for _, linked := range doc.LinkedEntityIDs {
-			if _, ok := wanted[linked]; ok {
-				out = append(out, doc)
-				break
-			}
-		}
+		out = append(out, doc)
 	}
 	return out, nil
-}
-
-// leakyCorpus returns everything it has, linked or not — the mistake a real implementation could
-// make. The worker must still cite only what is linked.
-type leakyCorpus struct{ documents []knowledge.Document }
-
-func (c leakyCorpus) Scoped(context.Context, []string, knowledge.Instants) ([]knowledge.Document, error) {
-	return c.documents, nil
 }
 
 func documents() []knowledge.Document {
@@ -66,7 +48,7 @@ func documents() []knowledge.Document {
 			Summary:         "A payments deploy raised the checkout error rate; rolled back in twelve minutes.",
 			LinkedEntityIDs: []string{"entity-payments", "entity-checkout"},
 			LinkProvenance:  "registered by sre@example.com", AuthoredAt: authored, AgeDays: 90,
-			HopsFromFocus: 0, Location: "notion://pm-2026-04",
+			Location: "notion://pm-2026-04",
 		},
 		{
 			ID: "rb-checkout", Kind: knowledge.KindRunbook,
@@ -74,7 +56,7 @@ func documents() []knowledge.Document {
 			Summary:         "How to page, how to roll back, and which dashboards to open.",
 			LinkedEntityIDs: []string{"entity-checkout"},
 			LinkProvenance:  "registered by sre@example.com", AuthoredAt: authored, AgeDays: 400,
-			HopsFromFocus: 0, Location: "notion://rb-checkout",
+			Location: "notion://rb-checkout",
 		},
 		{
 			ID: "adr-9", Kind: knowledge.KindDecision,
@@ -82,66 +64,83 @@ func documents() []knowledge.Document {
 			Summary:         "Why the analytics warehouse partitions by day rather than by tenant.",
 			LinkedEntityIDs: []string{"entity-analytics"},
 			LinkProvenance:  "registered by data@example.com", AuthoredAt: authored, AgeDays: 30,
-			HopsFromFocus: 4, Location: "notion://adr-9",
+			Location: "notion://adr-9",
 		},
 	}
 }
 
-func TestRetrievalIsScopedByTheGraph(t *testing.T) {
-	t.Parallel()
-
-	w := knowledge.New(corpus{documents: documents()})
+func search(t *testing.T, w *knowledge.Worker, entities, terms []string) []*investigationv1.KnowledgeItem {
+	t.Helper()
 	resp, err := w.Call(context.Background(), worker.Request{
 		Capability: engine.TermKnowledgeSearch,
 		Mode:       worker.ModeRecorded,
-		Algebra:    knowledge.SearchTerm([]string{"entity-checkout", "entity-payments"}, []string{"checkout", "rollout"}, 10, "hyp-1", "has this happened before?"),
+		Algebra:    knowledge.SearchTerm(entities, terms, 10, "hyp-1", "has this happened before?"),
 	})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
+	return resp.Algebra.GetDigest().GetKnowledge().GetItems()
+}
 
-	items := resp.Algebra.GetDigest().GetKnowledge().GetItems()
-	if len(items) != 2 {
-		t.Fatalf("cited %d documents, want the two linked to the requested entities: %v", len(items), items)
+func ids(items []*investigationv1.KnowledgeItem) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, item.GetDocumentId())
+	}
+	return out
+}
+
+func TestInScopeDocumentsAreCitedAndRankedByMatch(t *testing.T) {
+	t.Parallel()
+
+	w := knowledge.New(corpus{documents: documents()})
+	items := search(t, w, []string{"entity-checkout", "entity-payments"}, []string{"checkout", "rollout"})
+
+	// adr-9 is linked elsewhere and matches nothing, so it is not returned at all.
+	if got := ids(items); !slices.Equal(got, []string{"pm-2026-04", "rb-checkout"}) {
+		t.Fatalf("cited %v, want the postmortem then the runbook", got)
 	}
 	for _, item := range items {
-		if item.GetDocumentId() == "adr-9" {
-			t.Error("cited a document linked to no requested entity; SC-014 is that it is never cited")
+		if !item.GetInScope() {
+			t.Errorf("%s is linked to a requested entity and is not in scope", item.GetDocumentId())
 		}
-		if item.GetCitation() == "" || item.GetLinkProvenance() == "" {
-			t.Errorf("document %s is cited with no citation or no link provenance; that is an appeal to authority", item.GetDocumentId())
+		if item.GetCitation() == "" || item.GetLinkProvenance() == "" || len(item.GetLinkedEntityIds()) == 0 {
+			t.Errorf("document %s is cited without its provenance; that is an appeal to authority", item.GetDocumentId())
 		}
-		if len(item.GetLinkedEntityIds()) == 0 {
-			t.Errorf("document %s names no linked entities", item.GetDocumentId())
+		if item.GetSectionLabel() != "Summary" || item.GetMatchedText() == "" {
+			t.Errorf("document %s matched section %q with text %q, want its Summary", item.GetDocumentId(), item.GetSectionLabel(), item.GetMatchedText())
 		}
-	}
-	// The postmortem is about the rollout and is far fresher than the runbook, so it ranks first.
-	if items[0].GetDocumentId() != "pm-2026-04" {
-		t.Errorf("first citation = %s, want pm-2026-04", items[0].GetDocumentId())
 	}
 	if items[0].GetScore() <= items[1].GetScore() {
 		t.Errorf("citations are not ordered by score: %v then %v", items[0].GetScore(), items[1].GetScore())
 	}
 }
 
-// TestALeakyCorpusIsFilteredAnyway: the scoping is enforced in the worker, not only promised by
-// the corpus.
-func TestALeakyCorpusIsFilteredAnyway(t *testing.T) {
+// TestAnOutOfScopeDocumentIsStillRecalled is 008 US2 and SC-004: a document linked to another
+// service with the best match is returned, flagged out of scope, and an equally matching in-scope
+// document ranks above it.
+func TestAnOutOfScopeDocumentIsStillRecalled(t *testing.T) {
 	t.Parallel()
 
-	w := knowledge.New(leakyCorpus{documents: documents()})
-	resp, err := w.Call(context.Background(), worker.Request{
-		Capability: engine.TermKnowledgeSearch,
-		Mode:       worker.ModeRecorded,
-		Algebra:    knowledge.SearchTerm([]string{"entity-checkout"}, []string{"runbook"}, 10, "hyp-1", "what does the runbook say?"),
-	})
-	if err != nil {
-		t.Fatalf("call: %v", err)
+	docs := []knowledge.Document{
+		{ID: "pm-search", Kind: knowledge.KindPostmortem, Title: "Search outage",
+			Summary: "connection pool exhaustion after a rollout", LinkedEntityIDs: []string{"entity-search"}, AuthoredAt: authored},
+		{ID: "pm-checkout", Kind: knowledge.KindPostmortem, Title: "Checkout outage",
+			Summary: "connection pool exhaustion after a rollout", LinkedEntityIDs: []string{"entity-checkout"}, AuthoredAt: authored},
+		{ID: "rb-checkout", Kind: knowledge.KindRunbook, Title: "Checkout runbook",
+			Summary: "how to page", LinkedEntityIDs: []string{"entity-checkout"}, AuthoredAt: authored},
 	}
-	for _, item := range resp.Algebra.GetDigest().GetKnowledge().GetItems() {
-		if item.GetDocumentId() == "adr-9" {
-			t.Fatal("a document linked to no requested entity was cited even though the worker filters")
-		}
+	w := knowledge.New(corpus{documents: docs})
+	items := search(t, w, []string{"entity-checkout"}, []string{"connection", "pool", "exhaustion"})
+
+	if got := ids(items); !slices.Equal(got, []string{"pm-checkout", "pm-search", "rb-checkout"}) {
+		t.Fatalf("cited %v, want the in-scope match, the out-of-scope match, then the unmatched in-scope runbook", got)
+	}
+	if items[1].GetInScope() || !items[0].GetInScope() || !items[2].GetInScope() {
+		t.Errorf("in_scope = %v, %v, %v; want true, false, true", items[0].GetInScope(), items[1].GetInScope(), items[2].GetInScope())
+	}
+	if items[2].GetScore() != 0 || items[2].GetSectionLabel() != "" {
+		t.Errorf("the unmatched runbook scored %v on section %q, want 0 and none", items[2].GetScore(), items[2].GetSectionLabel())
 	}
 }
 
@@ -214,7 +213,7 @@ func TestEveryKnowledgeDigestSaysItIsUnconfirmed(t *testing.T) {
 // instantsCorpus records the instants it was asked at.
 type instantsCorpus struct{ asked *knowledge.Instants }
 
-func (c instantsCorpus) Scoped(_ context.Context, _ []string, at knowledge.Instants) ([]knowledge.Document, error) {
+func (c instantsCorpus) Candidates(_ context.Context, _ []string, at knowledge.Instants) ([]knowledge.Document, error) {
 	*c.asked = at
 	return nil, nil
 }
@@ -281,7 +280,7 @@ func TestDeclaration(t *testing.T) {
 
 	d := w.Describe()
 	if d.ContainsModel {
-		t.Error("the v1 knowledge worker declares a model; BM25 over tens of documents needs none (research §7)")
+		t.Error("the knowledge worker declares a model; its ranking is a published deterministic scorer")
 	}
 	if len(d.Capabilities) != 1 || !d.Declares(engine.TermKnowledgeSearch) {
 		t.Errorf("capabilities = %v, want exactly knowledge_search", d.Capabilities)
@@ -376,5 +375,26 @@ func TestLinkRefusesARegistrationThatCannotBeCited(t *testing.T) {
 				t.Errorf("refusal %q does not mention %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestEveryCandidateIsMatchedOnTheTextTheGraphHolds is 008 FR-015: with no store, a registered
+// document is matched on its Summary and a past investigation on its Verdict.
+func TestEveryCandidateIsMatchedOnTheTextTheGraphHolds(t *testing.T) {
+	t.Parallel()
+	docs := []knowledge.Document{
+		{ID: "sre.investigation.id=inv-1", Kind: knowledge.KindInvestigation,
+			Title:           "payments rev7 exhausted checkout's connection pool",
+			LinkedEntityIDs: []string{"entity-checkout"}, AuthoredAt: authored},
+		{ID: "pm-1", Kind: knowledge.KindPostmortem, Title: "Checkout outage",
+			Summary: "connection pool exhaustion", LinkedEntityIDs: []string{"entity-checkout"}, AuthoredAt: authored},
+	}
+	items := search(t, knowledge.New(corpus{documents: docs}), []string{"entity-checkout"}, []string{"connection", "pool"})
+	labels := map[string]string{}
+	for _, item := range items {
+		labels[item.GetDocumentId()] = item.GetSectionLabel()
+	}
+	if labels["sre.investigation.id=inv-1"] != "Verdict" || labels["pm-1"] != "Summary" {
+		t.Errorf("matched sections = %v, want the investigation's Verdict and the postmortem's Summary", labels)
 	}
 }

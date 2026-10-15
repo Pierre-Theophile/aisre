@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+documents:
+- ref: notion.page=pm-billing-kafka
+  kind: postmortem
+  title: Billing invoices delayed
+  summary: Invoices were sent two hours late.
+  location: https://www.notion.so/pm-billing-kafka
+  authored_at: '2026-05-22T09:00:00Z'
+  links:
+  - entity: otel.service.name=billing
+    valid_from: '2026-05-22T09:00:00Z'
+  puts:
+  - at: '2026-05-22T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: >-
+        A slow handler pushed poll intervals past max.poll.interval.ms, so the Kafka consumer group kept
+        rebalancing and lag grew on every partition.
+    - label: Resolution
+      origin: body
+      text: Raised max.poll.interval.ms and moved the slow call out of the handler.
+- ref: github.file=ops/runbooks/orders.md
+  kind: runbook
+  title: Orders runbook
+  summary: How to page the orders team.
+  location: https://github.com/shop/ops/blob/main/ops/runbooks/orders.md
+  authored_at: '2026-03-01T09:00:00Z'
+  links:
+  - entity: otel.service.name=orders
+    valid_from: '2026-03-01T09:00:00Z'
+  puts:
+  - at: '2026-03-01T09:00:00Z'
+    sections:
+    - label: Paging
+      origin: body
+      text: Page the orders on-call; escalate to inventory for stock errors.
+- ref: notion.page=pm-search-reindex
+  kind: postmortem
+  title: Search latency after a reindex
+  summary: Search p95 latency tripled for forty minutes during a scheduled reindex.
+  location: https://www.notion.so/pm-search-reindex
+  authored_at: '2026-04-10T09:00:00Z'
+  links:
+  - entity: otel.service.name=search
+    valid_from: '2026-04-10T09:00:00Z'
+  puts:
+  - at: '2026-04-10T09:00:00Z'
+    sections:
+    - label: Impact
+      origin: property
+      text: Search p95 latency rose from 180 ms to 600 ms; no errors were returned.
+    - label: Root cause
+      origin: body
+      text: >-
+        The nightly reindex ran during business hours and saturated disk throughput on the search nodes;
+        queries queued behind merges.
+- ref: notion.page=pm-auth-cert
+  kind: postmortem
+  title: Login failures after a certificate rotation
+  summary: Users could not log in for fifteen minutes.
+  location: https://www.notion.so/pm-auth-cert
+  authored_at: '2026-05-02T09:00:00Z'
+  links:
+  - entity: otel.service.name=auth
+    valid_from: '2026-05-02T09:00:00Z'
+  puts:
+  - at: '2026-05-02T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: >-
+        The identity provider's certificate was rotated and the auth service pinned the old one, so every
+        TLS handshake to the provider failed until the pin was updated.
+    - label: Resolution
+      origin: body
+      text: Removed the certificate pin and redeployed auth.

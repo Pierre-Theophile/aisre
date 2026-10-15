@@ -99,6 +99,12 @@ section over 1,200 characters, an empty label, or more than 500 sections.
 As research R4: RRF with k = 60 over lexical and semantic section ranks (top 50 each), best section per
 document, ×1.5 in scope, ties by document ref, label, part. A change to any constant is a new version.
 
+As built (ADR-0014 item 4): every candidate also carries one section synthesised from what the graph
+holds (`Summary`: title and registered summary; `Verdict` for a past investigation). The lexical
+ranking orders the union of the store's top 50 lexical sections and the synthesised ones by BM25
+(k1 1.2, b 0.75): the store selects, the worker orders. An in-scope document nothing in which matched
+is returned at score 0 after the matched ones; an out-of-scope one is returned only when it matched.
+
 ## 6. `feed notion --check` additions
 
 Per registered page: one line per section, `label (origin, N chars)`, and each skipped section with its

@@ -191,3 +191,36 @@ func TestInvestigationLabelPropMatchesTheProjector(t *testing.T) {
 		t.Errorf("query reads %q, the projector writes %q", query.InvestigationLabelProp, projector.InvestigationLabelProp)
 	}
 }
+
+// TestKnowledgeDocumentsReadsEveryLinkedDocument: 008 research R3. Scope is no longer a filter;
+// the out-of-subgraph runbook is a candidate too, marked by an empty Linked and named by what it is
+// linked to.
+func TestKnowledgeDocumentsReadsEveryLinkedDocument(t *testing.T) {
+	engine, _ := loadFixture(t, "incidents/knowledge-scope-01")
+	ctx := context.Background()
+
+	got, err := engine.KnowledgeDocuments(ctx,
+		[]string{"otel.service.name=checkout", "otel.service.name=payments"}, query.AsOf{ValidAt: at1432})
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if refs := candidateRefs(got); !slices.Equal(refs, []string{paymentsRunbook, reportingRunbook}) {
+		t.Fatalf("documents = %v, want both runbooks", refs)
+	}
+	payments, reporting := got[0], got[1]
+	if want := []string{"otel.service.name=checkout", "otel.service.name=payments"}; !slices.Equal(payments.Linked, want) || len(payments.Elsewhere) != 0 {
+		t.Errorf("payments runbook linked %v, elsewhere %v; want %v and nothing else", payments.Linked, payments.Elsewhere, want)
+	}
+	if len(reporting.Linked) != 0 || !slices.Equal(reporting.Elsewhere, []string{"otel.service.name=reporting"}) {
+		t.Errorf("reporting runbook linked %v, elsewhere %v; want out of scope, linked to reporting", reporting.Linked, reporting.Elsewhere)
+	}
+
+	// Still as of the instants: before the runbooks were registered, nothing.
+	early, err := engine.KnowledgeDocuments(ctx, nil, query.AsOf{ValidAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(early) != 0 {
+		t.Errorf("documents before registration = %v", candidateRefs(early))
+	}
+}

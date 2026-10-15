@@ -124,8 +124,8 @@ func stringsOf(v any) []string {
 }
 
 // TestANotionPostmortemIsCitedAndNothingElse is T027: in every run, the postmortem on the alert's
-// services is cited with what a reader needs, and the better lexical match outside the subgraph
-// and the postmortem written after the alert are not.
+// services is cited first with what a reader needs; the better lexical match outside the subgraph
+// is at most cited after it, out of scope (008), and the postmortem written after the alert never.
 func TestANotionPostmortemIsCitedAndNothingElse(t *testing.T) {
 	harness, store := notionHarness(t, notionIncident)
 	truth := harness.Manifest().Incident.GroundTruth
@@ -138,7 +138,7 @@ func TestANotionPostmortemIsCitedAndNothingElse(t *testing.T) {
 		}
 	}
 	if len(knowledgePredicates) != 3 {
-		t.Fatalf("%d knowledge predicates in the manifest, want the cited one and the two never cited", len(knowledgePredicates))
+		t.Fatalf("%d knowledge predicates in the manifest, want the cited one, the never-in-scope one and the never-cited one", len(knowledgePredicates))
 	}
 
 	// The worker reads the graph as of the run's instants and never remembers a previous call, so
@@ -150,8 +150,16 @@ func TestANotionPostmortemIsCitedAndNothingElse(t *testing.T) {
 			if result := eval.SatisfiedBy(predicate, []eval.Citation{citation}); !result.Satisfied {
 				t.Errorf("run %d: %s %s %v is not satisfied: %s", run, result.FieldPath, result.Op, result.Value, result.Detail)
 			}
-			if len(answer.items) != 1 {
-				t.Fatalf("run %d: %d documents cited, want the May postmortem alone", run, len(answer.items))
+			if len(answer.items) == 0 {
+				t.Fatalf("run %d: nothing cited, want the May postmortem first", run)
+			}
+			for _, other := range answer.items[1:] {
+				if other.GetInScope() {
+					t.Errorf("run %d: %s is cited in scope after the May postmortem", run, other.GetDocumentId())
+				}
+				if other.GetDocumentId() == "notion.page=c3000000-0000-4000-8000-000000000003" {
+					t.Errorf("run %d: the postmortem written after the alert is cited", run)
+				}
 			}
 			item := answer.items[0]
 			if item.GetDocumentId() != citedPostmortem ||
@@ -246,5 +254,30 @@ func TestAPostmortemAloneNeverSupportsAHypothesis(t *testing.T) {
 	if err := l.SetStatus("h1", ledger.StatusSupported, ledger.StatusUpdate{}); !errors.As(err, &rejection) ||
 		rejection.ReasonCode != ledger.ReasonUnsupportedStatus {
 		t.Errorf("a hypothesis resting on the postmortem alone was set supported: %v", err)
+	}
+}
+
+// TestTheScopeFixturesKnowledgePredicatesHold is 008 T010: knowledge-scope-01's predicates, on the
+// path the digest actually carries, hold against the worker's answer: the in-scope runbook cited,
+// the out-of-subgraph one never in scope.
+func TestTheScopeFixturesKnowledgePredicatesHold(t *testing.T) {
+	harness, store := notionHarness(t, knowledgeScopeIncident)
+	asked := harness.Manifest().Incident.Question.FiredAt
+	var checked int
+	for _, predicate := range harness.Manifest().Incident.GroundTruth.DecisiveEvidence {
+		if _, ok := predicate.Term["knowledge_search"]; !ok {
+			continue
+		}
+		checked++
+		citation, answer := knowledgeSearch(t, store, predicate, asked)
+		if result := eval.SatisfiedBy(predicate, []eval.Citation{citation}); !result.Satisfied {
+			t.Errorf("%s %s %v is not satisfied: %s", result.FieldPath, result.Op, result.Value, result.Detail)
+		}
+		if len(answer.items) == 0 || answer.items[0].GetDocumentId() != "github.file=ops/runbooks/payments-rollouts.md" {
+			t.Errorf("the payments runbook is not cited first: %v", answer.items)
+		}
+	}
+	if checked != 2 {
+		t.Errorf("%d knowledge predicates checked, want 2", checked)
 	}
 }

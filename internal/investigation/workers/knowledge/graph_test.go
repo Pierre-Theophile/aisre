@@ -4,6 +4,7 @@ package knowledge_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,9 @@ import (
 
 func TestMain(m *testing.M) { pgtest.TestMain(m) }
 
-func TestTheGraphCorpusCitesOnlyWhatIsLinked(t *testing.T) {
+// The lexically better reporting runbook is linked outside the request's scope: since 008 it is
+// returned, flagged out of scope, and ranked below the in-scope runbook (SC-004).
+func TestTheGraphCorpusRanksTheInScopeDocumentFirst(t *testing.T) {
 	store := pgtest.Open(t)
 	ctx := context.Background()
 	if _, err := fixture.Load(ctx, projector.New(store), "../../../../fixtures/incidents/knowledge-scope-01", fixture.LoadOptions{}); err != nil {
@@ -42,13 +45,18 @@ func TestTheGraphCorpusCitesOnlyWhatIsLinked(t *testing.T) {
 	}
 
 	items := resp.Algebra.GetDigest().GetKnowledge().GetItems()
-	if len(items) != 1 {
-		t.Fatalf("cited %d documents, want the payments runbook alone: %v", len(items), items)
+	if got := ids(items); !slices.Equal(got, []string{
+		"github.file=ops/runbooks/payments-rollouts.md", "github.file=ops/runbooks/reporting-nightly.md",
+	}) {
+		t.Fatalf("cited %v, want the payments runbook then the reporting runbook", got)
+	}
+	if !items[0].GetInScope() || items[1].GetInScope() {
+		t.Errorf("in_scope = %v, %v; want the payments runbook in scope and the reporting one not", items[0].GetInScope(), items[1].GetInScope())
+	}
+	if got := strings.Join(items[1].GetLinkedEntityIds(), ","); got != "otel.service.name=reporting" {
+		t.Errorf("the out-of-scope runbook names %s as linked, want reporting", got)
 	}
 	item := items[0]
-	if item.GetDocumentId() != "github.file=ops/runbooks/payments-rollouts.md" {
-		t.Errorf("cited %s", item.GetDocumentId())
-	}
 	if item.GetKind() != knowledge.KindRunbook || item.GetExcerpt() == "" {
 		t.Errorf("kind %q, excerpt %q", item.GetKind(), item.GetExcerpt())
 	}
@@ -67,8 +75,9 @@ func TestTheGraphCorpusCitesOnlyWhatIsLinked(t *testing.T) {
 }
 
 // 007 T027/T028: the postmortems `aisre feed notion` registers, read from a replayed incident.
-// The one on the alert's services is cited with everything a reader needs to open it and judge
-// it; the better lexical match outside the subgraph and the one written after the alert are not.
+// The one on the alert's services is cited first with everything a reader needs to open it and
+// judge it; the better lexical match outside the subgraph follows it, out of scope (008), and the
+// one written after the alert is not cited.
 // The planted instruction in the cited summary is an excerpt, quoted, and changes nothing else.
 func TestTheGraphCorpusCitesANotionPostmortem(t *testing.T) {
 	store := pgtest.Open(t)
@@ -90,13 +99,15 @@ func TestTheGraphCorpusCitesANotionPostmortem(t *testing.T) {
 	}
 
 	items := resp.Algebra.GetDigest().GetKnowledge().GetItems()
-	if len(items) != 1 {
-		t.Fatalf("cited %d documents, want the May postmortem alone: %v", len(items), items)
+	if got := ids(items); !slices.Equal(got, []string{
+		"notion.page=c3000000-0000-4000-8000-000000000001", "notion.page=c3000000-0000-4000-8000-000000000002",
+	}) {
+		t.Fatalf("cited %v, want the May postmortem then the reporting one, never the one written after the alert", got)
+	}
+	if !items[0].GetInScope() || items[1].GetInScope() {
+		t.Errorf("in_scope = %v, %v; want true then false", items[0].GetInScope(), items[1].GetInScope())
 	}
 	item := items[0]
-	if item.GetDocumentId() != "notion.page=c3000000-0000-4000-8000-000000000001" {
-		t.Errorf("cited %s", item.GetDocumentId())
-	}
 	if item.GetKind() != knowledge.KindPostmortem {
 		t.Errorf("kind %q", item.GetKind())
 	}

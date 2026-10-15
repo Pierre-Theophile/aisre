@@ -3742,8 +3742,13 @@ type KnowledgeItem struct {
 	Score           float64                `protobuf:"fixed64,7,opt,name=score,proto3" json:"score,omitempty"`
 	Citation        string                 `protobuf:"bytes,8,opt,name=citation,proto3" json:"citation,omitempty"`
 	Excerpt         string                 `protobuf:"bytes,9,opt,name=excerpt,proto3" json:"excerpt,omitempty"` // bounded, redacted
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// 008 (ADR-0014): the best-matching section, and whether the document is linked to an entity
+	// inside the request's scope. A document linked elsewhere is still eligible, ranked lower.
+	SectionLabel  string `protobuf:"bytes,10,opt,name=section_label,json=sectionLabel,proto3" json:"section_label,omitempty"` // label of the best-matching section; empty when none matched
+	InScope       bool   `protobuf:"varint,11,opt,name=in_scope,json=inScope,proto3" json:"in_scope,omitempty"`               // a linked entity is one of the request's entity_ids
+	MatchedText   string `protobuf:"bytes,12,opt,name=matched_text,json=matchedText,proto3" json:"matched_text,omitempty"`    // that section's sanitised text, at most 1,200 characters
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *KnowledgeItem) Reset() {
@@ -3839,12 +3844,35 @@ func (x *KnowledgeItem) GetExcerpt() string {
 	return ""
 }
 
+func (x *KnowledgeItem) GetSectionLabel() string {
+	if x != nil {
+		return x.SectionLabel
+	}
+	return ""
+}
+
+func (x *KnowledgeItem) GetInScope() bool {
+	if x != nil {
+		return x.InScope
+	}
+	return false
+}
+
+func (x *KnowledgeItem) GetMatchedText() string {
+	if x != nil {
+		return x.MatchedText
+	}
+	return ""
+}
+
 type KnowledgeDigest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Items         []*KnowledgeItem       `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	ScorerVersion string                 `protobuf:"bytes,2,opt,name=scorer_version,json=scorerVersion,proto3" json:"scorer_version,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Items          []*KnowledgeItem       `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	ScorerVersion  string                 `protobuf:"bytes,2,opt,name=scorer_version,json=scorerVersion,proto3" json:"scorer_version,omitempty"`
+	RetrievalMode  string                 `protobuf:"bytes,3,opt,name=retrieval_mode,json=retrievalMode,proto3" json:"retrieval_mode,omitempty"`    // "hybrid" or "lexical_only" (008 FR-027)
+	EmbeddingModel string                 `protobuf:"bytes,4,opt,name=embedding_model,json=embeddingModel,proto3" json:"embedding_model,omitempty"` // provider:model@dimensions; empty when lexical only
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *KnowledgeDigest) Reset() {
@@ -3887,6 +3915,20 @@ func (x *KnowledgeDigest) GetItems() []*KnowledgeItem {
 func (x *KnowledgeDigest) GetScorerVersion() string {
 	if x != nil {
 		return x.ScorerVersion
+	}
+	return ""
+}
+
+func (x *KnowledgeDigest) GetRetrievalMode() string {
+	if x != nil {
+		return x.RetrievalMode
+	}
+	return ""
+}
+
+func (x *KnowledgeDigest) GetEmbeddingModel() string {
+	if x != nil {
+		return x.EmbeddingModel
 	}
 	return ""
 }
@@ -9100,7 +9142,7 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\tjoin_keys\x18\x03 \x01(\v2#.sreagent.investigation.v1.JoinKeysR\bjoinKeys\"e\n" +
 	"\x0eExemplarDigest\x12A\n" +
 	"\texemplars\x18\x01 \x03(\v2#.sreagent.investigation.v1.ExemplarR\texemplars\x12\x10\n" +
-	"\x03cap\x18\x02 \x01(\rR\x03cap\"\xbd\x02\n" +
+	"\x03cap\x18\x02 \x01(\rR\x03cap\"\xa0\x03\n" +
 	"\rKnowledgeItem\x12\x1f\n" +
 	"\vdocument_id\x18\x01 \x01(\tR\n" +
 	"documentId\x12\x12\n" +
@@ -9112,10 +9154,16 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\bage_days\x18\x06 \x01(\x03R\aageDays\x12\x14\n" +
 	"\x05score\x18\a \x01(\x01R\x05score\x12\x1a\n" +
 	"\bcitation\x18\b \x01(\tR\bcitation\x12\x18\n" +
-	"\aexcerpt\x18\t \x01(\tR\aexcerpt\"x\n" +
+	"\aexcerpt\x18\t \x01(\tR\aexcerpt\x12#\n" +
+	"\rsection_label\x18\n" +
+	" \x01(\tR\fsectionLabel\x12\x19\n" +
+	"\bin_scope\x18\v \x01(\bR\ainScope\x12!\n" +
+	"\fmatched_text\x18\f \x01(\tR\vmatchedText\"\xc8\x01\n" +
 	"\x0fKnowledgeDigest\x12>\n" +
 	"\x05items\x18\x01 \x03(\v2(.sreagent.investigation.v1.KnowledgeItemR\x05items\x12%\n" +
-	"\x0escorer_version\x18\x02 \x01(\tR\rscorerVersion\"\xca\x02\n" +
+	"\x0escorer_version\x18\x02 \x01(\tR\rscorerVersion\x12%\n" +
+	"\x0eretrieval_mode\x18\x03 \x01(\tR\rretrievalMode\x12'\n" +
+	"\x0fembedding_model\x18\x04 \x01(\tR\x0eembeddingModel\"\xca\x02\n" +
 	"\x12ChatMentionsDigest\x12\x1d\n" +
 	"\n" +
 	"term_class\x18\x01 \x01(\tR\ttermClass\x12\x1e\n" +

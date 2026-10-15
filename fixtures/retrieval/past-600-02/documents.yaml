@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+documents:
+- ref: notion.page=pm-paiements-pool
+  kind: postmortem
+  title: Incident paiements du 4 juin
+  summary: Les paiements ont échoué pendant dix-huit minutes.
+  location: https://www.notion.so/pm-paiements-pool
+  authored_at: '2026-06-04T09:00:00Z'
+  links:
+  - entity: otel.service.name=payments
+    valid_from: '2026-06-04T09:00:00Z'
+  puts:
+  - at: '2026-06-04T09:00:00Z'
+    sections:
+    - label: Chronologie
+      origin: body
+      text: "14h05 l'astreinte a pris l'alerte et ouvert le tableau de bord. 14h09 un second ingénieur\
+        \ a rejoint le canal d'incident. 14h14 le support a estimé l'impact client. 14h20 l'équipe a gelé\
+        \ les déploiements. 14h05 l'astreinte a pris l'alerte et ouvert le tableau de bord. 14h09 un second\
+        \ ingénieur a rejoint le canal d'incident. 14h14 le support a estimé l'impact client. 14h20 l'équipe\
+        \ a gelé les déploiements. 14h05 l'astreinte a pris l'alerte et ouvert le tableau de bord. 14h09\
+        \ un second ingénieur a rejoint le canal d'incident. 14h14 le support a estimé l'impact client.\
+        \ 14h20 l'équipe a gelé les déploiements. "
+    - label: Cause racine
+      origin: body
+      text: >-
+        Le pool de connexions PostgreSQL du service payments était épuisé : la nouvelle révision gardait
+        les connexions ouvertes pendant les appels au prestataire.
+    - label: Résolution
+      origin: body
+      text: Retour à la révision précédente, puis limite de durée sur les connexions.
+- ref: notion.page=pm-paiements-carte
+  kind: postmortem
+  title: Refus de cartes en mai
+  summary: Des cartes valides ont été refusées.
+  location: https://www.notion.so/pm-paiements-carte
+  authored_at: '2026-05-12T09:00:00Z'
+  links:
+  - entity: otel.service.name=payments
+    valid_from: '2026-05-12T09:00:00Z'
+  puts:
+  - at: '2026-05-12T09:00:00Z'
+    sections:
+    - label: Cause racine
+      origin: body
+      text: >-
+        Une règle antifraude mal configurée refusait les cartes émises hors de l'Union européenne.
+- ref: notion.page=pm-search-reindex
+  kind: postmortem
+  title: Search latency after a reindex
+  summary: Search p95 latency tripled for forty minutes during a scheduled reindex.
+  location: https://www.notion.so/pm-search-reindex
+  authored_at: '2026-04-10T09:00:00Z'
+  links:
+  - entity: otel.service.name=search
+    valid_from: '2026-04-10T09:00:00Z'
+  puts:
+  - at: '2026-04-10T09:00:00Z'
+    sections:
+    - label: Impact
+      origin: property
+      text: Search p95 latency rose from 180 ms to 600 ms; no errors were returned.
+    - label: Root cause
+      origin: body
+      text: >-
+        The nightly reindex ran during business hours and saturated disk throughput on the search nodes;
+        queries queued behind merges.
+- ref: notion.page=pm-auth-cert
+  kind: postmortem
+  title: Login failures after a certificate rotation
+  summary: Users could not log in for fifteen minutes.
+  location: https://www.notion.so/pm-auth-cert
+  authored_at: '2026-05-02T09:00:00Z'
+  links:
+  - entity: otel.service.name=auth
+    valid_from: '2026-05-02T09:00:00Z'
+  puts:
+  - at: '2026-05-02T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: >-
+        The identity provider's certificate was rotated and the auth service pinned the old one, so every
+        TLS handshake to the provider failed until the pin was updated.
+    - label: Resolution
+      origin: body
+      text: Removed the certificate pin and redeployed auth.

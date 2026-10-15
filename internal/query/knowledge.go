@@ -56,16 +56,44 @@ type KnowledgeCandidate struct {
 	Props map[string]any
 	// Linked are the requested references this candidate is linked to, spelled as requested.
 	Linked []string
-	// LinkedSince is the earliest valid start among the links that made it a candidate.
+	// Elsewhere are the citable references of the other entities it is linked to (008): set by
+	// KnowledgeDocuments, empty from KnowledgeCandidates.
+	Elsewhere []string
+	// LinkedSince is the earliest valid start among its links.
 	LinkedSince time.Time
 }
 
-// KnowledgeCandidates returns the candidates linked to any of refs, as of at. A reference that
-// names nothing in the graph contributes nothing; it is not an error, because "nothing is known
-// about this" is an answer the worker reports as NO_DATA.
+// KnowledgeCandidates returns the candidates linked to any of refs, as of at: KnowledgeDocuments
+// filtered to those a requested reference names. A reference that names nothing in the graph
+// contributes nothing; it is not an error, because "nothing is known about this" is an answer the
+// worker reports as NO_DATA.
 //
 // at.ValidAt is required. A zero at.ObservedAt reads current knowledge.
 func (e *Engine) KnowledgeCandidates(ctx context.Context, refs []string, at AsOf) ([]KnowledgeCandidate, error) {
+	all, err := e.KnowledgeDocuments(ctx, refs, at)
+	if err != nil {
+		return nil, err
+	}
+	var out []KnowledgeCandidate
+	for _, c := range all {
+		if len(c.Linked) == 0 {
+			continue
+		}
+		c.Elsewhere = nil
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+// KnowledgeDocuments returns every document and reviewed investigation linked to anything, as of
+// at (008 research R3). Scope is no longer a filter: a postmortem about another service with the
+// symptoms an investigation sees is still a candidate, ranked lower by the worker. Each candidate's
+// Linked holds the references in refs it is linked to, spelled as requested, and Elsewhere the
+// citable references of every other entity it is linked to. A candidate with a non-empty Linked is
+// in scope.
+//
+// at.ValidAt is required. A zero at.ObservedAt reads current knowledge.
+func (e *Engine) KnowledgeDocuments(ctx context.Context, refs []string, at AsOf) ([]KnowledgeCandidate, error) {
 	if at.ValidAt.IsZero() {
 		return nil, errors.New("query: a knowledge read needs a valid instant; retrieval is as of one")
 	}
@@ -92,16 +120,8 @@ func (e *Engine) KnowledgeCandidates(ctx context.Context, refs []string, at AsOf
 			requested[id] = append(requested[id], spelled)
 		}
 	}
-	if len(requested) == 0 {
-		return nil, nil
-	}
-	targets := make([]string, 0, len(requested))
-	for id := range requested {
-		targets = append(targets, id)
-	}
-	sort.Strings(targets)
 
-	links, err := e.knowledgeLinks(ctx, r, r.raw(targets), at)
+	links, err := e.knowledgeLinks(ctx, r, nil, at)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +130,7 @@ func (e *Engine) KnowledgeCandidates(ctx context.Context, refs []string, at AsOf
 	}
 
 	byCandidate := map[string]*KnowledgeCandidate{}
+	elsewhere := map[string][]string{} // candidate -> canonical ids of unrequested linked entities
 	var order []string
 	for _, link := range links {
 		c, ok := byCandidate[link.src]
@@ -118,10 +139,14 @@ func (e *Engine) KnowledgeCandidates(ctx context.Context, refs []string, at AsOf
 			byCandidate[link.src] = c
 			order = append(order, link.src)
 		}
-		for _, spelled := range requested[link.dst] {
-			if !slices.Contains(c.Linked, spelled) {
-				c.Linked = append(c.Linked, spelled)
+		if spellings, ok := requested[link.dst]; ok {
+			for _, spelled := range spellings {
+				if !slices.Contains(c.Linked, spelled) {
+					c.Linked = append(c.Linked, spelled)
+				}
 			}
+		} else if !slices.Contains(elsewhere[link.src], link.dst) {
+			elsewhere[link.src] = append(elsewhere[link.src], link.dst)
 		}
 		if link.since.Before(c.LinkedSince) {
 			c.LinkedSince = link.since
@@ -133,9 +158,19 @@ func (e *Engine) KnowledgeCandidates(ctx context.Context, refs []string, at AsOf
 	if err != nil {
 		return nil, err
 	}
-	names, err := e.citableRefs(ctx, order)
+	nameable := append([]string(nil), order...)
+	for _, ids := range elsewhere {
+		nameable = append(nameable, ids...)
+	}
+	names, err := e.citableRefs(ctx, nameable)
 	if err != nil {
 		return nil, err
+	}
+	name := func(id string) string {
+		if n := names[id]; n != "" {
+			return n
+		}
+		return IDNamespace + "=" + id
 	}
 
 	out := make([]KnowledgeCandidate, 0, len(order))
@@ -154,11 +189,14 @@ func (e *Engine) KnowledgeCandidates(ctx context.Context, refs []string, at AsOf
 		}
 		c.DisplayName = v.displayName
 		c.Props = v.props
-		c.Ref = names[id]
-		if c.Ref == "" {
-			c.Ref = IDNamespace + "=" + id
+		c.Ref = name(id)
+		for _, other := range elsewhere[id] {
+			if spelled := name(other); !slices.Contains(c.Elsewhere, spelled) {
+				c.Elsewhere = append(c.Elsewhere, spelled)
+			}
 		}
 		sort.Strings(c.Linked)
+		sort.Strings(c.Elsewhere)
 		out = append(out, *c)
 	}
 	return out, nil
@@ -171,11 +209,18 @@ type knowledgeLink struct {
 }
 
 // knowledgeLinks reads the CONCERNS edges from documents valid at the instant, and the
-// INVESTIGATED edges from investigations that started before it, into the target ids.
+// INVESTIGATED edges from investigations that started before it, into the target ids, or into
+// anything when targets is nil.
 func (e *Engine) knowledgeLinks(ctx context.Context, r *redirects, targets []string, at AsOf) ([]knowledgeLink, error) {
 	args := []any{targets, at.ValidAt.UTC(),
 		string(graph.EdgeTypeConcerns), string(graph.NodeTypeKnowledgeDoc),
 		string(graph.EdgeTypeInvestigated), string(graph.NodeTypeInvestigation)}
+	// A nil targets reads every link (008 research R3); the parameter stays bound either way so
+	// the statement keeps one shape.
+	destination := "ev.dst_id = ANY($1)"
+	if targets == nil {
+		destination = "($1::text[] IS NULL)"
+	}
 	observed, extra := at.observedPredicate("ev.observed", len(args)+1)
 	args = append(args, extra...)
 
@@ -183,12 +228,12 @@ func (e *Engine) knowledgeLinks(ctx context.Context, r *redirects, targets []str
 		SELECT ev.src_id, ev.dst_id, en.type, lower(ev.valid)
 		FROM graph.edge_versions ev
 		JOIN graph.entities en ON en.entity_id = ev.src_id
-		WHERE ev.dst_id = ANY($1) AND %s
+		WHERE %s AND %s
 		  AND (
 		        (ev.type = $3 AND en.type = $4 AND ev.valid @> $2::timestamptz)
 		     OR (ev.type = $5 AND en.type = $6 AND lower(ev.valid) < $2::timestamptz)
 		  )
-		ORDER BY ev.src_id, ev.dst_id, lower(ev.valid)`, observed)
+		ORDER BY ev.src_id, ev.dst_id, lower(ev.valid)`, destination, observed)
 
 	rows, err := e.store.Pool().Query(ctx, sql, args...)
 	if err != nil {

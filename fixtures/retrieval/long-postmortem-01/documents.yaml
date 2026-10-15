@@ -1,0 +1,123 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+documents:
+- ref: notion.page=pm-cache-review
+  kind: postmortem
+  title: Quarterly cache review
+  summary: A review of cache behaviour.
+  location: https://www.notion.so/pm-cache-review
+  authored_at: '2026-04-30T09:00:00Z'
+  links:
+  - entity: otel.service.name=checkout
+    valid_from: '2026-04-30T09:00:00Z'
+  puts:
+  - at: '2026-04-30T09:00:00Z'
+    sections:
+    - label: Section 00
+      origin: body
+      text: >-
+        Cache warm-up note 0: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 01
+      origin: body
+      text: >-
+        Cache warm-up note 1: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 02
+      origin: body
+      text: >-
+        Cache warm-up note 2: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 03
+      origin: body
+      text: >-
+        Cache warm-up note 3: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 04
+      origin: body
+      text: >-
+        Cache warm-up note 4: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 05
+      origin: body
+      text: >-
+        Cache warm-up note 5: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 06
+      origin: body
+      text: >-
+        Cache warm-up note 6: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 07
+      origin: body
+      text: >-
+        Cache warm-up note 7: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 08
+      origin: body
+      text: >-
+        Cache warm-up note 8: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 09
+      origin: body
+      text: >-
+        Cache warm-up note 9: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 10
+      origin: body
+      text: >-
+        Cache warm-up note 10: the cache hit ratio was normal on this host and nothing else changed.
+    - label: Section 11
+      origin: body
+      text: >-
+        Cache warm-up note 11: the cache hit ratio was normal on this host and nothing else changed.
+- ref: notion.page=pm-cdn-purge
+  kind: postmortem
+  title: Broken checkout page in August
+  summary: The checkout page failed to load for some users.
+  location: https://www.notion.so/pm-cdn-purge
+  authored_at: '2026-08-03T09:00:00Z'
+  links:
+  - entity: otel.service.name=checkout
+    valid_from: '2026-08-03T09:00:00Z'
+  - entity: otel.service.name=frontend
+    valid_from: '2026-08-03T09:00:00Z'
+  puts:
+  - at: '2026-08-03T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: >-
+        A partial CDN purge left stale JavaScript bundles in the cache that referenced assets the new
+        deploy had removed.
+- ref: github.file=ops/runbooks/checkout.md
+  kind: runbook
+  title: Checkout runbook
+  summary: How to page, how to roll back, and which dashboards to open.
+  location: https://github.com/shop/ops/blob/main/ops/runbooks/checkout.md
+  authored_at: '2026-03-01T09:00:00Z'
+  links:
+  - entity: otel.service.name=checkout
+    valid_from: '2026-03-01T09:00:00Z'
+  puts:
+  - at: '2026-03-01T09:00:00Z'
+    sections:
+    - label: Paging
+      origin: body
+      text: >-
+        Page the checkout on-call through the incident tool; escalate to payments if card authorisations
+        fail.
+    - label: Dashboards
+      origin: body
+      text: >-
+        Open the checkout overview, the payments dependency board and the error budget board.
+- ref: notion.page=pm-search-reindex
+  kind: postmortem
+  title: Search latency after a reindex
+  summary: Search p95 latency tripled for forty minutes during a scheduled reindex.
+  location: https://www.notion.so/pm-search-reindex
+  authored_at: '2026-04-10T09:00:00Z'
+  links:
+  - entity: otel.service.name=search
+    valid_from: '2026-04-10T09:00:00Z'
+  puts:
+  - at: '2026-04-10T09:00:00Z'
+    sections:
+    - label: Impact
+      origin: property
+      text: Search p95 latency rose from 180 ms to 600 ms; no errors were returned.
+    - label: Root cause
+      origin: body
+      text: >-
+        The nightly reindex ran during business hours and saturated disk throughput on the search nodes;
+        queries queued behind merges.

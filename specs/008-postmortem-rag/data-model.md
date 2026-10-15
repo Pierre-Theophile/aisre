@@ -69,7 +69,11 @@ Result: documents ranked by `knowledge/hybrid@1`, each with its best two section
 
 ```text
 fixtures/retrieval/<id>/
-├── manifest.yaml     # query text, entity scope, valid/observed instants, expected document, expected in_scope
+├── retrieval.yaml    # query text, entity scope, valid/observed instants, expected document, expected in_scope
 ├── documents.yaml    # documents, kinds, links (with validity), section versions (with known_from)
 └── vectors.jsonl     # model id, then one line per section digest and one for the query
 ```
+
+The query file is `retrieval.yaml`, not `manifest.yaml` (amended in PR 1): `fixture verify fixtures/*/`
+takes any directory with a `manifest.yaml` for a graph fixture. The format is described in
+`fixtures/retrieval/README.md`.
