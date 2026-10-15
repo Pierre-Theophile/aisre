@@ -316,12 +316,12 @@ section text.
   an equally matching in-scope postmortem always ranks above it.
 - **SC-005**: No graph event, log line or report contains section text; no stored section, recording or log
   contains a person's name or email or a planted canary secret.
-- **SC-008**: Swapping the embedding provider or the knowledge store for another shipped implementation
-  needs only a configuration change, and the conformance suite and retrieval evaluation pass on each.
 - **SC-006**: With no embedding provider configured, every investigation still completes, and its evidence chain
   states that retrieval was lexical only.
 - **SC-007**: A page edited in Notion is retrievable with its new text within 20 minutes at the default
   poll interval, at p95.
+- **SC-008**: Swapping the embedding provider or the knowledge store for another shipped implementation
+  needs only a configuration change, and the conformance suite and retrieval evaluation pass on each.
 
 ## Out of scope for this feature
 
