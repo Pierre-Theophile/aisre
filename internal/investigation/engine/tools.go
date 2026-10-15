@@ -312,8 +312,10 @@ var termTools = map[string]termTool{
 			"never a finding: a hypothesis resting only on one stays unconfirmed.",
 		properties: map[string]any{
 			"entity_refs": stringArray("The entities to scope retrieval to. " + entityDescription),
-			"query_terms": stringArray("The terms to match, lower-cased."),
-			"limit":       integer("How many documents, at most 20."),
+			"query_terms": stringArray("What to match: words, or the symptom in your own words as free text " +
+				"(\"checkout pods logged connection resets from the payments client\"); sections are matched by " +
+				"their words and, where an embedding model is configured, by meaning. At most 1,000 characters in all."),
+			"limit": integer("How many documents, at most 20."),
 		},
 		required: []string{"entity_refs", "query_terms"},
 	},

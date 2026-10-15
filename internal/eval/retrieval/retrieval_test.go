@@ -5,11 +5,17 @@ package retrieval_test
 import (
 	"context"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/Pierre-Theophile/aisre/internal/eval/retrieval"
+	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
+	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
+	kstore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 )
+
+func TestMain(m *testing.M) { pgtest.TestMain(m) }
 
 const corpusDir = "../../../fixtures/retrieval"
 
@@ -76,5 +82,43 @@ func TestAFixtureThatCannotGradeIsRefused(t *testing.T) {
 	write(retrieval.DocumentsFile, "documents: []\n")
 	if _, err := retrieval.Load(dir); err == nil || !strings.Contains(err.Error(), "not among the documents") {
 		t.Errorf("err = %v, want the missing expected document named", err)
+	}
+}
+
+// TestTheCorpusScoresTheSameOnEveryShippedStore is 008 T038 (SC-008): the same fixtures over the
+// PostgreSQL store, which `serve` uses by default, give exactly what they give over the memory
+// store. Swapping the store is configuration; the ranking is the worker's, so nothing may move.
+func TestTheCorpusScoresTheSameOnEveryShippedStore(t *testing.T) {
+	fixtures, err := retrieval.LoadAll(corpusDir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	memoryResults, _ := run(t, fixtures)
+	postgresResults, err := retrieval.Run(context.Background(), fixtures, retrieval.WithStore(
+		func(context.Context) (kstore.Store, error) { return postgres.NewKnowledgeStore(pgtest.Open(t)), nil }))
+	if err != nil {
+		t.Fatalf("run over postgres: %v", err)
+	}
+	if !reflect.DeepEqual(memoryResults, postgresResults) {
+		t.Errorf("the corpus scores differently over postgres:\n memory:   %+v\n postgres: %+v", memoryResults, postgresResults)
+	}
+	if failures := retrieval.Gate(retrieval.Summarise(postgresResults)); len(failures) > 0 {
+		t.Errorf("the gate fails over postgres: %v", failures)
+	}
+}
+
+// TestAFixtureWithoutVectorsFailsTheHybridGate: the hybrid gate is only a gate while every fixture
+// is replayed through its recorded vectors.
+func TestAFixtureWithoutVectorsFailsTheHybridGate(t *testing.T) {
+	t.Parallel()
+	fixtures, err := retrieval.LoadAll(corpusDir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	fixtures[0].Vectors = nil
+	_, aggregates := run(t, fixtures)
+	failures := retrieval.Gate(aggregates)
+	if len(failures) != 1 || !strings.Contains(failures[0], "1 of 9 fixtures carry no recorded vectors") {
+		t.Errorf("failures = %v", failures)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -451,6 +452,9 @@ func Validate(term *Term) error {
 	case *investigationv1.AlgebraTerm_KnowledgeSearch:
 		if len(t.KnowledgeSearch.GetEntityIds()) == 0 {
 			return badTerm(name, "names no entities; retrieval is scoped by the graph and an unscoped search would retrieve documents linked to nothing (FR-049)")
+		}
+		if n := utf8.RuneCountInString(strings.Join(t.KnowledgeSearch.GetQueryTerms(), " ")); n > MaxKnowledgeQueryChars {
+			return badTerm(name, fmt.Sprintf("carries %d characters of query text; the limit is %d (008 FR-030): say the symptom, not the log", n, MaxKnowledgeQueryChars))
 		}
 	case *investigationv1.AlgebraTerm_ChatMentions:
 		if t.ChatMentions.GetChannelRef() == "" {

@@ -22,6 +22,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/Pierre-Theophile/aisre/internal/embedding"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	kstore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/knowledge/memory"
@@ -33,6 +34,9 @@ import (
 const (
 	QueryFile     = "retrieval.yaml"
 	DocumentsFile = "documents.yaml"
+	// VectorsFile holds the vectors one named model produced for the fixture's sections and query,
+	// replayed by the recorded embedder for the hybrid mode (research R10).
+	VectorsFile = embedding.VectorsFile
 )
 
 // Fixture is one retrieval fixture.
@@ -44,6 +48,8 @@ type Fixture struct {
 	Query       Query     `yaml:"query"`
 	Expect      Expect    `yaml:"expect"`
 	Documents   Documents `yaml:"-"`
+	// Vectors is the fixture's recorded vectors; nil when it has no vectors.jsonl.
+	Vectors *embedding.Recorded `yaml:"-"`
 }
 
 // Query is what the investigation asks: the alert's words, its scope and its two instants.
@@ -116,8 +122,29 @@ func Load(dir string) (*Fixture, error) {
 	if err := f.Validate(); err != nil {
 		return nil, err
 	}
+	vectors, err := LoadVectors(dir)
+	if err != nil {
+		return nil, err
+	}
+	f.Vectors = vectors
 	return f, nil
 }
+
+// LoadVectors reads a directory's vectors.jsonl; nil, nil when there is none.
+func LoadVectors(dir string) (*embedding.Recorded, error) {
+	path := filepath.Join(dir, VectorsFile)
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	recorded, err := embedding.LoadRecorded(path)
+	if err != nil {
+		return nil, fmt.Errorf("retrieval: %w", err)
+	}
+	return recorded, nil
+}
+
+// QueryText is the text the fixture's search ranks by, as the knowledge worker joins it.
+func (f *Fixture) QueryText() string { return strings.Join(f.Query.Terms, " ") }
 
 // LoadAll reads every fixture under root: root itself when it is one, else its immediate
 // subdirectories that are, sorted.
@@ -247,14 +274,94 @@ func LoadDocuments(path string) (Documents, error) {
 // Store returns an in-memory knowledge store holding every put of every document, in order.
 func (d Documents) Store(ctx context.Context) (*memory.Store, error) {
 	store := memory.New()
+	if err := d.Fill(ctx, store); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+// Fill puts every put of every document into store, in order. Any conformant store will do: this
+// is what the evaluation runs the same fixtures over the memory and the PostgreSQL store with.
+func (d Documents) Fill(ctx context.Context, store kstore.Store) error {
 	for _, doc := range d.Documents {
 		for _, p := range doc.Puts {
 			if _, err := store.Put(ctx, doc.Ref, p.sections(), p.At); err != nil {
-				return nil, fmt.Errorf("retrieval: %s: %w", doc.Ref, err)
+				return fmt.Errorf("retrieval: %s: %w", doc.Ref, err)
 			}
 		}
 	}
-	return store, nil
+	return nil
+}
+
+// Texts is every section version's embedding text (knowledge.EmbeddingText), each once, in
+// document and put order.
+func (d Documents) Texts() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, doc := range d.Documents {
+		for _, p := range doc.Puts {
+			for _, s := range p.sections() {
+				text := kstore.EmbeddingText(s.Label, s.Text)
+				if !seen[text] {
+					seen[text] = true
+					out = append(out, text)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// IndexVectors gives every section version in store a vector from e: closed versions too, since a
+// replay pinned before a rewrite ranks the text that was current then.
+func (d Documents) IndexVectors(ctx context.Context, store kstore.Store, e kstore.Embedder) error {
+	byDigest := map[string]string{}
+	var digests []string
+	for _, doc := range d.Documents {
+		for _, p := range doc.Puts {
+			for _, s := range p.sections() {
+				digest := s.Digest()
+				if _, ok := byDigest[digest]; !ok {
+					byDigest[digest] = kstore.EmbeddingText(s.Label, s.Text)
+					digests = append(digests, digest)
+				}
+			}
+		}
+	}
+	if len(digests) == 0 {
+		return nil
+	}
+	texts := make([]string, len(digests))
+	for i, digest := range digests {
+		texts[i] = byDigest[digest]
+	}
+	vectors, err := e.Embed(ctx, texts, kstore.PurposeDocument)
+	if err != nil {
+		return fmt.Errorf("retrieval: embed the sections: %w", err)
+	}
+	out := make([]kstore.DigestVector, len(digests))
+	for i, digest := range digests {
+		out[i] = kstore.DigestVector{Digest: digest, Vector: vectors[i]}
+	}
+	return store.PutVectors(ctx, e.Model(), out)
+}
+
+// RecordVectors embeds every section version of documents and every query through e and writes
+// them as dir's vectors.jsonl (research R10). It is the only place an evaluation reaches a live
+// embedding provider, and it runs only when someone asks for a recording.
+func RecordVectors(ctx context.Context, dir string, documents Documents, queries []string, e kstore.Embedder) error {
+	recorder := embedding.NewRecorder(e)
+	if texts := documents.Texts(); len(texts) > 0 {
+		if _, err := recorder.Embed(ctx, texts, kstore.PurposeDocument); err != nil {
+			return fmt.Errorf("retrieval: %s: %w", dir, err)
+		}
+	}
+	if len(queries) > 0 {
+		if _, err := recorder.Embed(ctx, queries, kstore.PurposeQuery); err != nil {
+			return fmt.Errorf("retrieval: %s: %w", dir, err)
+		}
+	}
+	return recorder.WriteFile(filepath.Join(dir, VectorsFile))
 }
 
 func (p Put) sections() []kstore.Section {

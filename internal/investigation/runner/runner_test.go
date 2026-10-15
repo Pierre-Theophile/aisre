@@ -948,7 +948,10 @@ func TestAnUnconfiguredTelemetryBackendConcludesRatherThanFailing(t *testing.T) 
 		if err := rows.Scan(&workerName, &outcome); err != nil {
 			t.Fatalf("scan worker call: %v", err)
 		}
-		if workerName == "graph" {
+		if workerName == "graph" || workerName == "knowledge" {
+			// Not telemetry: the graph and the knowledge worker answer from the agent's own
+			// database, and the first wave's knowledge question finding nothing linked is a real
+			// `no_data` (008 FR-031).
 			continue
 		}
 		telemetryCalls++

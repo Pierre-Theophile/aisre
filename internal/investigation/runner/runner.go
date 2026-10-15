@@ -90,6 +90,11 @@ type Config struct {
 	// knowledge worker ranks those sections by what they say; when nil it ranks each candidate
 	// by its registered summary alone, as 007 did.
 	KnowledgeStore knowledgestore.Store
+	// KnowledgeEmbedder turns on hybrid retrieval over KnowledgeStore (008 FR-020); nil keeps it
+	// lexical only. KnowledgeReady says whether the store's vectors for its model are built
+	// (embedding.Indexer.Ready); nil means always.
+	KnowledgeEmbedder knowledgestore.Embedder
+	KnowledgeReady    func() bool
 	// Profiles are the budget profiles by name (budget.LoadProfiles). Empty means the published
 	// two.
 	Profiles map[string]budget.Profile
@@ -209,6 +214,9 @@ func New(cfg Config) (*Runner, error) {
 		var opts []knowledge.Option
 		if cfg.KnowledgeStore != nil {
 			opts = append(opts, knowledge.WithStore(cfg.KnowledgeStore))
+		}
+		if cfg.KnowledgeEmbedder != nil {
+			opts = append(opts, knowledge.WithEmbedder(cfg.KnowledgeEmbedder, cfg.KnowledgeReady))
 		}
 		if err := cfg.Workers.Register(knowledge.New(knowledge.GraphCorpus{Engine: query.NewEngine(cfg.Store)}, opts...)); err != nil {
 			return nil, fmt.Errorf("runner: register the knowledge worker: %w", err)

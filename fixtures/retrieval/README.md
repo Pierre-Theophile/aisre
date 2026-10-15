@@ -15,10 +15,15 @@ request.
 ```text
 <id>/
 ├── retrieval.yaml   # the query (terms, entity scope, valid and observed instants) and the expectation
-└── documents.yaml   # the documents: kind, title, registered summary, links with validity, section puts
+├── documents.yaml   # the documents: kind, title, registered summary, links with validity, section puts
+└── vectors.jsonl    # recorded embeddings of every section and the query, for the hybrid mode
 ```
 
-`vectors.jsonl` (recorded embeddings for the hybrid mode) arrives with the semantic path.
+`vectors.jsonl` starts with a header naming the model (`{model, provider, name, dimensions}`), then
+one line per text: `{purpose, sha256, vector}`, the vector base64 little-endian float32. Re-record it
+after changing a query or a section with
+`aisre eval retrieval fixtures/retrieval/ --record-vectors --model-config config/model.yaml`; a text
+with no recorded vector fails the run rather than falling back.
 
 `retrieval.yaml`:
 
@@ -51,6 +56,8 @@ The modes:
 - `summary_only`: no store; every document is matched on its title and registered summary, which is
   what 007 retrieved over. The baseline.
 - `lexical_only`: the store's sections, ranked lexically by `knowledge/hybrid@1`.
+- `hybrid`: the same, fused with the semantic ranking from the recorded vectors. The gate requires it
+  on every fixture, recall@3 ≥ 0.90, and no worse than `lexical_only` on either measure.
 
 ## Shapes
 

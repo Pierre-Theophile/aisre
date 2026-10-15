@@ -305,6 +305,34 @@ func TestConfigValidationRejections(t *testing.T) {
 			},
 			mustSay: "mistral publishes",
 		},
+		{
+			name: "an embedding provider nobody published",
+			mutate: func(c *model.Config) {
+				c.Embedding = &model.EmbeddingConfig{Provider: "pinecone", BaseURL: "http://localhost:8080/v1", Model: "m", Dimensions: 8}
+			},
+			mustSay: "the set is openai_compatible",
+		},
+		{
+			name: "an embedding block with no dimensions",
+			mutate: func(c *model.Config) {
+				c.Embedding = &model.EmbeddingConfig{Provider: "openai_compatible", BaseURL: "http://localhost:8080/v1", Model: "m"}
+			},
+			mustSay: "dimensions must be positive",
+		},
+		{
+			name: "an embedding base_url that is not a URL",
+			mutate: func(c *model.Config) {
+				c.Embedding = &model.EmbeddingConfig{Provider: "openai_compatible", BaseURL: "localhost:8080", Model: "m", Dimensions: 8}
+			},
+			mustSay: "is not an http(s) URL",
+		},
+		{
+			name: "an embedding block with no model",
+			mutate: func(c *model.Config) {
+				c.Embedding = &model.EmbeddingConfig{Provider: "openai_compatible", BaseURL: "http://localhost:11434/v1", Dimensions: 8}
+			},
+			mustSay: "embedding: model is required",
+		},
 	}
 
 	for _, tc := range tests {
@@ -392,4 +420,31 @@ func contains(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// TestEmbeddingBlockIsOptional is FR-027's configuration half: the block may be absent, and one
+// that names an unset key variable resolves to "not usable" rather than to an error.
+func TestEmbeddingBlockIsOptional(t *testing.T) {
+	cfg, err := model.LoadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Embedding == nil {
+		t.Fatal("the production configuration declares no embedding block")
+	}
+	if got := cfg.Embedding.ModelID().String(); got != "openai_compatible:mistral-embed@1024" {
+		t.Errorf("production embedding model = %q", got)
+	}
+	block := model.EmbeddingConfig{Provider: "openai_compatible", BaseURL: "http://localhost:11434/v1", Model: "nomic-embed-text", Dimensions: 768}
+	if _, ok := block.APIKey(); !ok {
+		t.Error("a block with no api_key_env is usable as it stands (a local server)")
+	}
+	block.APIKeyEnv = "AISRE_TEST_EMBEDDING_KEY_THAT_IS_NOT_SET"
+	if _, ok := block.APIKey(); ok {
+		t.Error("a block whose key variable is unset must resolve to lexical only")
+	}
+	t.Setenv(block.APIKeyEnv, "k")
+	if key, ok := block.APIKey(); !ok || key != "k" {
+		t.Error("the key variable is read")
+	}
 }
