@@ -76,6 +76,30 @@ type observedPage struct {
 	// Gone and GoneAt: a registered page the read no longer returned, and when its links end.
 	Gone   string    `json:"gone,omitempty"`
 	GoneAt time.Time `json:"gone_at,omitzero"`
+	// SectionsRead says the page's properties and body were read into Sections by this read (008
+	// research R6): only when its last_edited_time moved since the last such read. Sections is then
+	// the page's whole current set, already sanitised, and Skipped what was left out and why.
+	SectionsRead bool             `json:"sections_read,omitempty"`
+	Sections     []sectionPart    `json:"sections,omitempty"`
+	Skipped      []skippedSection `json:"skipped_sections,omitempty"`
+	// sectionsReadAt is when they were read; the poller's state keeps it, a payload does not.
+	sectionsReadAt time.Time
+}
+
+// sectionPart is one part of one section of a page (008 FR-011, FR-012).
+type sectionPart struct {
+	Label  string `json:"label"`
+	Part   int    `json:"part,omitempty"`
+	Text   string `json:"text"`
+	Origin string `json:"origin"`
+}
+
+// skippedSection is something of a page that was not indexed, with its reason (contracts §6). Count
+// is how many blocks of one unsupported type.
+type skippedSection struct {
+	Label  string `json:"label,omitempty"`
+	Reason string `json:"reason"`
+	Count  int    `json:"count,omitempty"`
 }
 
 // part is one named summary property's text.

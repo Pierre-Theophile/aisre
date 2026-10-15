@@ -29,10 +29,12 @@ func secret(t *testing.T) notionx.Secret {
 	return s
 }
 
-// TestSurfaceIsTheFivePublishedReads is FR-001 in its cheapest form.
-func TestSurfaceIsTheFivePublishedReads(t *testing.T) {
+// TestSurfaceIsTheSixPublishedReads is FR-001 in its cheapest form. Feature 008 added the sixth, a
+// page body's blocks.
+func TestSurfaceIsTheSixPublishedReads(t *testing.T) {
 	want := []feeder.ReadOperation{
 		notionx.OpDatabase, notionx.OpPage, notionx.OpPageProperty, notionx.OpUsersMe, notionx.OpQueryDataSource,
+		notionx.OpBlockChildren,
 	}
 	got := notionx.Surface.Operations()
 	slices.Sort(want)
@@ -44,7 +46,7 @@ func TestSurfaceIsTheFivePublishedReads(t *testing.T) {
 	}
 	for _, write := range []feeder.ReadOperation{
 		"POST /v1/pages", "PATCH /v1/pages/{id}", "PATCH /v1/blocks/{id}/children", "POST /v1/comments",
-		"DELETE /v1/blocks/{id}", "POST /v1/search", "GET /v1/blocks/{id}/children",
+		"DELETE /v1/blocks/{id}", "POST /v1/search", "GET /v1/blocks/{id}", "GET /v1/comments",
 	} {
 		if _, err := notionx.Surface.Issuable(write); err == nil {
 			t.Errorf("%s is issuable", write)
@@ -194,5 +196,62 @@ func TestPropertyItemsPaginate(t *testing.T) {
 	prop, err := c.PropertyItems(context.Background(), "p1", "sv", nil)
 	if err != nil || !slices.Equal(prop.Values(), []string{"r1", "r2"}) || calls != 2 {
 		t.Errorf("items = %v, %v after %d call(s)", prop.Values(), err, calls)
+	}
+}
+
+// TestBlockChildrenReadsTextAndNoPerson is research R6's read: text-bearing blocks keep their plain
+// text with user mentions dropped, a table row joins its cells, a synced block from another page is
+// marked, and a block's authors are never decoded.
+func TestBlockChildrenReadsTextAndNoPerson(t *testing.T) {
+	c := twin(t, func(w http.ResponseWriter, r *http.Request, _ map[string]any) {
+		if r.URL.Path != "/v1/blocks/p1/children" || r.URL.Query().Get("page_size") != "100" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL)
+		}
+		if r.URL.Query().Get("start_cursor") == "" {
+			_, _ = w.Write([]byte(`{"object":"list","results":[` +
+				`{"object":"block","id":"b1","type":"heading_2","has_children":false,` +
+				`"created_by":{"object":"user","id":"sreagentcanary0c4e7a19"},` +
+				`"heading_2":{"rich_text":[{"type":"text","plain_text":"Signals"}]}},` +
+				`{"object":"block","id":"b2","type":"paragraph","has_children":false,"paragraph":{"rich_text":[` +
+				`{"type":"text","plain_text":"p99 over 4s, paged "},{"type":"mention","plain_text":"@Dana","mention":{"type":"user"}}]}},` +
+				`{"object":"block","id":"b3","type":"toggle","has_children":true,"toggle":{"rich_text":[{"type":"text","plain_text":"Details"}]}}` +
+				`],"has_more":true,"next_cursor":"c2"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"object":"list","results":[` +
+			`{"object":"block","id":"b4","type":"table_row","has_children":false,"table_row":{"cells":[` +
+			`[{"type":"text","plain_text":"14:02"}],[{"type":"text","plain_text":"page fired"}]]}},` +
+			`{"object":"block","id":"b5","type":"synced_block","has_children":true,"synced_block":{"synced_from":{"block_id":"x"}}},` +
+			`{"object":"block","id":"b6","type":"image","has_children":false,"image":{"type":"external","external":{"url":"https://x"}}}` +
+			`],"has_more":false,"next_cursor":null}`))
+	})
+	first, err := c.BlockChildren(context.Background(), "p1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Blocks) != 3 || !first.HasMore || first.NextCursor != "c2" {
+		t.Fatalf("first page = %+v", first)
+	}
+	if got := first.Blocks[1].Text(); got != "p99 over 4s, paged" {
+		t.Errorf("paragraph text = %q; the user mention should be dropped", got)
+	}
+	if !first.Blocks[2].HasChildren || first.Blocks[2].Text() != "Details" {
+		t.Errorf("toggle = %+v", first.Blocks[2])
+	}
+	second, err := c.BlockChildren(context.Background(), "p1", "c2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := second.Blocks[0].Text(); got != "14:02 | page fired" {
+		t.Errorf("table row = %q", got)
+	}
+	if !second.Blocks[1].SyncedFrom {
+		t.Error("a synced block from another page is not marked")
+	}
+	if second.Blocks[2].Text() != "" {
+		t.Errorf("an image has text %q", second.Blocks[2].Text())
+	}
+	if strings.Contains(fmt.Sprintf("%+v", first), "sreagentcanary") {
+		t.Error("a block's author was decoded")
 	}
 }

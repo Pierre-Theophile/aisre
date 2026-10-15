@@ -33,6 +33,8 @@ const (
 	notionIncident = repoRoot + "/fixtures/incidents/knowledge-notion-01"
 	// The same incident with no Notion postmortems in its graph.
 	knowledgeScopeIncident = repoRoot + "/fixtures/incidents/knowledge-scope-01"
+	// knowledge-notion-01's graph with the sections twin 02 records for its postmortems.
+	notionSectionsIncident = repoRoot + "/fixtures/incidents/knowledge-notion-02"
 
 	citedPostmortem = "notion.page=c3000000-0000-4000-8000-000000000001"
 	citedLocation   = "https://www.notion.so/c3000000000040008000000000000001"
@@ -66,7 +68,8 @@ func notionHarness(t *testing.T, dir string) (*eval.Harness, *postgres.Store) {
 // knowledgeSearch asks the knowledge worker, over the replayed graph, the knowledge_search a
 // predicate names, at the question's instant, and returns the answer as the citation a run
 // would hold.
-func knowledgeSearch(t *testing.T, store *postgres.Store, predicate fixture.EvidencePredicate, at time.Time) (eval.Citation, *knowledgeAnswer) {
+func knowledgeSearch(t *testing.T, store *postgres.Store, predicate fixture.EvidencePredicate, at time.Time,
+	opts ...knowledge.Option) (eval.Citation, *knowledgeAnswer) {
 	t.Helper()
 	args, ok := predicate.Term["knowledge_search"].(map[string]any)
 	if !ok {
@@ -77,7 +80,7 @@ func knowledgeSearch(t *testing.T, store *postgres.Store, predicate fixture.Evid
 	request.ValidAt = timestamppb.New(at)
 	request.ObservedAt = timestamppb.New(at)
 
-	w := knowledge.New(knowledge.GraphCorpus{Engine: query.NewEngine(store)})
+	w := knowledge.New(knowledge.GraphCorpus{Engine: query.NewEngine(store)}, opts...)
 	resp, err := w.Call(context.Background(), worker.Request{
 		Capability: engine.TermKnowledgeSearch, Mode: worker.ModeRecorded, Algebra: request,
 	})
@@ -279,5 +282,53 @@ func TestTheScopeFixturesKnowledgePredicatesHold(t *testing.T) {
 	}
 	if checked != 2 {
 		t.Errorf("%d knowledge predicates checked, want 2", checked)
+	}
+}
+
+// TestASymptomPastTheSummaryIsFoundBySection is 008 T027 (US1 scenario 1): the alert's symptoms
+// appear in the May postmortem only in its "Signals / Symptoms" section, past character 600, and
+// the investigation's knowledge search cites it in the top three with that section, lexical only.
+// Without the sections, 007's summary cannot find it.
+func TestASymptomPastTheSummaryIsFoundBySection(t *testing.T) {
+	harness, store := notionHarness(t, notionSectionsIncident)
+	sections, err := eval.FixtureKnowledgeStore(context.Background(), notionSectionsIncident)
+	if err != nil || sections == nil {
+		t.Fatalf("the fixture's knowledge store: %v", err)
+	}
+	asked := harness.Manifest().Incident.Question.FiredAt
+	var checked int
+	for _, predicate := range harness.Manifest().Incident.GroundTruth.DecisiveEvidence {
+		if _, ok := predicate.Term["knowledge_search"]; !ok {
+			continue
+		}
+		checked++
+		citation, answer := knowledgeSearch(t, store, predicate, asked, knowledge.WithStore(sections))
+		if result := eval.SatisfiedBy(predicate, []eval.Citation{citation}); !result.Satisfied {
+			t.Errorf("%s %s %v is not satisfied: %s", result.FieldPath, result.Op, result.Value, result.Detail)
+		}
+		found := -1
+		for i, item := range answer.items {
+			if item.GetDocumentId() == citedPostmortem {
+				found = i
+				if item.GetSectionLabel() != "Signals / Symptoms" || !item.GetInScope() ||
+					!strings.Contains(item.GetMatchedText(), "ECONNRESET") {
+					t.Errorf("the citation: %v", item)
+				}
+			}
+		}
+		if found < 0 || found > 2 {
+			t.Errorf("the May postmortem is at %d, want the top three: %v", found, answer.items)
+		}
+
+		// The same search over the summaries alone finds nothing to cite.
+		_, without := knowledgeSearch(t, store, predicate, asked)
+		for _, item := range without.items {
+			if item.GetDocumentId() == citedPostmortem && item.GetSectionLabel() != "" {
+				t.Errorf("without sections the May postmortem still matched on %q", item.GetSectionLabel())
+			}
+		}
+	}
+	if checked != 3 {
+		t.Errorf("%d knowledge predicates checked, want 3", checked)
 	}
 }

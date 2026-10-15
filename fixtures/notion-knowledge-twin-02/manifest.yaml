@@ -1,0 +1,37 @@
+# Recorded fixture. See fixtures/README.md and contracts/fixture-format.md.
+#
+# Add a `queries:` list naming the reads whose answers golden/ must hold, then run
+# `aisre fixture record` to write them and `aisre fixture verify` to check them.
+id: notion-knowledge-twin-02
+family: notion-knowledge
+description: 'A synthetic postmortem database read over the afternoon of 2026-09-01, with sections (008). `Checkout 5xx after a payments rollout` (May, checkout and payments) carries four indexed properties and a body by heading: its `Signals / Symptoms` names ECONNRESET and upstream_reset_before_response_started only after its 600th character; its `Timeline` is split into two parts; a toggle''s child is read; an embed, an image and a child page are reported unsupported; a `Contact` heading holding only an e-mail address is skipped as emptied by sanitisation; e-mail addresses, a user mention and a secret planted in a property, a heading, a paragraph and a toggle are redacted. At 14:50 a follow-up is added to its table and its sections are read and sent again. `Reporting nightly` concerns reporting only. `Checkout 5xx on 2026-09-01` is written at 14:35 with the same symptoms. Unedited pages are not read again. Synthetic structural twin: no identifier is derived from any organisation.'
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: false
+events: events.jsonl
+sources:
+    - source_id: notion:twin
+      kind: notion
+      ordering: none
+      reordering_window: 0s
+clock:
+    start: 2026-09-01T12:59:00Z
+    end: 2026-09-01T16:00:00Z
+
+queries:
+  # 14:32, the alert: the May postmortem concerns checkout and payments.
+  - name: checkout-at-the-alert
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    observed_at: 2026-09-01T15:30:00Z
+    hops: 1
+    direction: both
+  # 15:10: the postmortem written at 14:35 concerns checkout too.
+  - name: checkout-after-the-alert
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T15:10:00Z
+    observed_at: 2026-09-01T15:30:00Z
+    hops: 1
+    direction: both

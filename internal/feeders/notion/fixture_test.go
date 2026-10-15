@@ -69,12 +69,17 @@ databases:
       Payments: otel.service.name=payments
     summary_properties: [Summary, Root cause]
     authored_property: Incident date
+    # Twin 01 is 007's: the registration alone. Twin 02 reads the sections.
+    index_properties: []
+    index_body: false
   - database: ` + dbRunbooks + `
     kind: runbook
     entity_property: Service
     entities:
       Checkout: otel.service.name=checkout
     summary_properties: [Purpose]
+    index_properties: []
+    index_body: false
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -98,6 +103,8 @@ type twinWorld struct {
 	missing   map[string]bool
 	partial   map[string]bool
 	items     map[string]notionx.Property // page/property → the whole value
+	blocks    map[string][]notionx.Block  // block or page id → its children
+	databases map[string]notionx.Database // further databases, for twin 02
 	mutations []mutation
 	calls     map[string]int
 }
@@ -129,6 +136,9 @@ func (w *twinWorld) Database(_ context.Context, id string) (notionx.Database, er
 		return notionx.Database{ID: id, Title: "Postmortems", DataSources: []notionx.DataSourceRef{{ID: dsPostmortems}}}, nil
 	case dbRunbooks:
 		return notionx.Database{ID: id, Title: "Runbooks", DataSources: []notionx.DataSourceRef{{ID: dsRunbooks}}}, nil
+	}
+	if db, ok := w.databases[id]; ok {
+		return db, nil
 	}
 	return notionx.Database{}, &notionx.APIError{Op: notionx.OpDatabase, Status: 404, Code: "object_not_found"}
 }
@@ -169,6 +179,24 @@ func (w *twinWorld) Page(_ context.Context, id string) (notionx.Page, error) {
 func (w *twinWorld) PropertyItems(_ context.Context, pageID, propertyID string, _ func(notionx.Property) bool) (notionx.Property, error) {
 	w.calls["property"]++
 	return w.items[pageID+"/"+propertyID], nil
+}
+
+// BlockChildren pages a block's children 100 at a time, as Notion does.
+func (w *twinWorld) BlockChildren(_ context.Context, id, cursor string) (notionx.BlockPage, error) {
+	w.calls["blocks"]++
+	children := w.blocks[id]
+	start := 0
+	if cursor != "" {
+		if _, err := fmt.Sscanf(cursor, "%d", &start); err != nil {
+			return notionx.BlockPage{}, err
+		}
+	}
+	end := min(start+100, len(children))
+	out := notionx.BlockPage{Blocks: children[start:end]}
+	if end < len(children) {
+		out.HasMore, out.NextCursor = true, fmt.Sprint(end)
+	}
+	return out, nil
 }
 
 func text(s string) []notionx.RichText { return []notionx.RichText{{Type: "text", PlainText: s}} }
@@ -217,13 +245,15 @@ func pmPage(id, title string, created, edited time.Time, props map[string]notion
 
 func newTwin() *twinWorld {
 	w := &twinWorld{
-		clock:    &twinClock{now: t0},
-		pages:    map[string]*notionx.Page{},
-		listedIn: map[string][]string{},
-		missing:  map[string]bool{},
-		partial:  map[string]bool{},
-		items:    map[string]notionx.Property{},
-		calls:    map[string]int{},
+		clock:     &twinClock{now: t0},
+		pages:     map[string]*notionx.Page{},
+		listedIn:  map[string][]string{},
+		missing:   map[string]bool{},
+		partial:   map[string]bool{},
+		items:     map[string]notionx.Property{},
+		blocks:    map[string][]notionx.Block{},
+		databases: map[string]notionx.Database{},
+		calls:     map[string]int{},
 	}
 	may14 := time.Date(2026, 5, 14, 11, 0, 0, 0, time.UTC)
 

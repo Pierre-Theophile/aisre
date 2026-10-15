@@ -39,6 +39,7 @@ type Reader interface {
 	QueryDataSource(ctx context.Context, id string, filter notionx.QueryFilter, cursor string) (notionx.QueryPage, error)
 	Page(ctx context.Context, id string) (notionx.Page, error)
 	PropertyItems(ctx context.Context, pageID, propertyID string, stop func(notionx.Property) bool) (notionx.Property, error)
+	BodyReader
 }
 
 // Overlap is how far before the watermark an incremental poll reads, because Notion rounds
@@ -268,6 +269,7 @@ func (p *Poller) read(ctx context.Context, binding int, ds string, reconcile boo
 				obs.Conflict = p.opts.Config.Databases[holder].Database
 			} else {
 				claimed[id] = binding
+				p.sections(ctx, b, page, &obs, next, at)
 				p.commit(next, binding, ds, obs, at)
 			}
 			out.Pages = append(out.Pages, obs)
@@ -369,12 +371,68 @@ func (p *Poller) observe(ctx context.Context, b *Binding, page notionx.Page, st 
 	return obs, firstErr
 }
 
+// sections reads a registered page's indexed properties and body into obs (008 research R6), when
+// its last_edited_time moved since the last such read. A read that fails leaves obs without
+// sections, so the next cycle tries again; the page's registration is unaffected.
+func (p *Poller) sections(ctx context.Context, b *Binding, page notionx.Page, obs *observedPage, st *State, at time.Time) {
+	if !b.Sections() {
+		return
+	}
+	if refs, _ := b.Map(obs.Values); len(refs) == 0 {
+		return
+	}
+	// `--check` reads every page's sections: it is how an operator sees what is indexed.
+	if prev, ok := st.Pages[obs.ID]; ok && !p.opts.ReadOnlyState && sectionsCurrent(prev, obs.Edited) {
+		return
+	}
+	var props []namedText
+	for _, name := range b.Indexed() {
+		prop := page.Properties[name]
+		if prop.Truncated() && prop.ID != "" {
+			full, err := p.opts.Client.PropertyItems(ctx, page.ID, prop.ID, nil)
+			if err != nil {
+				p.logger.WarnContext(ctx, "notion: a page's sections could not be read; the next cycle retries",
+					"page", obs.ID, "error", gapOf(err))
+				return
+			}
+			prop = full
+		}
+		if t := prop.Text(); t != "" {
+			props = append(props, namedText{Name: name, Text: t})
+		}
+	}
+	var (
+		blocks    []notionx.Block
+		truncated bool
+	)
+	if b.BodyIndexed() {
+		var err error
+		if blocks, truncated, err = readBody(ctx, p.opts.Client, page.ID); err != nil {
+			p.logger.WarnContext(ctx, "notion: a page's body could not be read; the next cycle retries",
+				"page", obs.ID, "error", gapOf(err))
+			return
+		}
+	}
+	obs.Sections, obs.Skipped = buildSections(props, blocks, truncated)
+	obs.SectionsRead = true
+	obs.sectionsReadAt = at
+}
+
+// sectionsCurrent reports a page whose sections were read at its current edit. Notion rounds
+// last_edited_time to the minute, so a read inside the edit's minute may have missed a later edit
+// in the same minute: such a read is current only once the minute has passed.
+func sectionsCurrent(prev PageState, edited time.Time) bool {
+	return !prev.SectionsEdited.IsZero() && prev.SectionsEdited.Equal(edited) &&
+		!prev.SectionsReadAt.Before(edited.Add(time.Minute))
+}
+
 // commit records what a payload page will leave registered.
 func (p *Poller) commit(next *State, binding int, ds string, obs observedPage, at time.Time) {
 	b := &p.opts.Config.Databases[binding]
 	refs, _ := b.Map(obs.Values)
+	prev, had := next.Pages[obs.ID]
 	if len(refs) == 0 {
-		if prev, ok := next.Pages[obs.ID]; ok {
+		if had {
 			prev.Refs, prev.LastSeen = nil, at
 			next.Pages[obs.ID] = prev
 		}
@@ -385,7 +443,12 @@ func (p *Poller) commit(next *State, binding int, ds string, obs observedPage, a
 		spelled = append(spelled, graph.RefFromProto(r).String())
 	}
 	sort.Strings(spelled)
-	next.Pages[obs.ID] = PageState{Database: b.Database, DataSource: ds, Refs: spelled, LastSeen: at}
+	st := PageState{Database: b.Database, DataSource: ds, Refs: spelled, LastSeen: at,
+		SectionsEdited: prev.SectionsEdited, SectionsReadAt: prev.SectionsReadAt}
+	if obs.SectionsRead {
+		st.SectionsEdited, st.SectionsReadAt = obs.Edited, obs.sectionsReadAt
+	}
+	next.Pages[obs.ID] = st
 }
 
 // absent reads each registered page of the data source the list did not return.
@@ -421,6 +484,8 @@ func (p *Poller) absent(ctx context.Context, ds string, listed map[string]bool, 
 		obs.Title = ""
 		out = append(out, obs)
 		st.Refs = nil
+		// The feeder closes a gone page's sections; a page that comes back is read again.
+		st.SectionsEdited, st.SectionsReadAt = time.Time{}, time.Time{}
 		next.Pages[id] = st
 	}
 	return out, nil
@@ -468,6 +533,10 @@ type PageState struct {
 	DataSource string    `json:"data_source"`
 	Refs       []string  `json:"refs,omitempty"`
 	LastSeen   time.Time `json:"last_seen"`
+	// SectionsEdited is the last_edited_time the page's sections were last read at, and
+	// SectionsReadAt when (008 research R6): an unedited page's body is not read again.
+	SectionsEdited time.Time `json:"sections_edited,omitzero"`
+	SectionsReadAt time.Time `json:"sections_read_at,omitzero"`
 }
 
 // LoadState reads a state file; a missing one is an empty state.

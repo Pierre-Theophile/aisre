@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -25,7 +26,7 @@ import (
 // `feed notion` (007 US3, US5; contracts/notion-connector.md §3–§5, docs/connectors/notion.md).
 //
 // Two credentials: the integration secret ($SRE_AGENT_NOTION_TOKEN) reads the databases the operator
-// named, through the five published operations and nothing else; the graph token (--token /
+// named, through the six published operations and nothing else; the graph token (--token /
 // $SRE_AGENT_TOKEN) ingests for source `notion:<workspace>`. Before any call, the configuration must
 // acknowledge `notion.capabilities` (exit 3 otherwise), and the integration's workspace must be the
 // configured label.
@@ -55,8 +56,10 @@ func newFeedNotionCommand(global *globalOptions) *cobra.Command {
 		Short: "Register the postmortems and runbooks of named Notion databases as knowledge",
 		Long: "Reads the Notion databases named in --config and registers each page whose entity\n" +
 			"property maps to a graph entity as a KNOWLEDGE_DOC with one CONCERNS edge per entity, so\n" +
-			"an investigation can cite it. The page body is never read; the title and up to three\n" +
-			"named summary properties are.\n\n" +
+			"an investigation can cite it. The title and up to three named summary properties are\n" +
+			"registered with it; the named index_properties and the page body, by heading, are sent\n" +
+			"as sections to the agent's knowledge store, sanitised, so a search finds a page by what\n" +
+			"it says. A body is read again only when the page was edited.\n\n" +
 			"Every poll_interval it reads the pages edited since the last poll; at start and every\n" +
 			"reconcile_every it lists every page and ends the links of the pages that left.\n\n" +
 			"The integration secret is read from $" + EnvNotionToken + ". Notion does not report an\n" +
@@ -64,7 +67,8 @@ func newFeedNotionCommand(global *globalOptions) *cobra.Command {
 			"(created with Read content only), or the command exits 3 before any call.\n\n" +
 			"--check reads every configured database once and prints, per database, its data sources,\n" +
 			"which configured properties were found, the pages registered and each page that was not,\n" +
-			"with the reason; it sends nothing to the graph.\n\n" +
+			"with the reason, and per page the sections that would be indexed (label, origin, size)\n" +
+			"and what was skipped and why, never their text; it sends nothing to the graph.\n\n" +
 			"See docs/connectors/notion.md.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -239,6 +243,35 @@ func renderNotionReport(cmd *cobra.Command, r notionfeeder.Report) {
 	}
 }
 
+// renderNotionSections prints what was indexed of each page whose sections were read (contracts
+// §6, 008 FR-040): per page, one line per section with its origin and size, then what was skipped
+// and why. Never section text.
+func renderNotionSections(cmd *cobra.Command, d notionfeeder.DatabaseReport) {
+	out := cmd.OutOrStdout()
+	ids := make([]string, 0, len(d.Sections))
+	for id := range d.Sections {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		a, b := d.Sections[ids[i]], d.Sections[ids[j]]
+		if a.Title != b.Title {
+			return a.Title < b.Title
+		}
+		return ids[i] < ids[j]
+	})
+	fmt.Fprintf(out, "  sections read: %d page(s)\n", len(ids))
+	for _, id := range ids {
+		page := d.Sections[id]
+		fmt.Fprintf(out, "    %q: %d section(s)\n", page.Title, len(page.Sections))
+		for _, line := range page.Sections {
+			fmt.Fprintf(out, "      %s\n", line)
+		}
+		for _, line := range page.Skipped {
+			fmt.Fprintf(out, "      skipped %s\n", line)
+		}
+	}
+}
+
 // renderNotionCheck prints `--check` (contracts §6, spec US5): what the integration's capabilities
 // rest on, the workspace, and per database its data sources, the configured properties found, the
 // pages registered and each page not registered with its reason. Titles are printed; summaries and
@@ -273,9 +306,19 @@ func renderNotionCheck(cmd *cobra.Command, cfg *notionfeeder.Config, configPath,
 		for _, name := range b.SummaryProperties {
 			property("summary", name)
 		}
+		for _, name := range b.Indexed() {
+			if !slices.Contains(b.SummaryProperties, name) {
+				property("indexed", name)
+			}
+		}
 		if b.AuthoredProperty != "" {
 			property("authored", b.AuthoredProperty)
 		}
+		body := "indexed by heading"
+		if !b.BodyIndexed() {
+			body = "not indexed (index_body: false)"
+		}
+		fmt.Fprintf(out, "  page bodies: %s\n", body)
 		printSorted := func(header string, lines []string) {
 			fmt.Fprintf(out, "  %s: %d\n", header, len(lines))
 			sort.Strings(lines)
@@ -292,6 +335,7 @@ func renderNotionCheck(cmd *cobra.Command, cfg *notionfeeder.Config, configPath,
 		}
 		printSorted("registered", registered)
 		printSorted("not registered", skipped)
+		renderNotionSections(cmd, d)
 		fmt.Fprintf(out, "  ended (trashed, moved or deleted): %d\n", d.Gone)
 		fmt.Fprintf(out, "  outside the configured databases: %d\n", d.Outside())
 	}

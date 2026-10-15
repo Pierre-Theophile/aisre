@@ -178,6 +178,12 @@ func TestFeedNotionCheckAgainstNotionWritesNothing(t *testing.T) {
 				page("c1000000-0000-4000-8000-000000000001", ds, "Checkout outage", "Checkout")+","+
 				page("c1000000-0000-4000-8000-000000000002", ds, "Search outage", "Search")+","+
 				page("c1000000-0000-4000-8000-000000000003", linkedDS, "Linked view page", "Checkout")+`]}`)
+		case "GET /v1/blocks/c1000000-0000-4000-8000-000000000001/children",
+			"GET /v1/blocks/c1000000-0000-4000-8000-000000000003/children":
+			// Each registered page's body (008): read even when an earlier run read it, since
+			// --check shows what is indexed.
+			_, _ = io.WriteString(w, `{"object":"list","has_more":false,"results":[{"object":"block","id":"b1",`+
+				`"type":"paragraph","has_children":false,"paragraph":{"rich_text":[{"type":"text","plain_text":"pool exhausted"}]}}]}`)
 		default:
 			t.Errorf("--check issued %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -201,7 +207,9 @@ func TestFeedNotionCheckAgainstNotionWritesNothing(t *testing.T) {
 		"registered: 2",
 		`"Search outage": unmapped value Search`,
 		"outside the configured databases: 1",
-		"notion budget: 3 call(s)",
+		"sections read: 2 page(s)",
+		"Body (body, 14 chars)",
+		"notion budget: 5 call(s)",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("--check does not say %q:\n%s", want, stdout)
@@ -217,5 +225,35 @@ func TestFeedNotionCheckRecordsNothing(t *testing.T) {
 		writeNotionConfig(t, "acknowledge_read_only: [notion.capabilities]"), "--check", "--record", t.TempDir())
 	if code != ExitUsage || !strings.Contains(stderr, "nothing for --record") {
 		t.Errorf("exit %d: %s", code, stderr)
+	}
+}
+
+// TestFeedNotionCheckPrintsSections is 008 T028 (US5, contracts §6): over twin 02's recording,
+// `--check` prints per page each section's label, origin and size, and each thing skipped with its
+// reason, and never a section's text. The whole output is a golden; regenerate it with
+// SRE_AGENT_GEN_FIXTURES=1.
+func TestFeedNotionCheckPrintsSections(t *testing.T) {
+	stdout, stderr, code := run(t, t.Context(), "feed", "notion", "--config", "testdata/notion-twin-02.yaml", "--check",
+		"--replay", "../../fixtures/notion-knowledge-twin-02")
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s\n%s", code, stderr, stdout)
+	}
+	golden := filepath.Join("testdata", "notion-twin-02-check.golden")
+	if os.Getenv("SRE_AGENT_GEN_FIXTURES") != "" {
+		if err := os.WriteFile(golden, []byte(stdout), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stdout != string(want) {
+		t.Errorf("--check output differs from %s:\n%s", golden, stdout)
+	}
+	for _, text := range []string{"ECONNRESET", "on-call engineer", "Raise the pool", "rev7", "[redacted] was rotated"} {
+		if strings.Contains(stdout, text) {
+			t.Errorf("--check printed section text (%q)", text)
+		}
 	}
 }

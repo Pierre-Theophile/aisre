@@ -4,6 +4,7 @@ package emit
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge/memory"
 )
 
 // MemoryEmitter is a graph that only remembers (contracts/feeder-sdk.md §Recording and
@@ -40,9 +43,24 @@ type MemoryEmitter struct {
 	rejected []*graphv1.IngestResult
 	seenKeys map[string]bool
 	flushes  int
+	sections *memory.Store
+	puts     []SectionsPut
 }
 
-var _ feeder.Emitter = (*MemoryEmitter)(nil)
+var (
+	_ feeder.Emitter         = (*MemoryEmitter)(nil)
+	_ feeder.SectionsEmitter = (*MemoryEmitter)(nil)
+)
+
+// SectionsPut is one PutSections call a MemoryEmitter received.
+type SectionsPut struct {
+	DocumentRef string
+	Sections    []knowledge.Section
+	// AfterEvents is how many events had been accepted when the sections arrived, so that a test can
+	// assert a feeder sends a document's sections after its events.
+	AfterEvents int
+	Result      knowledge.PutResult
+}
 
 // MemoryOption configures a MemoryEmitter.
 type MemoryOption func(*MemoryEmitter)
@@ -66,6 +84,7 @@ func NewMemoryEmitter(desc feeder.Description, opts ...MemoryOption) *MemoryEmit
 		strict:   true,
 		now:      func() time.Time { return time.Now().UTC() },
 		seenKeys: map[string]bool{},
+		sections: memory.New(),
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -157,6 +176,36 @@ func (m *MemoryEmitter) Flush(context.Context) error {
 	return nil
 }
 
+// PutSections validates and keeps a document's sections in an in-memory knowledge store, refusing
+// what the server would: invalid sections, and a document outside the emitter's source's namespace.
+func (m *MemoryEmitter) PutSections(ctx context.Context, documentRef string, sections []knowledge.Section) (knowledge.PutResult, error) {
+	if !knowledge.OwnsDocument(m.desc.SourceID, documentRef) {
+		return knowledge.PutResult{}, fmt.Errorf("emit: source %q does not own document %q", m.desc.SourceID, documentRef)
+	}
+	if err := knowledge.ValidateFeederSections(sections); err != nil {
+		return knowledge.PutResult{}, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result, err := m.sections.Put(ctx, documentRef, sections, m.now())
+	if err != nil {
+		return knowledge.PutResult{}, err
+	}
+	m.puts = append(m.puts, SectionsPut{DocumentRef: documentRef, Sections: append([]knowledge.Section(nil), sections...),
+		AfterEvents: len(m.events), Result: result})
+	return result, nil
+}
+
+// SectionsPuts returns the PutSections calls, in call order.
+func (m *MemoryEmitter) SectionsPuts() []SectionsPut {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]SectionsPut(nil), m.puts...)
+}
+
+// KnowledgeStore is the in-memory store the sections were put in.
+func (m *MemoryEmitter) KnowledgeStore() *memory.Store { return m.sections }
+
 // Events returns the accepted events, in emit order. A duplicate is not among them: it was
 // answered DUPLICATE_NOOP and changed nothing, exactly as the graph would have.
 func (m *MemoryEmitter) Events() []*graphv1.EventEnvelope {
@@ -196,4 +245,6 @@ func (m *MemoryEmitter) Reset() {
 	m.rejected = nil
 	m.seenKeys = map[string]bool{}
 	m.flushes = 0
+	m.sections = memory.New()
+	m.puts = nil
 }

@@ -1,0 +1,15 @@
+# The configuration fixtures/notion-knowledge-twin-02 was recorded under (internal/feeders/notion/twin02_test.go).
+workspace: twin
+principal: oidc:operator-twin
+acknowledge_read_only: [notion.capabilities]
+databases:
+  - database: 4e5f6071-8293-44a4-b5c6-d7e8f90a1b2c
+    kind: postmortem
+    entity_property: Services
+    entities:
+      Checkout: otel.service.name=checkout
+      Payments: otel.service.name=payments
+      Reporting: otel.service.name=reporting
+    summary_properties: [Summary]
+    index_properties: [Summary, Signals / Symptoms, Root cause, Resolution]
+    authored_property: Incident date

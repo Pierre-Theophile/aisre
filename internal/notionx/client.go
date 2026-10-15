@@ -47,6 +47,7 @@ const (
 	OpQueryDataSource feeder.ReadOperation = "POST /v1/data_sources/{id}/query"
 	OpPage            feeder.ReadOperation = "GET /v1/pages/{id}"
 	OpPageProperty    feeder.ReadOperation = "GET /v1/pages/{id}/properties/{property_id}"
+	OpBlockChildren   feeder.ReadOperation = "GET /v1/blocks/{id}/children"
 )
 
 // Surface is everything the connector can issue. Built at init, so a write in it is a binary that
@@ -64,6 +65,8 @@ var Surface = feeder.MustReadOnlySurface(Platform, map[feeder.ReadOperation]feed
 		Why: "one registered page no longer returned by its data source, read once to tell trashed or moved from gone (FR-043)"},
 	OpPageProperty: {Area: "pages",
 		Why: "the rest of a named summary or entity property cut at 25 references in a query result (research R7)"},
+	OpBlockChildren: {Area: "bodies",
+		Why: "the body of a registered page whose last_edited_time moved, 100 blocks per call, to depth 3 and at most 1,000 blocks (008 FR-010, research R6)"},
 })
 
 // Secret is the integration secret. It never prints: a log line, an error or a %v of a struct that
