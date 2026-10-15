@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -54,6 +55,12 @@ type Binding struct {
 	Entities          map[string]string `yaml:"entities"`
 	SummaryProperties []string          `yaml:"summary_properties"`
 	AuthoredProperty  string            `yaml:"authored_property"`
+	// IndexProperties are the named properties indexed as sections, one each, with no count limit
+	// (008 FR-014). Absent means the summary properties.
+	IndexProperties []string `yaml:"index_properties"`
+	// IndexBody turns the page body's sections off for this database when false (008 FR-014).
+	// Absent means on.
+	IndexBody *bool `yaml:"index_body"`
 
 	refs map[string]*graphv1.Ref
 }
@@ -145,11 +152,31 @@ func validKind(kind string) bool {
 // properties are the property names the binding reads, in configuration order.
 func (b *Binding) properties() []string {
 	names := append([]string{b.EntityProperty}, b.SummaryProperties...)
+	for _, name := range b.Indexed() {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
 	if b.AuthoredProperty != "" {
 		names = append(names, b.AuthoredProperty)
 	}
 	return names
 }
+
+// Indexed are the property names indexed as sections: index_properties, else the summary
+// properties.
+func (b *Binding) Indexed() []string {
+	if b.IndexProperties != nil {
+		return b.IndexProperties
+	}
+	return b.SummaryProperties
+}
+
+// BodyIndexed reports whether the page body is indexed.
+func (b *Binding) BodyIndexed() bool { return b.IndexBody == nil || *b.IndexBody }
+
+// Sections reports whether the binding indexes anything beyond its summary.
+func (b *Binding) Sections() bool { return b.BodyIndexed() || len(b.Indexed()) > 0 }
 
 // Map returns the entity refs the values name, deduplicated in value order, and the values the map
 // does not name.
@@ -208,6 +235,13 @@ func (c *Config) ForRecording(ident func(kind, value string) (string, error)) (*
 	for i, b := range c.Databases {
 		b.Entities = maps.Clone(b.Entities)
 		b.SummaryProperties = append([]string(nil), b.SummaryProperties...)
+		if b.IndexProperties != nil {
+			b.IndexProperties = append([]string(nil), b.IndexProperties...)
+		}
+		if b.IndexBody != nil {
+			on := *b.IndexBody
+			b.IndexBody = &on
+		}
 		if b.Database, err = ident("database", b.Database); err != nil {
 			return nil, err
 		}

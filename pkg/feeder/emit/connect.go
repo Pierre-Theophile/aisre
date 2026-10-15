@@ -17,7 +17,10 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
+	knowledgev1 "github.com/Pierre-Theophile/aisre/api/sreagent/knowledge/v1"
+	"github.com/Pierre-Theophile/aisre/api/sreagent/knowledge/v1/knowledgev1connect"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge"
 )
 
 // The live path (FR-017, FR-018, FR-046).
@@ -74,9 +77,10 @@ type Stats struct {
 
 // ConnectEmitter sends a feeder's events to a running graph over ConnectRPC.
 type ConnectEmitter struct {
-	desc   feeder.Description
-	client graphv1connect.IngestServiceClient
-	opts   connectOptions
+	desc      feeder.Description
+	client    graphv1connect.IngestServiceClient
+	knowledge knowledgev1connect.KnowledgeServiceClient
+	opts      connectOptions
 
 	mu         sync.Mutex
 	buf        []*graphv1.EventEnvelope
@@ -89,7 +93,10 @@ type ConnectEmitter struct {
 	done     chan struct{}
 }
 
-var _ feeder.Emitter = (*ConnectEmitter)(nil)
+var (
+	_ feeder.Emitter         = (*ConnectEmitter)(nil)
+	_ feeder.SectionsEmitter = (*ConnectEmitter)(nil)
+)
 
 type connectOptions struct {
 	batchSize      int
@@ -99,6 +106,7 @@ type connectOptions struct {
 	maxBuffered    int
 	httpClient     *http.Client
 	client         graphv1connect.IngestServiceClient
+	knowledge      knowledgev1connect.KnowledgeServiceClient
 	logger         *slog.Logger
 	onResult       func(*graphv1.IngestResult)
 	connectOptions []connect.ClientOption
@@ -149,6 +157,11 @@ func WithHTTPClient(c *http.Client) ConnectOption {
 // token are then unused.
 func WithIngestClient(c graphv1connect.IngestServiceClient) ConnectOption {
 	return func(o *connectOptions) { o.client = c }
+}
+
+// WithKnowledgeClient injects the KnowledgeService client PutSections calls, for a test.
+func WithKnowledgeClient(c knowledgev1connect.KnowledgeServiceClient) ConnectOption {
+	return func(o *connectOptions) { o.knowledge = c }
 }
 
 // WithConnectOptions passes options to the generated client, e.g. connect.WithGRPC().
@@ -202,28 +215,36 @@ func NewConnectEmitter(baseURL, token string, desc feeder.Description, opts ...C
 		o.maxBuffered = o.batchSize * 10
 	}
 
-	client := o.client
-	if client == nil {
+	client, sections := o.client, o.knowledge
+	if client == nil || sections == nil {
 		base, err := normalizeBaseURL(baseURL)
-		if err != nil {
+		switch {
+		case err != nil && client == nil:
 			return nil, err
-		}
-		httpClient := o.httpClient
-		if httpClient == nil {
-			httpClient = &http.Client{
-				Transport: &bearerTransport{base: http.DefaultTransport, token: token},
-				Timeout:   DefaultHTTPTimeout,
+		case err == nil:
+			httpClient := o.httpClient
+			if httpClient == nil {
+				httpClient = &http.Client{
+					Transport: &bearerTransport{base: http.DefaultTransport, token: token},
+					Timeout:   DefaultHTTPTimeout,
+				}
+			}
+			if client == nil {
+				client = graphv1connect.NewIngestServiceClient(httpClient, base, o.connectOptions...)
+			}
+			if sections == nil {
+				sections = knowledgev1connect.NewKnowledgeServiceClient(httpClient, base, o.connectOptions...)
 			}
 		}
-		client = graphv1connect.NewIngestServiceClient(httpClient, base, o.connectOptions...)
 	}
 
 	e := &ConnectEmitter{
-		desc:   desc,
-		client: client,
-		opts:   o,
-		stop:   make(chan struct{}),
-		done:   make(chan struct{}),
+		desc:      desc,
+		client:    client,
+		knowledge: sections,
+		opts:      o,
+		stop:      make(chan struct{}),
+		done:      make(chan struct{}),
 	}
 	if o.flushInterval > 0 && o.batchSize > 1 {
 		go e.flusher()
@@ -317,6 +338,57 @@ func (e *ConnectEmitter) Flush(ctx context.Context) error {
 	defer e.mu.Unlock()
 	_, err := e.flushLocked(ctx)
 	return err
+}
+
+// PutSections sends one document's whole current set of sections (feature 008 research R7). It
+// flushes first, so the document's graph events reach the graph before its content does: a
+// section stored for a document the graph has not registered yet is kept, but is not a
+// candidate until the graph says so.
+func (e *ConnectEmitter) PutSections(ctx context.Context, documentRef string, sections []knowledge.Section) (knowledge.PutResult, error) {
+	if e.knowledge == nil {
+		return knowledge.PutResult{}, errors.New("emit: this emitter has no knowledge client")
+	}
+	if err := knowledge.ValidateFeederSections(sections); err != nil {
+		return knowledge.PutResult{}, err
+	}
+	if err := e.Flush(ctx); err != nil {
+		return knowledge.PutResult{}, err
+	}
+	req := connect.NewRequest(&knowledgev1.PutSectionsRequest{
+		SourceId:    e.desc.SourceID,
+		DocumentRef: documentRef,
+		Sections:    SectionsToProto(sections),
+	})
+	var resp *connect.Response[knowledgev1.PutSectionsResponse]
+	e.mu.Lock()
+	err := e.retry(ctx, "put sections", func(ctx context.Context) error {
+		var err error
+		resp, err = e.knowledge.PutSections(ctx, req)
+		return err
+	})
+	e.mu.Unlock()
+	if err != nil {
+		return knowledge.PutResult{}, fmt.Errorf("emit: put sections of %s: %w", documentRef, err)
+	}
+	return knowledge.PutResult{
+		Opened:    int(resp.Msg.GetOpened()),
+		Closed:    int(resp.Msg.GetClosed()),
+		Unchanged: int(resp.Msg.GetUnchanged()),
+	}, nil
+}
+
+// SectionsToProto converts sections to their wire form.
+func SectionsToProto(sections []knowledge.Section) []*knowledgev1.Section {
+	out := make([]*knowledgev1.Section, 0, len(sections))
+	for _, s := range sections {
+		out = append(out, &knowledgev1.Section{
+			Label:  s.Label,
+			Part:   uint32(s.Part), //nolint:gosec // ValidateSections refuses a negative part
+			Text:   s.Text,
+			Origin: string(s.Origin),
+		})
+	}
+	return out
 }
 
 // Close flushes and stops the background flusher. A feeder defers it.

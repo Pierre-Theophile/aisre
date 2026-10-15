@@ -50,6 +50,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
+	knowledgestore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
 
@@ -85,6 +86,10 @@ type Config struct {
 	// beside the graph worker, so registered documents and reviewed investigations are cited
 	// (007 FR-005); without it `knowledge_search` is reported unavailable, like any absent worker.
 	NoKnowledgeWorker bool
+	// KnowledgeStore holds the sections of registered documents (feature 008). When set, the
+	// knowledge worker ranks those sections by what they say; when nil it ranks each candidate
+	// by its registered summary alone, as 007 did.
+	KnowledgeStore knowledgestore.Store
 	// Profiles are the budget profiles by name (budget.LoadProfiles). Empty means the published
 	// two.
 	Profiles map[string]budget.Profile
@@ -201,7 +206,11 @@ func New(cfg Config) (*Runner, error) {
 	// The knowledge worker likewise needs nothing but the store: its corpus is the graph's
 	// CONCERNS and INVESTIGATED edges (007 FR-005, ADR-0013 item 3).
 	if _, ok := cfg.Workers.Lookup(knowledge.Name); !ok && !cfg.NoKnowledgeWorker {
-		if err := cfg.Workers.Register(knowledge.New(knowledge.GraphCorpus{Engine: query.NewEngine(cfg.Store)})); err != nil {
+		var opts []knowledge.Option
+		if cfg.KnowledgeStore != nil {
+			opts = append(opts, knowledge.WithStore(cfg.KnowledgeStore))
+		}
+		if err := cfg.Workers.Register(knowledge.New(knowledge.GraphCorpus{Engine: query.NewEngine(cfg.Store)}, opts...)); err != nil {
 			return nil, fmt.Errorf("runner: register the knowledge worker: %w", err)
 		}
 	}

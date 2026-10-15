@@ -4,6 +4,7 @@ package emit_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -22,6 +23,8 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/emit"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge/memory"
 )
 
 func TestMain(m *testing.M) { pgtest.TestMain(m) }
@@ -40,8 +43,9 @@ func mustNumericSeries(t *testing.T) *structpb.Struct {
 // graphServer is a real graph on a random port, with a dev identity provider, so that the
 // emitter is exercised over the wire it will actually use.
 type graphServer struct {
-	baseURL string
-	token   string
+	baseURL   string
+	token     string
+	knowledge *memory.Store
 }
 
 func newGraphServer(t *testing.T, sourceID string) *graphServer {
@@ -54,7 +58,9 @@ func newGraphServer(t *testing.T, sourceID string) *graphServer {
 	if err != nil {
 		t.Fatalf("dev authenticator: %v", err)
 	}
+	sections := memory.New()
 	srv, err := server.New(server.Config{
+		Knowledge:       sections,
 		Listen:          "127.0.0.1:0",
 		Auth:            auth,
 		Projector:       projector.New(store),
@@ -86,7 +92,7 @@ func newGraphServer(t *testing.T, sourceID string) *graphServer {
 	if err != nil {
 		t.Fatalf("mint feeder token: %v", err)
 	}
-	return &graphServer{baseURL: "http://" + srv.Addr(), token: token}
+	return &graphServer{baseURL: "http://" + srv.Addr(), token: token, knowledge: sections}
 }
 
 // newRawClient builds a plain Connect client carrying the feeder token, which the test
@@ -129,6 +135,12 @@ func (c *countingClient) IngestBatch(ctx context.Context, req *connect.Request[g
 
 func newCountingEmitter(t *testing.T, d feeder.Description, opts ...emit.ConnectOption) (*emit.ConnectEmitter, *countingClient) {
 	t.Helper()
+	em, counting, _ := newCountingEmitterOn(t, d, opts...)
+	return em, counting
+}
+
+func newCountingEmitterOn(t *testing.T, d feeder.Description, opts ...emit.ConnectOption) (*emit.ConnectEmitter, *countingClient, *graphServer) {
+	t.Helper()
 	gs := newGraphServer(t, d.SourceID)
 
 	// The emitter's own transport is reused, so the credential path is exercised too; only
@@ -149,7 +161,44 @@ func newCountingEmitter(t *testing.T, d feeder.Description, opts ...emit.Connect
 		t.Fatalf("new counting emitter: %v", err)
 	}
 	t.Cleanup(func() { _ = em.Close(context.Background()) })
-	return em, counting
+	return em, counting, gs
+}
+
+// TestConnectEmitterPutsSectionsAfterTheEvents is feature 008 research R7: a document's sections
+// reach the store after its graph events, which PutSections flushes first.
+func TestConnectEmitterPutsSectionsAfterTheEvents(t *testing.T) {
+	d := testDescription()
+	em, counting, gs := newCountingEmitterOn(t, d, emit.WithBatchSize(64), emit.WithFlushInterval(0))
+
+	if _, err := em.Emit(t.Context(), upsert(t, d, "k8s:demo:deploy:shop/checkout@rv1", "shop/checkout")); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	if counting.batches.Load() != 0 {
+		t.Fatal("the event was sent before the batch was full")
+	}
+	sections := []knowledge.Section{{Label: "Notes", Text: "checkout pool exhausted", Origin: knowledge.OriginBody}}
+	result, err := em.PutSections(t.Context(), "k8s.doc=runbook", sections)
+	if err != nil {
+		t.Fatalf("PutSections: %v", err)
+	}
+	if counting.batches.Load() != 1 {
+		t.Errorf("%d batches before the sections; the events go first", counting.batches.Load())
+	}
+	if result.Opened != 1 {
+		t.Errorf("result = %+v, want one opened", result)
+	}
+	hits, err := gs.knowledge.Lexical(t.Context(), "pool", []string{"k8s.doc=runbook"}, time.Now(), 5)
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("hits = %+v, %v", hits, err)
+	}
+
+	if _, err := em.PutSections(t.Context(), "notion.page=1", sections); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Errorf("another source's namespace: %v, want PermissionDenied", err)
+	}
+	bad := []knowledge.Section{{Label: "Summary", Text: "x", Origin: knowledge.OriginSummary}}
+	if _, err := em.PutSections(t.Context(), "k8s.doc=runbook", bad); !errors.Is(err, knowledge.ErrInvalidSections) {
+		t.Errorf("a synthesised origin: %v, want ErrInvalidSections before anything is sent", err)
+	}
 }
 
 func TestConnectEmitterBatchesAndRegistersOnce(t *testing.T) {

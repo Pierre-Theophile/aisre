@@ -7,6 +7,10 @@
 # columns, indexes and constraints; it may never drop, delete from, or truncate the history
 # itself. This refuses any migration that does.
 #
+# knowledge.section_versions (008) is history on the same terms: a document's text as it was
+# known, which a replay matches against. Deleting a version would let a replay match text the
+# original run never read, or miss text it did.
+#
 # Four tables of schema `investigation` are protected on the same terms, for the same reason:
 #
 #   investigation.investigations    what was concluded, by which run, under which budget and
@@ -46,12 +50,12 @@ fi
 # protected relation: anything in the `log` schema, a `*_versions` table in `graph`, or one of
 # the four investigation tables that hold the audit trail of a conclusion.
 # Comments are stripped first so that documentation of the rule does not trip it.
-protected='(log\.[a-z_]+|graph\.[a-z_]*_versions|investigation\.(investigations|evidence_items|judgments|coverage_audits))'
+protected='(log\.[a-z_]+|graph\.[a-z_]*_versions|knowledge\.section_versions|investigation\.(investigations|evidence_items|judgments|coverage_audits))'
 verbs='(DROP[[:space:]]+TABLE([[:space:]]+IF[[:space:]]+EXISTS)?|DELETE[[:space:]]+FROM|TRUNCATE([[:space:]]+TABLE)?)'
 
 # Dropping the schema takes every table in it with it, so the relation-level rule above would
 # be trivially evaded by one line. No migration has ever needed to, so this is a flat refusal.
-schemas='(log|graph|investigation)'
+schemas='(log|graph|investigation|knowledge)'
 schema_verb='DROP[[:space:]]+SCHEMA([[:space:]]+IF[[:space:]]+EXISTS)?'
 
 status=0

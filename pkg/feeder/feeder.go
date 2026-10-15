@@ -9,6 +9,7 @@ import (
 	"time"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge"
 )
 
 // The connector contract (FR-044, FR-045, contracts/feeder-sdk.md).
@@ -207,6 +208,16 @@ type Emitter interface {
 	// Flush delivers everything buffered and waits for its results. A feeder calls it before
 	// returning from Run and whenever it needs the graph to be up to date.
 	Flush(ctx context.Context) error
+}
+
+// SectionsEmitter is implemented by an Emitter that also carries the content of the documents a
+// feeder registers (feature 008 research R7). A feeder type-asserts its Emitter to it; one that
+// does not implement it registers documents without their content, as before feature 008.
+type SectionsEmitter interface {
+	// PutSections sends one document's whole current set of sections. It flushes first, so the
+	// document's graph events are delivered before its content. A section missing from the set
+	// is closed; an unchanged one is a no-op.
+	PutSections(ctx context.Context, documentRef string, sections []knowledge.Section) (knowledge.PutResult, error)
 }
 
 // Feeder turns one external system into typed graph events.

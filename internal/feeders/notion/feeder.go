@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -32,6 +33,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+	knowledgestore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 )
 
 // Published names (ADR-0013 item 1).
@@ -218,6 +220,11 @@ func (f *Feeder) observe(ctx context.Context, em feeder.Emitter, b *Binding, rea
 				return err
 			}
 		}
+		// Its content goes with it: the sections close at this read, so an as-of read before it still
+		// finds them.
+		if err := f.putSections(ctx, em, read.Binding, ref, page, nil); err != nil {
+			return err
+		}
 		f.count(read.Binding, page, func(c *DatabaseReport) { c.Gone++ })
 		return nil
 	}
@@ -332,7 +339,33 @@ func (f *Feeder) observe(ctx context.Context, em feeder.Emitter, b *Binding, rea
 			return err
 		}
 	}
+	if page.SectionsRead {
+		// After the page's events, so the graph registers the document before its content arrives.
+		if err := f.putSections(ctx, em, read.Binding, ref, page, toKnowledge(page.Sections)); err != nil {
+			return err
+		}
+	}
 	f.count(read.Binding, page, func(c *DatabaseReport) { c.Registered[page.ID] = request.Title })
+	return nil
+}
+
+// putSections sends a page's whole current set of sections when the emitter carries content
+// (008 research R7), and records them in the report. An emitter that does not is a graph without
+// a knowledge store: the page is registered by its summary alone, as in 007.
+func (f *Feeder) putSections(ctx context.Context, em feeder.Emitter, binding int, ref *graphv1.Ref, page observedPage,
+	sections []knowledgestore.Section) error {
+	if page.Gone == "" {
+		f.mu.Lock()
+		f.report.Databases[binding].Sections[page.ID] = newPageSections(page)
+		f.mu.Unlock()
+	}
+	se, ok := em.(feeder.SectionsEmitter)
+	if !ok {
+		return nil
+	}
+	if _, err := se.PutSections(ctx, graph.RefFromProto(ref).String(), sections); err != nil {
+		return fmt.Errorf("notion: page %s: sections: %w", page.ID, err)
+	}
 	return nil
 }
 
@@ -436,9 +469,76 @@ type DatabaseReport struct {
 	// listed page carried.
 	DataSources     []string
 	PropertiesFound map[string]bool
+	// Sections maps page id → what was indexed of the page, for the pages whose sections were read
+	// this run (contracts §6). Labels, origins and sizes only; never text.
+	Sections map[string]PageSections
 	// outside is, per data source, the listed pages whose parent is not a configured database, as of
 	// its last reconciliation.
 	outside map[string]int
+}
+
+// PageSections is what was indexed of one page.
+type PageSections struct {
+	Title    string
+	Sections []SectionLine
+	Skipped  []SkippedLine
+}
+
+// SectionLine is one section: its label, origin, how many parts and characters.
+type SectionLine struct {
+	Label  string
+	Origin string
+	Parts  int
+	Chars  int
+}
+
+// SkippedLine is something of a page not indexed: a section's label, or a count of blocks, and why.
+type SkippedLine struct {
+	Label  string
+	Reason string
+	Count  int
+}
+
+// String renders the line as contracts §6 prints it.
+func (s SectionLine) String() string {
+	parts := ""
+	if s.Parts > 1 {
+		parts = fmt.Sprintf(", %d parts", s.Parts)
+	}
+	return fmt.Sprintf("%s (%s, %d chars%s)", s.Label, s.Origin, s.Chars, parts)
+}
+
+// String renders the line as contracts §6 prints it.
+func (s SkippedLine) String() string {
+	switch {
+	case s.Count > 0:
+		return fmt.Sprintf("%s: %d", s.Reason, s.Count)
+	case s.Label != "":
+		return fmt.Sprintf("%s: %s", s.Label, s.Reason)
+	default:
+		return s.Reason
+	}
+}
+
+func newPageSections(page observedPage) PageSections {
+	out := PageSections{Title: page.Title}
+	if out.Title == "" {
+		out.Title = "(untitled)"
+	}
+	for _, part := range page.Sections {
+		n := len(out.Sections)
+		if n > 0 && out.Sections[n-1].Label == part.Label {
+			out.Sections[n-1].Parts++
+			out.Sections[n-1].Chars += utf8.RuneCountInString(part.Text)
+			continue
+		}
+		out.Sections = append(out.Sections, SectionLine{Label: part.Label, Origin: part.Origin, Parts: 1,
+			Chars: utf8.RuneCountInString(part.Text)})
+	}
+	for _, s := range page.Skipped {
+		out.Skipped = append(out.Skipped, SkippedLine(s))
+	}
+	return out
 }
 
 // Outside is how many listed pages are outside the configured databases (a count only).
@@ -455,7 +555,7 @@ func newReport(cfg *Config) Report {
 	for _, b := range cfg.Databases {
 		r.Databases = append(r.Databases, DatabaseReport{
 			Database: b.Database, Kind: b.Kind, Registered: map[string]string{}, Skipped: map[string]Skip{},
-			PropertiesFound: map[string]bool{}, outside: map[string]int{},
+			PropertiesFound: map[string]bool{}, Sections: map[string]PageSections{}, outside: map[string]int{},
 		})
 	}
 	return r
@@ -495,7 +595,7 @@ func (f *Feeder) Report() Report {
 		c := DatabaseReport{Database: d.Database, Kind: d.Kind, Gone: d.Gone,
 			Registered: maps.Clone(d.Registered), Skipped: maps.Clone(d.Skipped),
 			DataSources: slices.Clone(d.DataSources), PropertiesFound: maps.Clone(d.PropertiesFound),
-			outside: maps.Clone(d.outside)}
+			Sections: maps.Clone(d.Sections), outside: maps.Clone(d.outside)}
 		out.Databases[i] = c
 	}
 	return out

@@ -165,3 +165,31 @@ type Store interface {
 	// is not model.Dimensions is refused with ErrDimensionMismatch.
 	PutVectors(ctx context.Context, model ModelID, vectors []DigestVector) error
 }
+
+// OwnsDocument reports whether the source `<kind>:<name>` owns the document `<kind>.<type>=<id>`:
+// the namespace rule a section write is held to, so a feeder writes only its own documents
+// (feature 008 research R7). A token for `notion:LDMA` may write `notion.page=…` and nothing else.
+func OwnsDocument(sourceID, documentRef string) bool {
+	kind, _, ok := strings.Cut(sourceID, ":")
+	if !ok || kind == "" {
+		return false
+	}
+	namespace, id, ok := strings.Cut(documentRef, "=")
+	if !ok || id == "" {
+		return false
+	}
+	return strings.HasPrefix(namespace, kind+".") && len(namespace) > len(kind)+1
+}
+
+// ValidateFeederSections is ValidateSections plus the origins a feeder may send: what the document
+// itself says (property, body). Summary and verdict sections are synthesised by the worker from what
+// the graph holds.
+func ValidateFeederSections(sections []Section) error {
+	for i, s := range sections {
+		if s.Origin != OriginProperty && s.Origin != OriginBody {
+			return fmt.Errorf("%w: section %d has origin %q; a feeder sends %q or %q",
+				ErrInvalidSections, i, s.Origin, OriginProperty, OriginBody)
+		}
+	}
+	return ValidateSections(sections)
+}

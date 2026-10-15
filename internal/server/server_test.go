@@ -23,6 +23,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge/memory"
 )
 
 func TestMain(m *testing.M) { pgtest.TestMain(m) }
@@ -49,6 +50,7 @@ type graphServer struct {
 	baseURL   string
 	projector *projector.Projector
 	issuer    *DevIssuer
+	knowledge *memory.Store
 }
 
 func newGraphServer(t *testing.T) *graphServer {
@@ -62,8 +64,10 @@ func newGraphServer(t *testing.T) *graphServer {
 		t.Fatalf("dev authenticator: %v", err)
 	}
 	proj := projector.New(store)
+	sections := memory.New()
 
 	srv, err := New(Config{
+		Knowledge:       sections,
 		Listen:          "127.0.0.1:0",
 		Auth:            auth,
 		Projector:       proj,
@@ -89,7 +93,7 @@ func newGraphServer(t *testing.T) *graphServer {
 		}
 	})
 
-	return &graphServer{baseURL: "http://" + srv.Addr(), projector: proj, issuer: auth.Issuer()}
+	return &graphServer{baseURL: "http://" + srv.Addr(), projector: proj, issuer: auth.Issuer(), knowledge: sections}
 }
 
 // feederToken mints a token scoped to exactly one source (FR-046).

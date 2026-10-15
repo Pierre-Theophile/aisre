@@ -19,7 +19,12 @@ package sanitise
 //     and the public repository carries only a synthetic twin (FR-051);
 //   - the entity values and the refs they mapped to are kept: they are what the operator's map reads,
 //     and the refs are graph references the rest of a fixture already names;
-//   - a person never appears, so there is no row for one; IsPeopleField would drop it first anyway.
+//   - a person never appears, so there is no row for one; IsPeopleField would drop it first anyway;
+//   - since feature 008, a page's sections: the indexed properties and the body by heading, as plain
+//     text. They are kept for the reason the summary is, and they are the one free text that is kept
+//     whole, so the poller has already run RedactText over every label and text (FR-013): user
+//     mentions were never built into the text, and e-mail addresses, @handles and secret shapes are
+//     `[redacted]`. A section nothing was left of is not there; its label and reason are.
 func addNotionRows(p *Policy) {
 	set := func(path string, rule Rule) { p.fields[CanonicalField(path)] = rule }
 	keep := func(path, why string) { set(path, Rule{Disposition: Verbatim, Why: why}) }
@@ -54,4 +59,12 @@ func addNotionRows(p *Policy) {
 	pseudo(pg+".conflict", KindDatabase, "the earlier database that holds the page")
 	keep(pg+".gone", "trashed, moved or not_found")
 	keep(pg+".gone_at", "when the page's links end")
+	keep(pg+".sections_read", "a flag: the page's sections were read by this read")
+	keep(pg+".sections[].label", "a section's label: an indexed property's name or a heading's text, redacted (008 FR-013)")
+	keep(pg+".sections[].part", "a part number of a section split at 1,200 characters")
+	keep(pg+".sections[].text", "a section's plain text, redacted (008 FR-013): what retrieval ranks (private recordings only, FR-051)")
+	keep(pg+".sections[].origin", "property or body")
+	keep(pg+".skipped_sections[].label", "the label of a section left empty by redaction")
+	keep(pg+".skipped_sections[].reason", "why something of the page is not indexed; a closed set")
+	keep(pg+".skipped_sections[].count", "how many blocks of one unsupported type")
 }

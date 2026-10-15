@@ -17,8 +17,10 @@ import (
 
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1/investigationv1connect"
+	"github.com/Pierre-Theophile/aisre/api/sreagent/knowledge/v1/knowledgev1connect"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge"
 )
 
 // The one process that fronts the graph (FR-017, FR-035, FR-041a, FR-051).
@@ -85,6 +87,9 @@ type Config struct {
 	// `serve --enable-investigation` and by nothing else: without the flag the engine is
 	// absent and the binary behaves exactly as it does today (002 plan F10).
 	Investigation *InvestigationService
+	// Knowledge, when non-nil, mounts KnowledgeService over this store (feature 008 FR-005), so
+	// feeders can send the sections of the documents they register.
+	Knowledge knowledge.Store
 	// Logger defaults to slog.Default().
 	Logger *slog.Logger
 	// ShutdownTimeout defaults to DefaultShutdownTimeout.
@@ -133,6 +138,10 @@ func New(cfg Config) (*Server, error) {
 		NewResolutionService(cfg.Projector, cfg.Metrics, logger), interceptors))
 	if cfg.Investigation != nil {
 		mux.Handle(investigationv1connect.NewInvestigationServiceHandler(cfg.Investigation, interceptors))
+	}
+	if cfg.Knowledge != nil {
+		mux.Handle(knowledgev1connect.NewKnowledgeServiceHandler(
+			NewKnowledgeService(cfg.Knowledge, logger), interceptors))
 	}
 
 	// otelhttp wraps the mux so every RPC gets a server span (FR-051). The health endpoints are

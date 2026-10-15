@@ -329,3 +329,92 @@ func (c *Client) PropertyItems(ctx context.Context, pageID, propertyID string, s
 		cursor = body.NextCursor
 	}
 }
+
+// Block is one block of a page body (008 research R6), reduced to what a section needs: its type,
+// whether it has children, and its plain text. A block's `created_by` and `last_edited_by` are never
+// decoded, and neither is a file, an image or an embed's URL.
+type Block struct {
+	ID          string
+	Type        string
+	HasChildren bool
+	// RichText is the block's text, for the types that carry one under `rich_text` (paragraphs,
+	// headings, list items, quotes, callouts, toggles, to-dos, code).
+	RichText []RichText
+	// Cells are a table row's cells.
+	Cells [][]RichText
+	// SyncedFrom marks a synced block whose original lives on another page.
+	SyncedFrom bool
+}
+
+// Text is the block's text, user mentions dropped; a table row's cells are joined with " | ".
+func (b Block) Text() string {
+	if b.Type == "table_row" {
+		cells := make([]string, 0, len(b.Cells))
+		for _, cell := range b.Cells {
+			cells = append(cells, PlainText(cell))
+		}
+		return strings.TrimSpace(strings.Join(cells, " | "))
+	}
+	return PlainText(b.RichText)
+}
+
+// UnmarshalJSON reads the block's type-named object for its text.
+func (b *Block) UnmarshalJSON(raw []byte) error {
+	var head struct {
+		ID          string `json:"id"`
+		Type        string `json:"type"`
+		HasChildren bool   `json:"has_children"`
+	}
+	if err := json.Unmarshal(raw, &head); err != nil {
+		return err
+	}
+	*b = Block{ID: head.ID, Type: head.Type, HasChildren: head.HasChildren}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	body, ok := fields[head.Type]
+	if !ok || len(body) == 0 || string(body) == "null" {
+		return nil
+	}
+	var content struct {
+		RichText   []RichText      `json:"rich_text"`
+		Cells      [][]RichText    `json:"cells"`
+		SyncedFrom json.RawMessage `json:"synced_from"`
+	}
+	if err := json.Unmarshal(body, &content); err != nil {
+		return fmt.Errorf("notionx: block %s (%s): %w", head.ID, head.Type, err)
+	}
+	b.RichText, b.Cells = content.RichText, content.Cells
+	b.SyncedFrom = len(content.SyncedFrom) > 0 && string(content.SyncedFrom) != "null"
+	return nil
+}
+
+// BlockPage is one page of a block's children.
+type BlockPage struct {
+	Blocks     []Block
+	HasMore    bool
+	NextCursor string
+}
+
+// BlockChildren reads one page, of at most 100, of a block's children. A page id is a block id.
+func (c *Client) BlockChildren(ctx context.Context, id, cursor string) (BlockPage, error) {
+	query := url.Values{}
+	query.Set("page_size", "100")
+	if cursor != "" {
+		query.Set("start_cursor", cursor)
+	}
+	raw, err := c.Do(ctx, OpBlockChildren, []string{id}, query, nil)
+	if err != nil {
+		return BlockPage{}, err
+	}
+	var out struct {
+		Results    []Block `json:"results"`
+		HasMore    bool    `json:"has_more"`
+		NextCursor string  `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return BlockPage{}, fmt.Errorf("notionx: blocks/%s/children: %w", id, err)
+	}
+	return BlockPage{Blocks: out.Results, HasMore: out.HasMore, NextCursor: out.NextCursor}, nil
+}

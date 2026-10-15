@@ -111,10 +111,13 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 
 ## Phase 6: The default store and the ingest path (Foundational for PR 2)
 
-- [ ] T018 Write `internal/store/postgres/migrations/0014_knowledge.sql`: schema `knowledge`, `section_versions` (document_ref, label, part, digest, origin, text, `tsvector` generated on `simple`, `known` tstzrange with a GiST index via `btree_gist`, a unique open version per `(document_ref, label, part)`), `section_embeddings` (digest, model, dimensions, `real[]`, computed_at, primary key `(digest, model)`) (data-model, research R2); fixture: unit (`pgtest`)
-- [ ] T019 Implement `internal/store/postgres/knowledge_store.go`: the `Store` of contracts §1, lexical by `websearch_to_tsquery('simple', …)` and `ts_rank_cd`, semantic by exact cosine over an incrementally refreshed in-process cache of the configured model's vectors; passes `storetest.Run` (FR-005–FR-007, research R2); fixture: unit with `PG_DSN`
-- [ ] T020 Implement `internal/server/knowledge.go`: the `PutSections` handler with the same token and source scoping as `IngestBatch`, namespace ownership per source kind, the limits of contracts §4, and registration in the server mux; `serve` builds the Postgres store by default and logs the store and retrieval mode (FR-005, FR-006, research R7); fixture: unit
-- [ ] T021 [P] Add a `SectionsEmitter` to `pkg/feeder/emit` (Connect and memory implementations) that sends one document's sections after its graph events have been flushed (research R7); fixture: unit
+- [x] T018 Write `internal/store/postgres/migrations/0014_knowledge.sql`: schema `knowledge`, `section_versions` (document_ref, label, part, digest, origin, text, `tsvector` generated on `simple`, `known` tstzrange with a GiST index via `btree_gist`, a unique open version per `(document_ref, label, part)`), `section_embeddings` (digest, model, dimensions, `real[]`, computed_at, primary key `(digest, model)`) (data-model, research R2); fixture: unit (`pgtest`)
+- [x] T019 Implement `internal/store/postgres/knowledge_store.go`: the `Store` of contracts §1, lexical by `websearch_to_tsquery('simple', …)` and `ts_rank_cd`, semantic by exact cosine over an incrementally refreshed in-process cache of the configured model's vectors; passes `storetest.Run` (FR-005–FR-007, research R2); fixture: unit with `PG_DSN`
+  - *As built:* lexical is an OR `to_tsquery('simple', …)` over the terms of `knowledge.Tokenise` rather than `websearch_to_tsquery`, which ANDs its terms: a search must match a section sharing any word, as the memory store's BM25 does, and the worker orders the union (contracts §5). Ranks are rounded to six places so ties break by document, label, part.
+- [x] T020 Implement `internal/server/knowledge.go`: the `PutSections` handler with the same token and source scoping as `IngestBatch`, namespace ownership per source kind, the limits of contracts §4, and registration in the server mux; `serve` builds the Postgres store by default and logs the store and retrieval mode (FR-005, FR-006, research R7); fixture: unit
+  - *As built:* namespace ownership is `knowledge.OwnsDocument`: a source `<kind>:<name>` owns refs `<kind>.<type>=<id>`. A feeder may send only `property` and `body` sections (`knowledge.ValidateFeederSections`); `summary` and `verdict` are synthesised by the worker.
+- [x] T021 [P] Add a `SectionsEmitter` to `pkg/feeder/emit` (Connect and memory implementations) that sends one document's sections after its graph events have been flushed (research R7); fixture: unit
+  - *As built:* the interface is `feeder.SectionsEmitter` beside `feeder.Emitter`, so a feeder type-asserts its emitter; `ProjectorEmitter` does not implement it (an offline graph has no knowledge store).
 
 ---
 
@@ -124,12 +127,15 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 
 **Independent Test**: a lexical-only investigation over twin 02 cites the postmortem whose symptom sits past character 600 (spec US1 scenario 1).
 
-- [ ] T022 [US1] Add `GET /v1/blocks/{id}/children` to `notionx.Surface` in `internal/notionx/client.go` and to the operation table in `docs/connectors/notion.md` §2 together; `TestSurfaceMatchesThePublishedPage` passes (FR-010, G5, research R6); fixture: unit
-- [ ] T023 [US1] Implement `internal/feeders/notion/sections.go`: named properties (the binding's `index_properties`, no count limit) to sections; body blocks to sections per research R6 (depth 3, 1,000-block cap, headings start sections, skipped types counted); split at 1,200 characters (FR-010–FR-012, FR-014); fixture: unit with recorded block payloads
-- [ ] T024 [US1] Extend `internal/sanitise/policy_notion.go` to section text: user mentions dropped before text is built, email addresses and the secret shapes of `internal/sanitise` replaced by `[redacted]`, a section left empty skipped with its reason (FR-013); fixture: unit with canary tokens in property, heading, paragraph and toggle text
-- [ ] T025 [US1] Wire sections into `internal/feeders/notion/feeder.go`: read bodies only for pages whose `last_edited_time` moved, send through T021 after the page's events, extend the binding configuration with `index_properties` (default: the 007 `summary_properties`) and `index_body: true` (FR-014); fixture: notion-knowledge-twin-02
-- [ ] T026 [US1] Add `fixtures/notion-knowledge-twin-02/`: a postmortem database with long property sections and bodies with headings, toggles and an embed, generated by the real poller over a scripted twin as 007's twin 01 is; recording includes sanitised section text (FR-041); fixture: notion-knowledge-twin-02
-- [ ] T027 [US1] Add `fixtures/incidents/knowledge-notion-02/`: an incident whose alert matches a twin-02 postmortem only in its "Signals / Symptoms" section past character 600; the investigation cites it with that `section_label` in the top three, lexical only (US1 scenario 1); fixture: knowledge-notion-02
+- [x] T022 [US1] Add `GET /v1/blocks/{id}/children` to `notionx.Surface` in `internal/notionx/client.go` and to the operation table in `docs/connectors/notion.md` §2 together; `TestSurfaceMatchesThePublishedPage` passes (FR-010, G5, research R6); fixture: unit
+- [x] T023 [US1] Implement `internal/feeders/notion/sections.go`: named properties (the binding's `index_properties`, no count limit) to sections; body blocks to sections per research R6 (depth 3, 1,000-block cap, headings start sections, skipped types counted); split at 1,200 characters (FR-010–FR-012, FR-014); fixture: unit with recorded block payloads
+- [x] T024 [US1] Extend `internal/sanitise/policy_notion.go` to section text: user mentions dropped before text is built, email addresses and the secret shapes of `internal/sanitise` replaced by `[redacted]`, a section left empty skipped with its reason (FR-013); fixture: unit with canary tokens in property, heading, paragraph and toggle text
+  - *As built:* the redaction is `sanitise.RedactText` in `internal/sanitise/text.go`, mirroring the hard rules of `scripts/check-no-secrets.sh`; it runs in the poller, live and recording alike, so a payload never carries an unredacted section. `policy_notion.go` gains the section rows.
+- [x] T025 [US1] Wire sections into `internal/feeders/notion/feeder.go`: read bodies only for pages whose `last_edited_time` moved, send through T021 after the page's events, extend the binding configuration with `index_properties` (default: the 007 `summary_properties`) and `index_body: true` (FR-014); fixture: notion-knowledge-twin-02
+  - *As built:* the poller's state keeps, per page, the `last_edited_time` its sections were read at and when; a read inside the edit's minute is repeated once the minute has passed, because Notion rounds `last_edited_time` to the minute. `--check` reads every page's sections. A gone page's sections are closed. Twin 01's configuration sets `index_body: false` and `index_properties: []`, so 007's fixture is unchanged.
+- [x] T026 [US1] Add `fixtures/notion-knowledge-twin-02/`: a postmortem database with long property sections and bodies with headings, toggles and an embed, generated by the real poller over a scripted twin as 007's twin 01 is; recording includes sanitised section text (FR-041); fixture: notion-knowledge-twin-02
+- [x] T027 [US1] Add `fixtures/incidents/knowledge-notion-02/`: an incident whose alert matches a twin-02 postmortem only in its "Signals / Symptoms" section past character 600; the investigation cites it with that `section_label` in the top three, lexical only (US1 scenario 1); fixture: knowledge-notion-02
+  - *As built:* the graph, world and goldens are knowledge-notion-01's (the same incident and the same three page ids); `documents.yaml` is generated by the twin 02 generator from what the feeder sent. The query is `ECONNRESET HikariCP`: `upstream_reset_before_response_started` tokenises to words that also occur in the summary. `internal/eval` `TestASymptomPastTheSummaryIsFoundBySection` checks the predicates and the top three.
 
 **Checkpoint**: US1 lexical holds on twin 02.
 
@@ -139,7 +145,8 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 
 **Independent Test**: `--check` on twin 02 lists sections and no text (spec US5).
 
-- [ ] T028 [US5] Extend `feed notion --check` in `internal/cli/feed_notion.go` with contracts §6: per page, sections with origin and size, skipped sections with reasons, never text (FR-040); fixture: notion-knowledge-twin-02 golden output
+- [x] T028 [US5] Extend `feed notion --check` in `internal/cli/feed_notion.go` with contracts §6: per page, sections with origin and size, skipped sections with reasons, never text (FR-040); fixture: notion-knowledge-twin-02 golden output
+  - *As built:* the golden is `internal/cli/testdata/notion-twin-02-check.golden`, over `testdata/notion-twin-02.yaml`; regenerate with `SRE_AGENT_GEN_FIXTURES=1`.
 
 **Checkpoint**: PR 2 complete; merge when green.
 

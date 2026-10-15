@@ -30,6 +30,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
 
@@ -227,7 +228,13 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 		logger.Info("schema migrations applied")
 	}
 
+	// The knowledge store is the agent's own database by default (feature 008 plan §Storage):
+	// nothing to install and no network to anyone. pkg/knowledge.Store is the seam for another.
+	knowledgeStore := postgres.NewKnowledgeStore(store)
+	logger.Info("knowledge: store=postgres retrieval=lexical_only")
+
 	cfg := server.Config{
+		Knowledge:       knowledgeStore,
 		Listen:          opts.listen,
 		Auth:            auth,
 		Projector:       projector.New(store, projector.WithMetrics(metrics)),
@@ -241,7 +248,7 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 		// and the deterministic first wave, with no vendor account and no network to one
 		// (FR-067) — which is why the runner is built here unconditionally rather than only when
 		// `--model-config` is given.
-		investigations, err := newInvestigationRunner(ctx, store, cfg.Projector, opts, logger)
+		investigations, err := newInvestigationRunner(ctx, store, knowledgeStore, cfg.Projector, opts, logger)
 		if err != nil {
 			return err
 		}
@@ -452,6 +459,7 @@ func newLogger(level string, out interface{ Write([]byte) (int, error) }) (*slog
 func newInvestigationRunner(
 	ctx context.Context,
 	store *postgres.Store,
+	knowledgeStore knowledge.Store,
 	proj *projector.Projector,
 	opts *serveOptions,
 	logger *slog.Logger,
@@ -509,6 +517,7 @@ func newInvestigationRunner(
 		Prior:             prior,
 		Mode:              mode,
 		NoKnowledgeWorker: opts.noKnowledgeWorker,
+		KnowledgeStore:    knowledgeStore,
 		Logger:            logger,
 	})
 	if err != nil {

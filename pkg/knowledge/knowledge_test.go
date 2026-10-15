@@ -67,3 +67,23 @@ func TestCosineAndNormalise(t *testing.T) {
 		t.Errorf("Cosine of mismatched lengths = %v", got)
 	}
 }
+
+func TestOwnsDocument(t *testing.T) {
+	cases := []struct {
+		source, ref string
+		want        bool
+	}{
+		{"notion:LDMA", "notion.page=abc", true},
+		{"github:org/repo", "github.file=ops/x.md", true},
+		{"notion:LDMA", "github.file=x", false},
+		{"notion:LDMA", "notion=abc", false},
+		{"notion:LDMA", "notion.page=", false},
+		{"notion", "notion.page=abc", false},
+		{"notion:LDMA", "notionx.page=abc", false},
+	}
+	for _, c := range cases {
+		if got := knowledge.OwnsDocument(c.source, c.ref); got != c.want {
+			t.Errorf("OwnsDocument(%q, %q) = %v, want %v", c.source, c.ref, got, c.want)
+		}
+	}
+}

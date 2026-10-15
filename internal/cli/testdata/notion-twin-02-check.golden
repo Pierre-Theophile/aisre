@@ -1,0 +1,43 @@
+notion check: nothing was sent to the graph
+capabilities: not verifiable through Notion's API; testdata/notion-twin-02.yaml acknowledges notion.capabilities (an integration created with Read content only)
+workspace: "twin", not asked of Notion: this check read a recording
+
+database 4e5f6071-8293-44a4-b5c6-d7e8f90a1b2c (postmortem)
+  data sources: 5f607182-93a4-45b5-c6d7-e8f90a1b2c3d
+  property "Services" (entities): found
+  property "Summary" (summary): found
+  property "Signals / Symptoms" (indexed): found
+  property "Root cause" (indexed): found
+  property "Resolution" (indexed): found
+  property "Incident date" (authored): found
+  page bodies: indexed by heading
+  registered: 3
+    "Checkout 5xx after a payments rollout"
+    "Checkout 5xx on 2026-09-01"
+    "Reporting nightly: connection pool exhaustion and 5xx after a rollout"
+  not registered: 0
+  sections read: 3 page(s)
+    "Checkout 5xx after a payments rollout": 9 section(s)
+      Summary (property, 77 chars)
+      Signals / Symptoms (property, 1035 chars)
+      Root cause (property, 70 chars)
+      Resolution (property, 68 chars)
+      Body (body, 46 chars)
+      Timeline (body, 1538 chars, 2 parts)
+      Detection (body, 193 chars)
+      Escalated to [redacted] (body, 20 chars)
+      Follow-ups (body, 114 chars)
+      skipped Contact: emptied by sanitisation
+      skipped unsupported block child_page: 1
+      skipped unsupported block embed: 1
+      skipped unsupported block image: 1
+    "Checkout 5xx on 2026-09-01": 3 section(s)
+      Summary (property, 48 chars)
+      Signals / Symptoms (property, 210 chars)
+      Body (body, 26 chars)
+    "Reporting nightly: connection pool exhaustion and 5xx after a rollout": 3 section(s)
+      Summary (property, 89 chars)
+      Signals / Symptoms (property, 56 chars)
+      Timeline (body, 66 chars)
+  ended (trashed, moved or deleted): 0
+  outside the configured databases: 0
