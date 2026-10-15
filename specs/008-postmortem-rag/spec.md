@@ -69,10 +69,17 @@ constitution was amended to 1.2.0 in the same change.
   free text it chooses (alert text, error messages, the hypothesis under test); the engine also runs one
   search at investigation start from the triggering alert, so a matching postmortem is in context before
   the first hypothesis. (FR-030–FR-032)
-- Q5: Which model computes the semantic score? → **Default: the embedding model of the production
-  model provider (Mistral today), declared in the versioned model configuration like every other model
-  role.** Without its credential, retrieval runs lexical only and says so in the evidence chain; it never
-  fails an investigation. (FR-026–FR-028)
+- Q5: Which model computes the semantic score? → **Default: any embedding provider the operator
+  chooses, behind one published interface, declared in the versioned model configuration like every
+  other model role.** The project is open source, so no dependency is imposed: a hosted API, an
+  OpenAI-compatible endpoint, or a self-hosted model on the operator's own hardware are all first-class.
+  The shipped configuration uses the production model provider (Mistral today) as an example, not a
+  requirement. Without a configured provider, retrieval runs lexical only and says so in the evidence
+  chain; it never fails an investigation. (FR-026–FR-029)
+- Q6 (added by the owner on 2026-10-15): Must the knowledge store be pluggable too? → **Yes.** The
+  knowledge store is an interface with a default that needs no external service (embedded, on the
+  agent's own disk), and operators may plug in an external or self-hosted search or vector store
+  instead. Every implementation passes the same conformance suite. (FR-005–FR-007)
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -216,6 +223,12 @@ section text.
   known, so retrieval can be answered as of any instant.
 - **FR-004**: The constitution's Scope & Non-Goals entry on RAG (amended to 1.2.0 on 2026-10-15) and 002
   FR-049/FR-049a MUST be read as Q1 states. RAG over telemetry stays prohibited.
+- **FR-005**: The knowledge store MUST be reached only through a published interface, so an operator can
+  replace the default with an external or self-hosted store by configuration, without changing the agent.
+- **FR-006**: The default knowledge store MUST need no external service and no network access.
+- **FR-007**: A published conformance suite MUST cover every store behaviour this feature relies on
+  (versioning, as-of reads, lexical and semantic search, rebuild), and every shipped implementation MUST
+  pass it.
 
 ### B. What is indexed
 
@@ -249,10 +262,13 @@ section text.
   entities are inside the investigation's scope (extends 002 FR-050).
 - **FR-026**: The embedding model MUST be declared in the versioned model configuration and recorded with
   every investigation (002 FR-061).
-- **FR-027**: Without the embedding credential, or when the embedding call fails, retrieval MUST run lexical
-  only and record that in the evidence chain.
+- **FR-027**: With no embedding provider configured, without its credential, or when the embedding call
+  fails, retrieval MUST run lexical only and record that in the evidence chain.
 - **FR-028**: Changing the embedding model MUST rebuild the semantic index before it serves; one search
   MUST never mix scores from two models.
+- **FR-029**: The embedding provider MUST be reached only through a published interface; the project MUST
+  ship at least a hosted-API adapter and an adapter for a self-hosted or OpenAI-compatible endpoint, and
+  no provider MUST be required for the agent to run.
 
 ### D. Queries
 
@@ -300,7 +316,9 @@ section text.
   an equally matching in-scope postmortem always ranks above it.
 - **SC-005**: No graph event, log line or report contains section text; no stored section, recording or log
   contains a person's name or email or a planted canary secret.
-- **SC-006**: With no embedding credential, every investigation still completes, and its evidence chain
+- **SC-008**: Swapping the embedding provider or the knowledge store for another shipped implementation
+  needs only a configuration change, and the conformance suite and retrieval evaluation pass on each.
+- **SC-006**: With no embedding provider configured, every investigation still completes, and its evidence chain
   states that retrieval was lexical only.
 - **SC-007**: A page edited in Notion is retrievable with its new text within 20 minutes at the default
   poll interval, at p95.
@@ -318,8 +336,8 @@ section text.
 - Features 001–007 are merged; 007's feeder, configuration, `--check` and recording format are extended,
   not replaced. 007's owner-gated T030 (record a real workspace) is done after this feature, so the
   recording carries sections.
-- The production model provider offers an embedding model; if it does not, the plan picks one and records
-  why, as Q5 allows.
+- The agent is open source and self-hostable: no requirement in this feature may depend on a specific
+  vendor, and every external dependency it adds is optional and replaceable (owner, 2026-10-15).
 - Tens to low thousands of documents per deployment; no distributed index is needed.
 - The owner's "SRE Agent Post Mortem" database in the LDMA workspace is the first real corpus; its seven
   postmortems seed the retrieval fixture set, sanitised and kept private.
