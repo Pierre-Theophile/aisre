@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-15
 
-**Status**: Draft, awaiting the owner's approval of the five defaults below
+**Status**: Approved by the owner 2026-10-15 (all five defaults and the constitution amendment); planning
 
 **Input**: User description: "Postmortems should not be ingested into the graph but RAG-ed to allow
 retrieval on them; the temporal graph is there for events. That is how a state-of-the-art AI SRE
@@ -45,10 +45,11 @@ What it adds, in priority order:
 
 ## Clarifications
 
-### Session 2026-10-15 — defaults proposed for the owner's approval
+### Session 2026-10-15 — defaults approved by the owner
 
 Each of these changes a decision already approved for 002 or 007, or the constitution. Each default
-is written into the requirements below.
+is written into the requirements below; the owner approved all five as written on 2026-10-15, and the
+constitution was amended to 1.2.0 in the same change.
 
 - Q1: Where does postmortem content live? → **Default: in a knowledge store separate from the graph,
   owned by the agent.** The graph keeps 007's thin `KNOWLEDGE_DOC` node (title, kind, location, dates)
@@ -213,8 +214,8 @@ section text.
   one `CONCERNS` edge; a document with no edge MUST NOT be indexed.
 - **FR-003**: The knowledge store MUST keep every version of every section with the instant it became
   known, so retrieval can be answered as of any instant.
-- **FR-004**: The constitution's Scope & Non-Goals entry on RAG and 002 FR-049/FR-049a MUST be amended,
-  before any implementation task, as Q1 states. RAG over telemetry stays prohibited.
+- **FR-004**: The constitution's Scope & Non-Goals entry on RAG (amended to 1.2.0 on 2026-10-15) and 002
+  FR-049/FR-049a MUST be read as Q1 states. RAG over telemetry stays prohibited.
 
 ### B. What is indexed
 
@@ -317,7 +318,6 @@ section text.
 - Features 001–007 are merged; 007's feeder, configuration, `--check` and recording format are extended,
   not replaced. 007's owner-gated T030 (record a real workspace) is done after this feature, so the
   recording carries sections.
-- The owner approves the constitution amendment in Q1; without it this feature cannot proceed past planning.
 - The production model provider offers an embedding model; if it does not, the plan picks one and records
   why, as Q5 allows.
 - Tens to low thousands of documents per deployment; no distributed index is needed.
