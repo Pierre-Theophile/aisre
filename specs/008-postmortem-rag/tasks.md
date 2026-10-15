@@ -19,7 +19,7 @@ dependency order. US2 and US3 (scope as boost, as-of sections) come first becaus
 worker's contract and are testable on the memory store alone; US1 needs Notion sections (PR 2) and
 embeddings (PR 3) to be met in full.
 
-**Status**: spec, plan and these tasks approved by the owner on 2026-10-15 (all three PRs); in implementation.
+**Status**: spec, plan and these tasks approved by the owner on 2026-10-15 (all three PRs); in implementation. PR 1 (T001–T012, T014–T017) built; T013 moved to PR 3.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -43,8 +43,8 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 
 **Purpose**: publish the shared names before any code depends on them.
 
-- [ ] T001 Write `docs/decisions/ADR-0014-shared-contract-additions-for-008.md`: the `KnowledgeItem` fields 10–12, `KnowledgeDigest` fields 3–4, `knowledge.v1.KnowledgeService/PutSections`, the `pkg/knowledge` `Store` and `Embedder` interfaces, the scorer `knowledge/hybrid@1`, the `embedding:` configuration block, with the alternatives rejected in research R2, R4 and R5 and a reference to constitution 1.2.0 (G3, research R9); fixture: unit (`scripts/check-specs.sh`)
-- [ ] T002 Add the fields of contracts §4 to `api/sreagent/investigation/v1/investigation.proto`, create `api/sreagent/knowledge/v1/knowledge.proto` with `KnowledgeService`, and regenerate with `buf generate`; `buf lint` and `buf breaking` against `main` pass (FR-025, research R9); fixture: unit (CI schema job)
+- [x] T001 Write `docs/decisions/ADR-0014-shared-contract-additions-for-008.md`: the `KnowledgeItem` fields 10–12, `KnowledgeDigest` fields 3–4, `knowledge.v1.KnowledgeService/PutSections`, the `pkg/knowledge` `Store` and `Embedder` interfaces, the scorer `knowledge/hybrid@1`, the `embedding:` configuration block, with the alternatives rejected in research R2, R4 and R5 and a reference to constitution 1.2.0 (G3, research R9); fixture: unit (`scripts/check-specs.sh`)
+- [x] T002 Add the fields of contracts §4 to `api/sreagent/investigation/v1/investigation.proto`, create `api/sreagent/knowledge/v1/knowledge.proto` with `KnowledgeService`, and regenerate with `buf generate`; `buf lint` and `buf breaking` against `main` pass (FR-025, research R9); fixture: unit (CI schema job)
 
 **Checkpoint**: ADR-0014 merged in this PR before any dependent code.
 
@@ -54,10 +54,10 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 
 **Purpose**: the public interfaces, the memory store and the conformance suite. Blocks every story.
 
-- [ ] T003 Write `pkg/knowledge/store.go` and `pkg/knowledge/embedder.go`: `Store`, `Embedder`, `Section`, `Hit`, `ModelID` (with `String()` as `provider:model@dimensions`), `Purpose`, `PendingSection`, `DigestVector`, the section digest function and the 1,200-character and 500-section limits, exactly as contracts §1–§2 and data-model §Section (FR-005, FR-012); fixture: unit
-- [ ] T004 [P] Write `pkg/knowledge/storetest/storetest.go`: `Run(t, newStore)` covering every behaviour listed in contracts §1 "Conformance" (FR-007); fixture: unit
-- [ ] T005 Implement `pkg/knowledge/memory/memory.go`: an in-memory `Store`, lexical by the existing BM25 (moved from `internal/investigation/workers/knowledge/bm25.go` to `pkg/knowledge/memory/bm25.go`), semantic by exact cosine; passes `storetest.Run` (FR-003, FR-007); fixture: unit
-- [ ] T006 Add `KnowledgeDocuments(ctx, at AsOf)` to `internal/query/knowledge.go`: every `KNOWLEDGE_DOC` version known at the pin with at least one `CONCERNS` edge valid and known at the instants, with all linked entity ids and link provenance, plus the reviewed past investigations of 007 R3; keep `KnowledgeCandidates` as a thin filter over it for existing callers (G2, FR-002, research R3); fixture: unit against `internal/query/knowledge_test.go`'s graph
+- [x] T003 Write `pkg/knowledge/store.go` and `pkg/knowledge/embedder.go`: `Store`, `Embedder`, `Section`, `Hit`, `ModelID` (with `String()` as `provider:model@dimensions`), `Purpose`, `PendingSection`, `DigestVector`, the section digest function and the 1,200-character and 500-section limits, exactly as contracts §1–§2 and data-model §Section (FR-005, FR-012); fixture: unit
+- [x] T004 [P] Write `pkg/knowledge/storetest/storetest.go`: `Run(t, newStore)` covering every behaviour listed in contracts §1 "Conformance" (FR-007); fixture: unit
+- [x] T005 Implement `pkg/knowledge/memory/memory.go`: an in-memory `Store`, lexical by the existing BM25 (moved from `internal/investigation/workers/knowledge/bm25.go` to `pkg/knowledge/memory/bm25.go`), semantic by exact cosine; passes `storetest.Run` (FR-003, FR-007); fixture: unit — **Done (PR 1).** BM25 moved to `pkg/knowledge/bm25.go` rather than `memory/`, so the worker's lexical ranking and the memory store share one function.
+- [x] T006 Add `KnowledgeDocuments(ctx, at AsOf)` to `internal/query/knowledge.go`: every `KNOWLEDGE_DOC` version known at the pin with at least one `CONCERNS` edge valid and known at the instants, with all linked entity ids and link provenance, plus the reviewed past investigations of 007 R3; keep `KnowledgeCandidates` as a thin filter over it for existing callers (G2, FR-002, research R3); fixture: unit against `internal/query/knowledge_test.go`'s graph
 
 **Checkpoint**: a third-party store could be written and checked against `storetest` from here.
 
@@ -69,11 +69,11 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 
 **Independent Test**: two equally matching postmortems, one in scope and one out; both returned, the in-scope one first, the other flagged `in_scope: false` (spec US2).
 
-- [ ] T007 [US2] Write `internal/investigation/workers/knowledge/hybrid.go`: `knowledge/hybrid@1` as research R4 (RRF k = 60 over up to two section rankings, best section per document with the best two carried, ×1.5 in scope, ties by document ref, label, part); `ScorerVersion = "knowledge/hybrid@1"` (FR-020–FR-022, FR-024); fixture: unit with hand-computed ranks
-- [ ] T008 [US2] Rewrite `Worker.Call` in `internal/investigation/workers/knowledge/knowledge.go`: candidates from `KnowledgeDocuments` (T006), sections from the `Store` restricted to candidate refs, ranking by T007; replace `keepLinked` by the `in_scope` flag; fill `section_label`, `in_scope`, `matched_text`, `retrieval_mode = lexical_only` (FR-021, FR-025); the worker takes a `Store` and an optional `Embedder` in `New`; fixture: unit
-- [ ] T009 [US2] Synthesise sections for documents with no stored sections: a registered summary becomes `Summary` (origin `summary`), a past investigation's verdict line becomes `Verdict` (origin `verdict`), read from the node version at the pin (FR-015, data-model §Section); fixture: unit with a `knowledge link` document and a reviewed investigation
-- [ ] T010 [US2] Update the knowledge worker's goldens and `fixtures/incidents/knowledge-scope-01` for the new contract: the out-of-subgraph document is now returned with `in_scope: false` and ranked below the in-scope one, and SC-014's "never cited" assertion becomes "never ranked above an equally matching in-scope document"; fix the fixture's predicate path to `knowledge.items[*].document_id` (known defect, 007); fixture: knowledge-scope-01
-- [ ] T011 [US2] Register the memory store for the evaluation harness in `internal/eval/harness.go`, loading sections from a fixture's `documents.yaml` when present (research R10); fixture: knowledge-notion-01
+- [x] T007 [US2] Write `internal/investigation/workers/knowledge/hybrid.go`: `knowledge/hybrid@1` as research R4 (RRF k = 60 over up to two section rankings, best section per document with the best two carried, ×1.5 in scope, ties by document ref, label, part); `ScorerVersion = "knowledge/hybrid@1"` (FR-020–FR-022, FR-024); fixture: unit with hand-computed ranks — **Done (PR 1).** The lexical ranking is BM25 over the union of the store's top 50 lexical sections and each candidate's synthesised section, so two conformant stores rank alike (ADR-0014 item 4.3).
+- [x] T008 [US2] Rewrite `Worker.Call` in `internal/investigation/workers/knowledge/knowledge.go`: candidates from `KnowledgeDocuments` (T006), sections from the `Store` restricted to candidate refs, ranking by T007; replace `keepLinked` by the `in_scope` flag; fill `section_label`, `in_scope`, `matched_text`, `retrieval_mode = lexical_only` (FR-021, FR-025); the worker takes a `Store` and an optional `Embedder` in `New`; fixture: unit — **Done (PR 1).** `New(corpus, WithStore(store))`; the embedder option arrives with the semantic path (T033), so no option exists that does nothing.
+- [x] T009 [US2] Synthesise sections for documents with no stored sections: a registered summary becomes `Summary` (origin `summary`), a past investigation's verdict line becomes `Verdict` (origin `verdict`), read from the node version at the pin (FR-015, data-model §Section); fixture: unit with a `knowledge link` document and a reviewed investigation — **Done (PR 1).** Every candidate carries its synthesised section, stored sections or not, so a document's title stays matchable.
+- [x] T010 [US2] Update the knowledge worker's goldens and `fixtures/incidents/knowledge-scope-01` for the new contract: the out-of-subgraph document is now returned with `in_scope: false` and ranked below the in-scope one, and SC-014's "never cited" assertion becomes "never ranked above an equally matching in-scope document"; fix the fixture's predicate path to `knowledge.items[*].document_id` (known defect, 007); fixture: knowledge-scope-01
+- [x] T011 [US2] Register the memory store for the evaluation harness in `internal/eval/harness.go`, loading sections from a fixture's `documents.yaml` when present (research R10); fixture: knowledge-notion-01
 
 **Checkpoint**: US2 testable on the memory store; SC-004 asserted.
 
@@ -85,8 +85,8 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 
 **Independent Test**: a section edited after the pin is matched in its earlier text; a page created after the pin is never returned (spec US3).
 
-- [ ] T012 [US3] Pass the request's observed instant to `Store.Lexical` and `Store.Semantic` in `knowledge.go`, and assert in `internal/investigation/workers/knowledge/asof_test.go` the four acceptance scenarios of US3 (FR-023, SC-003); fixture: unit
-- [ ] T013 [US3] Add `fixtures/incidents/knowledge-asof-01/`: a postmortem written after the incident, a section rewritten after the pin, a page trashed before the pin; verified by `aisre fixture verify` (replay from empty, doubled, shuffled), asserting 0 citations of later knowledge (SC-003); fixture: knowledge-asof-01
+- [x] T012 [US3] Pass the request's observed instant to `Store.Lexical` and `Store.Semantic` in `knowledge.go`, and assert in `internal/investigation/workers/knowledge/asof_test.go` the four acceptance scenarios of US3 (FR-023, SC-003); fixture: unit
+- [ ] T013 [US3] Add `fixtures/incidents/knowledge-asof-01/`: a postmortem written after the incident, a section rewritten after the pin, a page trashed before the pin; verified by `aisre fixture verify` (replay from empty, doubled, shuffled), asserting 0 citations of later knowledge (SC-003); fixture: knowledge-asof-01 — **Moved to PR 3, after T035.** Until `knowledge_search` is in the first wave, a model-free replay never calls it and the fixture would assert nothing; SC-003 is covered in PR 1 by `asof_test.go`, the `asof-01` retrieval fixture and the graph-backed worker tests.
 
 **Checkpoint**: SC-003 holds on the memory store.
 
@@ -98,10 +98,10 @@ the worker in `internal/investigation/workers/knowledge/`, Notion sections in
 
 **Independent Test**: dropping body sections from a fixture fails the gate (spec US4).
 
-- [ ] T014 [P] [US4] Define the retrieval fixture format of data-model §Retrieval fixture in `internal/eval/retrieval/fixture.go` with a loader and validation; fixture: unit
-- [ ] T015 [US4] Write `fixtures/retrieval/`: at least eight synthetic fixtures modelled on the shapes of real postmortems (symptom past 600 characters, reworded symptom, cross-service, as-of, runbook, two equally matching in-scope and out-of-scope) (FR-043); fixture: retrieval/*
-- [ ] T016 [US4] Implement `aisre eval retrieval <dir>` in `internal/cli/eval_retrieval.go` and `internal/eval/retrieval/run.go`: recall@3 and MRR per fixture and in aggregate, per mode; exit 1 under the gate (FR-042); fixture: retrieval/*
-- [ ] T017 [US4] Add the lexical gate to `.github/workflows/eval.yml` with the baseline measured on T015 written into `internal/eval/retrieval/thresholds.go`, and a planted regression test that drops body sections and expects failure (FR-042); fixture: retrieval/*
+- [x] T014 [P] [US4] Define the retrieval fixture format of data-model §Retrieval fixture in `internal/eval/retrieval/fixture.go` with a loader and validation; fixture: unit
+- [x] T015 [US4] Write `fixtures/retrieval/`: at least eight synthetic fixtures modelled on the shapes of real postmortems (symptom past 600 characters, reworded symptom, cross-service, as-of, runbook, two equally matching in-scope and out-of-scope) (FR-043); fixture: retrieval/*
+- [x] T016 [US4] Implement `aisre eval retrieval <dir>` in `internal/cli/eval_retrieval.go` and `internal/eval/retrieval/run.go`: recall@3 and MRR per fixture and in aggregate, per mode; exit 1 under the gate (FR-042); fixture: retrieval/* — **Done (PR 1).** Exits 4 under the gate, as `fixture verify` does, rather than 1, which this CLI reserves for usage errors.
+- [x] T017 [US4] Add the lexical gate to `.github/workflows/eval.yml` with the baseline measured on T015 written into `internal/eval/retrieval/thresholds.go`, and a planted regression test that drops body sections and expects failure (FR-042); fixture: retrieval/* — **Done (PR 1).** The gate runs on every pull request, in `ci.yml`'s test job and in `go test`, not in the nightly `eval.yml`: it needs no database, model or network, and a nightly gate would let a regression merge.
 
 **Checkpoint**: PR 1 complete; merge when green.
 

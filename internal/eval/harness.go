@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
+	"github.com/Pierre-Theophile/aisre/internal/eval/retrieval"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/audit"
 	backend "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
@@ -36,6 +38,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
+	kstore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
 
@@ -137,6 +140,7 @@ type Harness struct {
 	prior    audit.PriorRecord
 	graph    graphworker.QueryService
 	corpus   knowledge.Corpus
+	sections kstore.Store
 	world    *sdk.World
 	cleanup  func()
 
@@ -225,7 +229,26 @@ func (h *Harness) openGraph(ctx context.Context) error {
 	queries := query.NewEngine(store)
 	h.graph = graphworker.NewEngineService(queries)
 	h.corpus = knowledge.GraphCorpus{Engine: queries}
+	if h.sections, err = FixtureKnowledgeStore(ctx, h.manifest.Dir); err != nil {
+		h.Close()
+		return err
+	}
 	return nil
+}
+
+// FixtureKnowledgeStore returns an in-memory knowledge store holding the sections of the fixture's
+// documents.yaml (008 T011, research R10), or nil when the fixture has none: its documents are then
+// matched on what the graph holds about them, as in production with no store configured.
+func FixtureKnowledgeStore(ctx context.Context, dir string) (kstore.Store, error) {
+	path := filepath.Join(dir, retrieval.DocumentsFile)
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	documents, err := retrieval.LoadDocuments(path)
+	if err != nil {
+		return nil, err
+	}
+	return documents.Store(ctx)
 }
 
 // Close drops the disposable database. It is safe to call more than once.
@@ -270,6 +293,7 @@ func (h *Harness) Run(ctx context.Context) (*RunOutcome, error) {
 		Prior:           h.prior,
 		Graph:           h.graph,
 		Knowledge:       h.corpus,
+		KnowledgeStore:  h.sections,
 		Telemetry:       telemetry,
 		Kind:            h.opts.Kind,
 		Client:          client,
@@ -304,6 +328,7 @@ func (h *Harness) Engine(telemetry sdk.TelemetryBackend) (*engine.Engine, error)
 		Prior:           h.prior,
 		Graph:           h.graph,
 		Knowledge:       h.corpus,
+		KnowledgeStore:  h.sections,
 		Telemetry:       telemetry,
 		Kind:            h.opts.Kind,
 		Client:          client,
@@ -735,6 +760,9 @@ type EngineWiring struct {
 	// Knowledge is the knowledge worker's corpus over the same graph. Nil leaves the worker out,
 	// as for a harness handed a Graph it did not build (007 FR-005).
 	Knowledge knowledge.Corpus
+	// KnowledgeStore holds the fixture's document sections, from its documents.yaml (008 T011).
+	// Nil matches every document on what the graph holds about it alone.
+	KnowledgeStore kstore.Store
 	// Telemetry is the one backend the metrics, logs and traces workers are bound to.
 	Telemetry sdk.TelemetryBackend
 	// Kind is KindModelFree, KindFakeModel or KindLive.
@@ -764,7 +792,11 @@ func NewEngine(w EngineWiring) (*engine.Engine, error) {
 		traces.New(w.Telemetry),
 	}
 	if w.Knowledge != nil {
-		registered = append(registered, knowledge.New(w.Knowledge))
+		var opts []knowledge.Option
+		if w.KnowledgeStore != nil {
+			opts = append(opts, knowledge.WithStore(w.KnowledgeStore))
+		}
+		registered = append(registered, knowledge.New(w.Knowledge, opts...))
 	}
 	for _, each := range registered {
 		if err := registry.Register(each); err != nil {

@@ -2,8 +2,11 @@
 id: knowledge-scope-01
 family: conformance
 description: >-
-  US6 and SC-014: retrieval is scoped by the graph, and a document linked to nothing in the
-  investigation's subgraph is never cited -- not ranked low, not cited with a caveat. Never.
+  US6 and SC-014, as amended by 008 (constitution 1.2.0): scope is computed by the graph, and a
+  document linked to nothing in the investigation's subgraph is never cited as in scope. It is
+  still eligible, flagged `in_scope: false` and ranked below an equally matching in-scope
+  document (008 SC-004): the same failure on another service is worth reading, and saying where
+  it happened is what keeps it from being mistaken for this one.
 
   Two runbooks are registered as KNOWLEDGE_DOC nodes with CONCERNS edges, and they are written
   to be as confusable as two documents can be:
@@ -16,7 +19,8 @@ description: >-
     component: nothing in the shop calls it and it calls nothing in the shop, so it is outside
     checkout's subgraph at any hop radius. The runbook is a near-perfect lexical match for the
     symptom -- it is about connection-pool exhaustion producing 5xx, in the same words -- and a
-    retriever that ranks on text alone will surface it first. It must be cited in 0 % of runs.
+    retriever that ranks on text alone will surface it first. It must be cited as in scope in
+    0 % of runs, and never above the payments runbook.
 
   The incident underneath is a payments rollout at 14:20, so the in-scope runbook is not merely
   citable but actually useful, and a run that finds the culprit BECAUSE the runbook told it
@@ -126,7 +130,7 @@ incident:
             entity_ids: [otel.service.name=checkout, otel.service.name=payments]
             query_terms: [connection, pool, 5xx, rollout]
             limit: 10
-        field_path: documents[*].document_ref
+        field_path: knowledge.items[*].document_id
         op: contains
         value: github.file=ops/runbooks/payments-rollouts.md
         note: >-
@@ -137,13 +141,14 @@ incident:
             entity_ids: [otel.service.name=checkout, otel.service.name=payments]
             query_terms: [connection, pool, 5xx, rollout]
             limit: 10
-        field_path: documents[*].document_ref
-        op: not_contains
-        value: github.file=ops/runbooks/reporting-nightly.md
+        field_path: knowledge.items[document_id=github.file=ops/runbooks/reporting-nightly.md].in_scope
+        op: absent
         note: >-
-          the out-of-subgraph runbook is the best lexical match in the corpus and is never
-          returned, because the scope is computed from CONCERNS edges before anything is
-          ranked. SC-014 measures this at 0 % of runs, not at "rarely".
+          the out-of-subgraph runbook is the best lexical match in the corpus. Since 008 it is
+          eligible, flagged out of scope and ranked below an equally matching in-scope document
+          (008 SC-004); it is never cited as in scope (an absent in_scope is false on the wire),
+          because scope is computed from CONCERNS edges, not from the text. SC-014 measures this
+          at 0 % of runs, not at "rarely".
 
     decoys: []
     exonerating_evidence: {}

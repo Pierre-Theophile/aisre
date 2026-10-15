@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+documents:
+- ref: notion.page=pm-inventory-deadlock
+  kind: postmortem
+  title: Inventory incident in June
+  summary: Stock updates stalled for half an hour.
+  location: https://www.notion.so/pm-inventory-deadlock
+  authored_at: '2026-06-11T09:00:00Z'
+  links:
+  - entity: otel.service.name=inventory
+    valid_from: '2026-06-11T09:00:00Z'
+  puts:
+  - at: '2026-06-11T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: >-
+        A deadlock between reservation and restock transactions aborted every other inventory update.
+  - at: '2026-09-02T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: >-
+        Two transactions took row locks in opposite orders; fixed by a consistent lock order.
+- ref: notion.page=pm-inventory-later
+  kind: postmortem
+  title: Inventory deadlock in September
+  summary: Inventory reservation deadlock again.
+  location: https://www.notion.so/pm-inventory-later
+  authored_at: '2026-09-05T09:00:00Z'
+  links:
+  - entity: otel.service.name=inventory
+    valid_from: '2026-09-05T09:00:00Z'
+  puts:
+  - at: '2026-09-05T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: Inventory reservation deadlock between reservation and restock, again.
+- ref: notion.page=pm-inventory-backfill
+  kind: postmortem
+  title: Inventory backfill
+  summary: A backfill held locks.
+  location: https://www.notion.so/pm-inventory-backfill
+  authored_at: '2026-04-01T09:00:00Z'
+  links:
+  - entity: otel.service.name=inventory
+    valid_from: '2026-04-01T09:00:00Z'
+    known_from: '2026-09-03T09:00:00Z'
+  puts:
+  - at: '2026-04-01T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: An inventory reservation backfill caused a deadlock storm.
+- ref: github.file=ops/runbooks/checkout.md
+  kind: runbook
+  title: Checkout runbook
+  summary: How to page, how to roll back, and which dashboards to open.
+  location: https://github.com/shop/ops/blob/main/ops/runbooks/checkout.md
+  authored_at: '2026-03-01T09:00:00Z'
+  links:
+  - entity: otel.service.name=checkout
+    valid_from: '2026-03-01T09:00:00Z'
+  puts:
+  - at: '2026-03-01T09:00:00Z'
+    sections:
+    - label: Paging
+      origin: body
+      text: >-
+        Page the checkout on-call through the incident tool; escalate to payments if card authorisations
+        fail.
+    - label: Dashboards
+      origin: body
+      text: >-
+        Open the checkout overview, the payments dependency board and the error budget board.
+- ref: notion.page=pm-search-reindex
+  kind: postmortem
+  title: Search latency after a reindex
+  summary: Search p95 latency tripled for forty minutes during a scheduled reindex.
+  location: https://www.notion.so/pm-search-reindex
+  authored_at: '2026-04-10T09:00:00Z'
+  links:
+  - entity: otel.service.name=search
+    valid_from: '2026-04-10T09:00:00Z'
+  puts:
+  - at: '2026-04-10T09:00:00Z'
+    sections:
+    - label: Impact
+      origin: property
+      text: Search p95 latency rose from 180 ms to 600 ms; no errors were returned.
+    - label: Root cause
+      origin: body
+      text: >-
+        The nightly reindex ran during business hours and saturated disk throughput on the search nodes;
+        queries queued behind merges.

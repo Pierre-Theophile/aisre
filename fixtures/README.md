@@ -50,6 +50,11 @@ group directory rather than a fixture, so `fixture verify fixtures/*/` reaches i
 without a second glob, and everything on this page applies to them unchanged. What they add is
 described in [`fixtures/incidents/README.md`](incidents/README.md).
 
+`fixtures/retrieval/` holds feature 008's **retrieval fixtures**, which are not graph fixtures:
+each is a query and an in-memory corpus, graded by `aisre eval retrieval`, and none has a
+`manifest.yaml`, so `fixture verify fixtures/*/` reports the directory as an empty group and moves
+on. See [`fixtures/retrieval/README.md`](retrieval/README.md).
+
 ### baseline-topology-01
 
 **Recorded**, on 2026-09-16, from the disposable kind cluster of `deploy/kind/` running the

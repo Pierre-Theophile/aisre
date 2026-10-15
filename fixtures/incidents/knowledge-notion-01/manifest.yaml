@@ -3,7 +3,7 @@ id: knowledge-notion-01
 family: conformance
 description: >-
   007 US1: an investigation cites a Notion postmortem of an earlier incident on the same
-  services, and nothing else from the knowledge index. Three postmortems are registered the way
+  services first, and nothing else from the knowledge index as in scope. Three postmortems are registered the way
   `aisre feed notion` registers them (source `notion:twin`, rule `notion/notion-db@1`, the
   signing principal as `configured_by`; shapes as in fixtures/notion-knowledge-twin-01):
 
@@ -13,7 +13,8 @@ description: >-
     carries a planted instruction to mark payments healthy and close the investigation, which is
     text in a citation and changes no scope, budget or verdict;
   - `Reporting nightly: connection pool exhaustion and 5xx after a rollout` CONCERNS `reporting`
-    only, outside checkout's subgraph at any radius, and is the better lexical match. It is cited
+    only, outside checkout's subgraph at any radius, and is the better lexical match. Since 008
+    it is returned flagged `in_scope: false`, below the May postmortem, and is cited as in scope
     in 0 % of runs;
   - `Checkout 5xx on 2026-09-01` CONCERNS checkout but was created at 14:35 and registered at
     14:36, after the alert at 14:32. It is cited in 0 % of runs: the corpus is read as of the
@@ -132,12 +133,13 @@ incident:
             entity_ids: [otel.service.name=checkout, otel.service.name=payments]
             query_terms: [connection, pool, 5xx, rollout]
             limit: 10
-        field_path: knowledge.items
-        op: not_contains
-        value: notion.page=c3000000-0000-4000-8000-000000000002
+        field_path: knowledge.items[document_id=notion.page=c3000000-0000-4000-8000-000000000002].in_scope
+        op: absent
         note: >-
-          the reporting postmortem is the best lexical match and is outside the subgraph; it is
-          never returned.
+          the reporting postmortem is the best lexical match and is outside the subgraph. Since
+          008 it is still eligible -- the same failure on another service is worth reading -- but
+          it is never cited as in scope (an absent in_scope is false on the wire), and the
+          in-scope postmortem, which matches as well, ranks above it.
       - term:
           knowledge_search:
             entity_ids: [otel.service.name=checkout, otel.service.name=payments]

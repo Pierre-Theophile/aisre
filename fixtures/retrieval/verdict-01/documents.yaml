@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+documents:
+- ref: sre.investigation.id=inv-2026-07-12
+  kind: investigation
+  title: payments rev41 leaked database connections; checkout 5xx followed
+  location: inv-2026-07-12
+  authored_at: '2026-07-12T15:00:00Z'
+  links:
+  - entity: otel.service.name=payments
+    valid_from: '2026-07-12T15:00:00Z'
+  - entity: otel.service.name=checkout
+    valid_from: '2026-07-12T15:00:00Z'
+- ref: notion.page=pm-db-failover
+  kind: postmortem
+  title: Database failover
+  summary: A planned failover took longer than expected.
+  location: https://www.notion.so/pm-db-failover
+  authored_at: '2026-06-01T09:00:00Z'
+  links:
+  - entity: otel.service.name=payments
+    valid_from: '2026-06-01T09:00:00Z'
+  puts:
+  - at: '2026-06-01T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: The database failover took four minutes because replicas lagged.
+- ref: notion.page=pm-search-reindex
+  kind: postmortem
+  title: Search latency after a reindex
+  summary: Search p95 latency tripled for forty minutes during a scheduled reindex.
+  location: https://www.notion.so/pm-search-reindex
+  authored_at: '2026-04-10T09:00:00Z'
+  links:
+  - entity: otel.service.name=search
+    valid_from: '2026-04-10T09:00:00Z'
+  puts:
+  - at: '2026-04-10T09:00:00Z'
+    sections:
+    - label: Impact
+      origin: property
+      text: Search p95 latency rose from 180 ms to 600 ms; no errors were returned.
+    - label: Root cause
+      origin: body
+      text: >-
+        The nightly reindex ran during business hours and saturated disk throughput on the search nodes;
+        queries queued behind merges.
+- ref: notion.page=pm-auth-cert
+  kind: postmortem
+  title: Login failures after a certificate rotation
+  summary: Users could not log in for fifteen minutes.
+  location: https://www.notion.so/pm-auth-cert
+  authored_at: '2026-05-02T09:00:00Z'
+  links:
+  - entity: otel.service.name=auth
+    valid_from: '2026-05-02T09:00:00Z'
+  puts:
+  - at: '2026-05-02T09:00:00Z'
+    sections:
+    - label: Root cause
+      origin: body
+      text: >-
+        The identity provider's certificate was rotated and the auth service pinned the old one, so every
+        TLS handshake to the provider failed until the pin was updated.
+    - label: Resolution
+      origin: body
+      text: Removed the certificate pin and redeployed auth.

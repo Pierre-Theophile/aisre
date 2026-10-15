@@ -284,8 +284,17 @@ message KnowledgeItem {
   repeated string linked_entity_ids = 3; string link_provenance = 4;
   google.protobuf.Timestamp authored_at = 5; int64 age_days = 6;
   double score = 7; string citation = 8; string excerpt = 9;   // bounded, redacted
+  // 008 (ADR-0014): the best-matching section, and whether the document is linked to an entity
+  // inside the request's scope. A document linked elsewhere is still eligible, ranked lower.
+  string section_label = 10;              // label of the best-matching section; empty when none matched
+  bool in_scope = 11;                     // a linked entity is one of the request's entity_ids
+  string matched_text = 12;               // that section's sanitised text, at most 1,200 characters
 }
-message KnowledgeDigest { repeated KnowledgeItem items = 1; string scorer_version = 2; }
+message KnowledgeDigest {
+  repeated KnowledgeItem items = 1; string scorer_version = 2;
+  string retrieval_mode = 3;              // "hybrid" or "lexical_only" (008 FR-027)
+  string embedding_model = 4;             // provider:model@dimensions; empty when lexical only
+}
 
 // The chat family's answers. Counts, instants and permalinks; never text, never an author.
 message ChatMentionsDigest {

@@ -16,17 +16,19 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers"
+	kstore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
 
-// The knowledge worker (tasks.md T049; FR-049, FR-049a, FR-050, FR-051, FR-052).
+// The knowledge worker (tasks.md T049; FR-049, FR-049a, FR-050, FR-051, FR-052; 008 FR-020–FR-025).
 //
-// Retrieval is **scoped by the graph first and ranked second**. The candidate set is the
-// documents linked by a `CONCERNS` edge to a node in the investigation's subgraph or to one of
-// its candidate changes — nothing else is a candidate, ever. Only then is that set ranked, by
-// BM25 in bm25.go. Inverting the two, as an embedding-first design would, retrieves documents
-// linked to nothing, which FR-049 forbids and which is exactly how a retrieval system starts
-// citing a postmortem about a different service with a similar name.
+// **The graph scopes and dates; the knowledge store holds the text** (constitution 1.2.0). The
+// candidate set is every document the graph links to something by a `CONCERNS` edge, and every
+// reviewed past investigation, as of the request's instants — nothing else is a candidate, ever, so
+// the store can neither resurrect a trashed page nor invent an unlinked one. Their sections are then
+// ranked by `knowledge/hybrid@1` (hybrid.go), and a document linked to an entity inside the
+// request's scope is boosted rather than being the only one allowed: the same failure on another
+// service is still recalled, flagged `in_scope: false` (008 US2).
 //
 // Three rules the rest of the file enforces:
 //
@@ -34,7 +36,8 @@ import (
 //     wrote and past investigations; a log line is not knowledge, and a worker that would search
 //     both would have two sources of truth (FR-050).
 //   - **Every item is cited** with its identifier, the entities it is linked to, how the link was
-//     made, and its age. A citation without provenance is an appeal to authority.
+//     made, its age, the section that matched and whether it is in scope. A citation without
+//     provenance is an appeal to authority.
 //   - **A hypothesis resting only on a document is knowledge-derived and unconfirmed, and may not
 //     reach `supported`** (FR-051). The worker marks its digest so the ledger can enforce that;
 //     it is stated here because the marking is meaningless if the reason is not.
@@ -102,16 +105,41 @@ type Document struct {
 	AuthoredAt time.Time
 	// AgeDays is its age at the investigation's reference instant.
 	AgeDays int64
-	// HopsFromFocus is how far its nearest linked entity is from the investigation's focus.
-	HopsFromFocus int
 	// Location is where the document lives — a URL or a reference — so a person can open it.
 	Location string
 }
 
-// SearchableText is what BM25 ranks: the title and the registered summary. Nothing else is
-// available, and that is the design rather than a limitation.
-func (d Document) SearchableText() string {
-	return strings.TrimSpace(d.Title + " " + d.Summary)
+// MaxQueryChars bounds the query text a search ranks by (008 data-model §Search).
+const MaxQueryChars = 1000
+
+// synthesised is the one section every candidate carries from what the graph already holds about
+// it (008 FR-015): a document's title and registered summary as `Summary`, a past investigation's
+// verdict line as `Verdict`. It is what a document with nothing in the store is matched on, and
+// what keeps a title matchable for one that has.
+func (d Document) synthesised() rankedSection {
+	label, origin, text := "Summary", kstore.OriginSummary, joinNonEmpty(d.Title, d.Summary)
+	if d.Kind == KindInvestigation {
+		label, origin, text = "Verdict", kstore.OriginVerdict, d.Title
+	}
+	return rankedSection{key: sectionKey{document: d.ID, label: label}, text: truncateRunes(text, kstore.MaxSectionChars), origin: origin}
+}
+
+func joinNonEmpty(parts ...string) string {
+	var kept []string
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			kept = append(kept, part)
+		}
+	}
+	return strings.Join(kept, ". ")
+}
+
+func truncateRunes(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n])
 }
 
 // Instants is when a retrieval is asked: the valid instant the investigation is about, and the
@@ -122,31 +150,43 @@ type Instants struct {
 	Observed time.Time
 }
 
-// Corpus is the scoped set the worker ranks. Implementations resolve `CONCERNS` edges against
-// the graph; the interface exists so the worker can be tested without a database and so a later
-// feature can widen the corpus without touching the ranking.
+// Corpus is the candidate set the worker ranks. Implementations resolve `CONCERNS` edges against
+// the graph; the interface exists so the worker can be tested without a database.
 type Corpus interface {
-	// Scoped returns the documents linked by CONCERNS to any of entityIDs, as of at. It returns
-	// only linked documents, and only links valid at at.Valid and known at at.Observed: an
-	// implementation that returned anything else would defeat the scoping the constitution
-	// requires, or let a replay cite what the original run could not have read (FR-006, FR-007
-	// of 007). Each document's LinkedEntityIDs are spelled as the caller spelled entityIDs.
-	Scoped(ctx context.Context, entityIDs []string, at Instants) ([]Document, error)
+	// Candidates returns every document linked by CONCERNS to any entity, and every reviewed past
+	// investigation, as of at: only links valid at at.Valid and known at at.Observed, so a replay
+	// never cites what the original run could not have read (007 FR-006, FR-007; 008 FR-023).
+	// Each document's LinkedEntityIDs spell the entities in entityIDs as the caller spelled them,
+	// and every other linked entity by its citable reference; the worker decides scope from them.
+	Candidates(ctx context.Context, entityIDs []string, at Instants) ([]Document, error)
 }
 
 // Worker is the knowledge worker.
 type Worker struct {
 	corpus Corpus
+	store  kstore.Store
 }
 
 var _ worker.Worker = (*Worker)(nil)
 
-// New returns the knowledge worker over a corpus.
-func New(corpus Corpus) *Worker { return &Worker{corpus: corpus} }
+// Option configures a Worker.
+type Option func(*Worker)
 
-// Describe returns the declaration. No model in v1: BM25 over tens of documents is deterministic
-// and sufficient, and model re-ranking is a one-line escalation once recall@10 is measured
-// (research §7).
+// WithStore names the knowledge store sections are searched in. Without one, every candidate is
+// matched on its synthesised section alone, which is what 007 matched on.
+func WithStore(store kstore.Store) Option { return func(w *Worker) { w.store = store } }
+
+// New returns the knowledge worker over a corpus.
+func New(corpus Corpus, opts ...Option) *Worker {
+	w := &Worker{corpus: corpus}
+	for _, opt := range opts {
+		opt(w)
+	}
+	return w
+}
+
+// Describe returns the declaration. No generative model: retrieval is ranked by a published,
+// deterministic scorer, and an embedding model, when one is configured, only places vectors.
 func (w *Worker) Describe() worker.Description {
 	return worker.Description{
 		Name:          Name,
@@ -181,19 +221,20 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 	}
 
 	started := time.Now()
-	documents, err := w.corpus.Scoped(ctx, term.GetEntityIds(), instantsOf(req))
+	at := instantsOf(req)
+	documents, err := w.corpus.Candidates(ctx, term.GetEntityIds(), at)
 	if err != nil {
 		return worker.Response{}, err
 	}
-	// Defence in depth: a corpus implementation that returned an unlinked document would break
-	// SC-014, so the scoping is checked here as well as promised there.
-	documents = keepLinked(documents, term.GetEntityIds())
 
 	limit := int(term.GetLimit())
 	if limit <= 0 || limit > engine.MaxKnowledgeItems {
 		limit = engine.MaxKnowledgeItems
 	}
-	ranked := rank(documents, term.GetQueryTerms())
+	ranked, err := w.search(ctx, documents, term, at)
+	if err != nil {
+		return worker.Response{}, err
+	}
 	if len(ranked) > limit {
 		ranked = ranked[:limit]
 	}
@@ -201,7 +242,7 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 	items := make([]*investigationv1.KnowledgeItem, 0, len(ranked))
 	for _, entry := range ranked {
 		doc := entry.document
-		items = append(items, &investigationv1.KnowledgeItem{
+		item := &investigationv1.KnowledgeItem{
 			DocumentId:      doc.ID,
 			Kind:            doc.Kind,
 			LinkedEntityIds: sortedCopy(doc.LinkedEntityIDs),
@@ -211,10 +252,15 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 			Score:           entry.score,
 			Citation:        citationOf(doc),
 			// The excerpt is the registered summary, which is what a human wrote about the
-			// document. It is never the document's content: the graph holds a pointer, not a
-			// copy (FR-052).
+			// document; the matched section is beside it (ADR-0014 item 1).
 			Excerpt: doc.Summary,
-		})
+			InScope: entry.inScope,
+		}
+		if entry.section != nil {
+			item.SectionLabel = entry.section.key.label
+			item.MatchedText = truncateRunes(entry.section.text, kstore.MaxSectionChars)
+		}
+		items = append(items, item)
 	}
 
 	coverage, err := engine.CoverageInput{
@@ -225,8 +271,8 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 		Sampling:          "none",
 		ExecutedAt:        started.UTC(),
 		QuotaUndetermined: true,
-		// The knowledge layer has no indexing lag: a document is retrievable as soon as its
-		// CONCERNS edge is in the graph.
+		// The graph side has no indexing lag: a document is a candidate as soon as its CONCERNS
+		// edge is in the graph, and matched on its synthesised section from then on.
 		IngestionLag: 0,
 	}.Coverage()
 	if err != nil {
@@ -237,12 +283,14 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 		Body: &investigationv1.Digest_Knowledge{Knowledge: &investigationv1.KnowledgeDigest{
 			Items:         items,
 			ScorerVersion: ScorerVersion,
+			RetrievalMode: ModeLexicalOnly,
 		}},
 		Coverage: coverage,
 	}})
 	if len(items) == 0 {
-		// Nothing is linked to these entities. That is a real answer — "the organisation has
-		// written nothing down about this" — and it is NO_DATA rather than an empty digest.
+		// Nothing is linked to these entities and nothing elsewhere matched. That is a real
+		// answer — "the organisation has written nothing down about this" — and it is NO_DATA
+		// rather than an empty digest.
 		outcome = engine.NoData{Coverage: coverage}
 	}
 
@@ -269,24 +317,74 @@ func (w *Worker) Call(ctx context.Context, req worker.Request) (worker.Response,
 const UnconfirmedNotice = "knowledge-derived: a document says this. A hypothesis resting only on a document " +
 	"is unconfirmed and may not reach `supported` until a source-of-truth worker agrees (FR-051)."
 
-// keepLinked drops any document that is not linked to one of the requested entities. SC-014 is
-// "an in-subgraph document is cited and an out-of-subgraph document is never cited", and this is
-// where "never" is enforced rather than assumed.
-func keepLinked(documents []Document, entityIDs []string) []Document {
-	wanted := make(map[string]struct{}, len(entityIDs))
-	for _, id := range entityIDs {
-		wanted[id] = struct{}{}
+// result is one ranked document, before the digest is built.
+type result struct {
+	document Document
+	score    float64
+	inScope  bool
+	section  *matchedSection // the best-matching section; nil when none matched
+}
+
+// search ranks documents by knowledge/hybrid@1. A matched document is returned whether or not it
+// is in scope; an in-scope document nothing in which matched is returned after them at score 0,
+// because "this is what the organisation wrote about these entities" is still worth a citation,
+// and it is what 007 returned. An out-of-scope document that matched nothing is not returned.
+func (w *Worker) search(ctx context.Context, documents []Document, term *investigationv1.KnowledgeSearchTerm, at Instants) ([]result, error) {
+	requested := make(map[string]struct{}, len(term.GetEntityIds()))
+	for _, id := range term.GetEntityIds() {
+		requested[id] = struct{}{}
 	}
-	out := make([]Document, 0, len(documents))
+	byRef := make(map[string]Document, len(documents))
+	inScope := make(map[string]bool, len(documents))
+	refs := make([]string, 0, len(documents))
+	synthesised := make([]rankedSection, 0, len(documents))
 	for _, doc := range documents {
+		if _, dup := byRef[doc.ID]; dup {
+			continue
+		}
+		byRef[doc.ID] = doc
+		refs = append(refs, doc.ID)
 		for _, linked := range doc.LinkedEntityIDs {
-			if _, ok := wanted[linked]; ok {
-				out = append(out, doc)
+			if _, ok := requested[linked]; ok {
+				inScope[doc.ID] = true
 				break
 			}
 		}
+		synthesised = append(synthesised, doc.synthesised())
 	}
-	return out
+	sort.Strings(refs)
+
+	query := truncateRunes(strings.Join(term.GetQueryTerms(), " "), MaxQueryChars)
+	var stored []kstore.Hit
+	if w.store != nil && len(refs) > 0 {
+		hits, err := w.store.Lexical(ctx, query, refs, at.Observed, RankingDepth)
+		if err != nil {
+			return nil, fmt.Errorf("knowledge: lexical search: %w", err)
+		}
+		for _, hit := range hits {
+			// Defence in depth: the store was asked for candidates only, and a hit outside them
+			// would be a document the graph does not vouch for.
+			if _, ok := byRef[hit.DocumentRef]; ok {
+				stored = append(stored, hit)
+			}
+		}
+	}
+
+	fused := fuse([][]rankedSection{lexicalRanking(query, synthesised, stored)}, inScope)
+	out := make([]result, 0, len(fused))
+	matched := make(map[string]struct{}, len(fused))
+	for _, f := range fused {
+		best := f.sections[0]
+		out = append(out, result{document: byRef[f.ref], score: f.score, inScope: inScope[f.ref], section: &best})
+		matched[f.ref] = struct{}{}
+	}
+	for _, ref := range refs {
+		if _, ok := matched[ref]; ok || !inScope[ref] {
+			continue
+		}
+		out = append(out, result{document: byRef[ref], inScope: true})
+	}
+	return out, nil
 }
 
 func citationOf(doc Document) string {

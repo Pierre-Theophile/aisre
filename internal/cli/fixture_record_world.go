@@ -28,6 +28,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/query"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 	"github.com/Pierre-Theophile/aisre/pkg/backend/synthetic"
+	kstore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
 
@@ -215,17 +216,22 @@ func recordFixtureWorld(
 
 	queryEngine := query.NewEngine(store)
 	if manifest.IsIncident() {
+		sections, err := eval.FixtureKnowledgeStore(ctx, dir)
+		if err != nil {
+			return nil, err
+		}
+		knowledgeWiring := worldKnowledge{corpus: knowledge.GraphCorpus{Engine: queryEngine}, store: sections}
 		// The engine pass. It runs the *same* wiring `fixture record-trajectory --model-free`
 		// runs, over the same graph, against the world's own generator — so every term the
 		// deterministic engine will ask on replay is in the recording by construction rather
 		// than by a derivation the recorder happens to share with it.
-		spec.Plan = fixtureEnginePass(manifest, prior, queryEngine)
+		spec.Plan = fixtureEnginePass(manifest, prior, queryEngine, knowledgeWiring)
 		if opts.livePasses > 0 {
 			digest, _, err := eval.ModelConfiguration(opts.modelYAML)
 			if err != nil {
 				return nil, err
 			}
-			spec.Live = fixtureLivePass(manifest, prior, queryEngine, opts)
+			spec.Live = fixtureLivePass(manifest, prior, queryEngine, knowledgeWiring, opts)
 			spec.LivePasses = opts.livePasses
 			spec.ModelConfigDigest = digest
 		}
@@ -249,16 +255,24 @@ func recordFixtureWorld(
 // The graph family never reaches the recorder — graph answers come from replaying `events.jsonl`
 // and recording them would be a second source of truth for a deterministic answer — so the graph
 // worker is wired to the live query engine and only the three telemetry workers see the wrapper.
-func fixtureEnginePass(m *fixture.Manifest, prior audit.PriorRecord, queryEngine *query.Engine) worldEnginePass {
+// worldKnowledge is the knowledge worker's wiring for a world pass: the graph corpus and the
+// fixture's sections, the same the harness gives a replay (008 T011).
+type worldKnowledge struct {
+	corpus knowledge.Corpus
+	store  kstore.Store
+}
+
+func fixtureEnginePass(m *fixture.Manifest, prior audit.PriorRecord, queryEngine *query.Engine, kw worldKnowledge) worldEnginePass {
 	return func(ctx context.Context, backend *synthetic.Backend, recorder sdk.Recorder) (*enginePassReport, error) {
 		taping := newRecordingBackend(backend, recorder, m.Incident.Question.FiredAt.UTC())
 		wiring := eval.EngineWiring{
-			Manifest:  m,
-			Prior:     prior,
-			Graph:     graphworker.NewEngineService(queryEngine),
-			Knowledge: knowledge.GraphCorpus{Engine: queryEngine},
-			Telemetry: taping,
-			Kind:      eval.KindModelFree,
+			Manifest:       m,
+			Prior:          prior,
+			Graph:          graphworker.NewEngineService(queryEngine),
+			Knowledge:      kw.corpus,
+			KnowledgeStore: kw.store,
+			Telemetry:      taping,
+			Kind:           eval.KindModelFree,
 			// The pass records what a *live* backend answered: these bytes become the recording,
 			// and stamping them `recorded` before anything had recorded them would be a claim
 			// about provenance that is not true yet.
@@ -293,22 +307,23 @@ func fixtureEnginePass(m *fixture.Manifest, prior audit.PriorRecord, queryEngine
 // investigation take different paths, and the union of a handful of them is a far better estimate
 // of what the corpus will ask than any single run.
 func fixtureLivePass(
-	m *fixture.Manifest, prior audit.PriorRecord, queryEngine *query.Engine, opts worldRecordOptions,
+	m *fixture.Manifest, prior audit.PriorRecord, queryEngine *query.Engine, kw worldKnowledge, opts worldRecordOptions,
 ) worldEnginePass {
 	return func(ctx context.Context, backend *synthetic.Backend, recorder sdk.Recorder) (*enginePassReport, error) {
 		taping := newRecordingBackend(backend, recorder, m.Incident.Question.FiredAt.UTC())
 		var stop string
 		for pass := range opts.livePasses {
 			wiring := eval.EngineWiring{
-				Manifest:   m,
-				Prior:      prior,
-				Graph:      graphworker.NewEngineService(queryEngine),
-				Knowledge:  knowledge.GraphCorpus{Engine: queryEngine},
-				Telemetry:  taping,
-				Kind:       eval.KindLive,
-				ModelYAML:  opts.modelYAML,
-				PricesYAML: opts.pricesYAML,
-				Mode:       worker.ModeLive,
+				Manifest:       m,
+				Prior:          prior,
+				Graph:          graphworker.NewEngineService(queryEngine),
+				Knowledge:      kw.corpus,
+				KnowledgeStore: kw.store,
+				Telemetry:      taping,
+				Kind:           eval.KindLive,
+				ModelYAML:      opts.modelYAML,
+				PricesYAML:     opts.pricesYAML,
+				Mode:           worker.ModeLive,
 				// One investigation id across the passes, deliberately: the id is part of the
 				// prompt prefix, and a prefix that changed per pass would defeat the provider's
 				// cache on every one of them.

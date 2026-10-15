@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+documents:
+- ref: notion.page=pm-cart-redis
+  kind: postmortem
+  title: Checkout errors in March
+  summary: Checkout returned errors for twenty-five minutes; customers had to start over.
+  location: https://www.notion.so/pm-cart-redis
+  authored_at: '2026-03-18T09:00:00Z'
+  links:
+  - entity: otel.service.name=checkout
+    valid_from: '2026-03-18T09:00:00Z'
+  - entity: otel.service.name=cart
+    valid_from: '2026-03-18T09:00:00Z'
+  puts:
+  - at: '2026-03-18T09:00:00Z'
+    sections:
+    - label: Timeline
+      origin: body
+      text: "14:05 the on-call engineer acknowledged the page and opened the service dashboard. 14:09\
+        \ a second engineer joined the incident channel and started reading recent deploys. 14:14 the\
+        \ incident commander asked for a customer impact estimate from support. 14:20 the team agreed\
+        \ to hold all deploys until the cause was understood. 14:05 the on-call engineer acknowledged\
+        \ the page and opened the service dashboard. 14:09 a second engineer joined the incident channel\
+        \ and started reading recent deploys. 14:14 the incident commander asked for a customer impact\
+        \ estimate from support. 14:20 the team agreed to hold all deploys until the cause was understood.\
+        \ 14:05 the on-call engineer acknowledged the page and opened the service dashboard. 14:09 a second\
+        \ engineer joined the incident channel and started reading recent deploys. 14:14 the incident\
+        \ commander asked for a customer impact estimate from support. 14:20 the team agreed to hold all\
+        \ deploys until the cause was understood. "
+    - label: Root cause
+      origin: body
+      text: >-
+        The cart cache reached Redis maxmemory and the allkeys-lru eviction policy evicted live cart sessions,
+        so checkout could not find the cart it was paying for.
+    - label: Resolution
+      origin: body
+      text: Raised maxmemory, moved sessions to a dedicated instance with noeviction.
+- ref: github.file=ops/runbooks/checkout.md
+  kind: runbook
+  title: Checkout runbook
+  summary: How to page, how to roll back, and which dashboards to open.
+  location: https://github.com/shop/ops/blob/main/ops/runbooks/checkout.md
+  authored_at: '2026-03-01T09:00:00Z'
+  links:
+  - entity: otel.service.name=checkout
+    valid_from: '2026-03-01T09:00:00Z'
+  puts:
+  - at: '2026-03-01T09:00:00Z'
+    sections:
+    - label: Paging
+      origin: body
+      text: >-
+        Page the checkout on-call through the incident tool; escalate to payments if card authorisations
+        fail.
+    - label: Dashboards
+      origin: body
+      text: >-
+        Open the checkout overview, the payments dependency board and the error budget board.
+- ref: notion.page=pm-checkout-dns
+  kind: postmortem
+  title: Checkout outage from DNS lookups
+  summary: Checkout requests timed out for twenty minutes.
+  location: https://www.notion.so/pm-checkout-dns
+  authored_at: '2026-06-20T09:00:00Z'
+  links:
+  - entity: otel.service.name=checkout
+    valid_from: '2026-06-20T09:00:00Z'
+  puts:
+  - at: '2026-06-20T09:00:00Z'
+    sections:
+    - label: Timeline
+      origin: body
+      text: "14:05 the on-call engineer acknowledged the page and opened the service dashboard. 14:09\
+        \ a second engineer joined the incident channel and started reading recent deploys. 14:14 the\
+        \ incident commander asked for a customer impact estimate from support. 14:20 the team agreed\
+        \ to hold all deploys until the cause was understood. 14:05 the on-call engineer acknowledged\
+        \ the page and opened the service dashboard. 14:09 a second engineer joined the incident channel\
+        \ and started reading recent deploys. 14:14 the incident commander asked for a customer impact\
+        \ estimate from support. 14:20 the team agreed to hold all deploys until the cause was understood. "
+    - label: Root cause
+      origin: body
+      text: >-
+        A resolver change set ndots to five, so every external lookup tried five search domains first
+        and CoreDNS was overloaded.
+- ref: notion.page=pm-search-reindex
+  kind: postmortem
+  title: Search latency after a reindex
+  summary: Search p95 latency tripled for forty minutes during a scheduled reindex.
+  location: https://www.notion.so/pm-search-reindex
+  authored_at: '2026-04-10T09:00:00Z'
+  links:
+  - entity: otel.service.name=search
+    valid_from: '2026-04-10T09:00:00Z'
+  puts:
+  - at: '2026-04-10T09:00:00Z'
+    sections:
+    - label: Impact
+      origin: property
+      text: Search p95 latency rose from 180 ms to 600 ms; no errors were returned.
+    - label: Root cause
+      origin: body
+      text: >-
+        The nightly reindex ran during business hours and saturated disk throughput on the search nodes;
+        queries queued behind merges.

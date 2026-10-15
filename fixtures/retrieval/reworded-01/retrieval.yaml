@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+id: reworded-01
+shape: reworded-symptom
+description: >-
+  The alert speaks of TLS handshake failures to the PSP; the postmortem describes the same failure as
+  the provider's new certificate chain not being trusted. No term is shared, so lexical retrieval misses
+  it; this is the case semantic retrieval exists for (008 PR 3). The auth postmortem shares the words
+  and not the failure.
+query:
+  terms:
+  - tls
+  - handshake
+  - failure
+  - psp
+  entity_ids:
+  - otel.service.name=payments
+  valid_at: '2026-09-01T14:32:00Z'
+  observed_at: '2026-09-01T14:32:00Z'
+expect:
+  document: notion.page=pm-provider-chain
+  in_scope: true

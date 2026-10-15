@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+id: verdict-01
+shape: past-investigation
+description: >-
+  A reviewed past investigation is matched on its verdict line, which the graph already holds; nothing
+  about it is in the store (008 FR-015).
+query:
+  terms:
+  - leaked
+  - database
+  - connections
+  entity_ids:
+  - otel.service.name=payments
+  valid_at: '2026-09-01T14:32:00Z'
+  observed_at: '2026-09-01T14:32:00Z'
+expect:
+  document: sre.investigation.id=inv-2026-07-12
+  in_scope: true

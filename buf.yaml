@@ -3,7 +3,7 @@
 # The published schema of this project (constitution IX). `buf lint` and `buf breaking`
 # against main both gate every pull request; see .github/workflows/ci.yml.
 #
-# The module holds two published packages, and one `path: api` covers both, so lint and
+# The module holds three published packages, and one `path: api` covers them all, so lint and
 # breaking apply to each of them without further configuration:
 #
 #   sreagent.graph.v1          api/sreagent/graph/v1/graph.proto
@@ -12,11 +12,15 @@
 #                              the investigation service, the hypothesis ledger, the query
 #                              algebra, the digest contract (shared with 003 and 005), the
 #                              recording format and the fixture ground truth (feature 002)
+#   sreagent.knowledge.v1      api/sreagent/knowledge/v1/knowledge.proto
+#                              the knowledge store's write path: a source's document sections
+#                              (feature 008, ADR-0014)
 #
 # `sreagent.investigation.v1` starts at v1 and is checked against main from its first merge:
 # it is implemented by third-party telemetry backends, so it is a contract on the day it
-# lands, not on the day someone else adopts it. The CI job asserts that both packages are in
-# the module, so a new package cannot be added outside it and escape the gate.
+# lands, not on the day someone else adopts it. `sreagent.knowledge.v1` follows the same rule.
+# The CI job asserts that every package is in the module, so a new package cannot be added
+# outside it and escape the gate.
 
 version: v2
 

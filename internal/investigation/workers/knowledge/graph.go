@@ -13,11 +13,8 @@ import (
 )
 
 // GraphCorpus is the corpus a running deployment reads: the graph's CONCERNS and INVESTIGATED
-// edges as of the request's instants (007 FR-005–FR-008, ADR-0013 item 3).
-//
-// Until feature 007 the worker had only test doubles to read, so a live `knowledge_search`
-// answered "no registered worker". This is the one read that turns registered documents and
-// reviewed investigations into candidates; the ranking above it is unchanged.
+// edges as of the request's instants (007 FR-005–FR-008, ADR-0013 item 3), every one of them
+// rather than only those into the request's scope (008 research R3).
 type GraphCorpus struct {
 	Engine *query.Engine
 }
@@ -33,9 +30,9 @@ const (
 	investigationNamespace      = "sre.investigation.id"
 )
 
-// Scoped implements Corpus.
-func (c GraphCorpus) Scoped(ctx context.Context, entityIDs []string, at Instants) ([]Document, error) {
-	candidates, err := c.Engine.KnowledgeCandidates(ctx, entityIDs, query.AsOf{ValidAt: at.Valid, ObservedAt: at.Observed})
+// Candidates implements Corpus.
+func (c GraphCorpus) Candidates(ctx context.Context, entityIDs []string, at Instants) ([]Document, error) {
+	candidates, err := c.Engine.KnowledgeDocuments(ctx, entityIDs, query.AsOf{ValidAt: at.Valid, ObservedAt: at.Observed})
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: read the corpus: %w", err)
 	}
@@ -50,7 +47,7 @@ func documentOf(c query.KnowledgeCandidate, at time.Time) Document {
 	doc := Document{
 		ID:              c.Ref,
 		Title:           c.DisplayName,
-		LinkedEntityIDs: c.Linked,
+		LinkedEntityIDs: append(append([]string(nil), c.Linked...), c.Elsewhere...),
 	}
 	if c.Type == graph.NodeTypeInvestigation {
 		// A reviewed past investigation: the engine's own verdict, cited by its id. Its summary is

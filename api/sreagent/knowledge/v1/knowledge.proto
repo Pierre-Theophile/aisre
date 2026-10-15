@@ -1,0 +1,39 @@
+// Public schema for the knowledge store's write path (feature 008, ADR-0014). A source that
+// registers documents in the graph (a KNOWLEDGE_DOC node and its CONCERNS edges) sends their
+// text here, as sections, so that retrieval can match on content the graph never carries
+// (constitution 1.2.0: the graph scopes and dates the RAG index; it holds no document content).
+// Versioned with buf; breaking changes require a MAJOR bump (constitution IX).
+syntax = "proto3";
+
+package sreagent.knowledge.v1;
+
+option go_package = "github.com/Pierre-Theophile/aisre/api/sreagent/knowledge/v1;knowledgev1";
+
+// One labelled piece of a document's text: a property, or the body under one heading.
+message Section {
+  string label = 1;                  // the property name or heading; "Body" before the first heading
+  uint32 part = 2;                   // 0 unless the section was split to fit the size limit
+  string text = 3;                   // sanitised plain text, 1 to 1,200 characters
+  string origin = 4;                 // "property" | "body" | "summary" | "verdict"
+}
+
+message PutSectionsRequest {
+  string source_id = 1;              // e.g. "notion:LDMA"; must match the token's source
+  string document_ref = 2;           // e.g. "notion.page=<id>"; namespace owned by the source
+  repeated Section sections = 3;     // the document's whole current set; absent sections are closed
+}
+
+message PutSectionsResponse {
+  uint32 opened = 1;                 // new section versions
+  uint32 closed = 2;                 // versions closed because they changed or disappeared
+  uint32 unchanged = 3;              // sections whose text was already current
+}
+
+// KnowledgeService is the write path of the knowledge store. Reads go through the investigation
+// engine's knowledge_search term, never through this service.
+service KnowledgeService {
+  // PutSections replaces the current section set of one document. Refused with PermissionDenied
+  // for a source or namespace the token does not own, and InvalidArgument for a section over
+  // 1,200 characters, an empty label, or more than 500 sections.
+  rpc PutSections(PutSectionsRequest) returns (PutSectionsResponse);
+}

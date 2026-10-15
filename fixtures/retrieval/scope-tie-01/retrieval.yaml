@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic retrieval fixture (008 T015). See fixtures/retrieval/README.md.
+id: scope-tie-01
+shape: scope-tie
+description: >-
+  Two postmortems carry the same matching section word for word: one is about payments, inside the scope,
+  the other about search, outside it. The in-scope one must rank first (008 SC-004).
+query:
+  terms:
+  - connection
+  - pool
+  - exhaustion
+  entity_ids:
+  - otel.service.name=payments
+  valid_at: '2026-09-01T14:32:00Z'
+  observed_at: '2026-09-01T14:32:00Z'
+expect:
+  document: notion.page=pm-payments-pool
+  in_scope: true
