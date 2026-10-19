@@ -115,13 +115,17 @@ func renderDecision(cmd *cobra.Command, global *globalOptions, what string, resu
 	if p.json() {
 		return p.writeJSON(result)
 	}
+	signed := ""
+	if principal := result.GetPrincipal(); principal != "" {
+		signed = " by " + principal
+	}
 	switch result.GetStatus() {
 	case graphv1.IngestResult_APPLIED:
-		return p.writeLine("%s recorded as %s (observed %s)",
-			what, result.GetEventId(), formatTime(result.GetObservedAt()))
+		return p.writeLine("%s recorded as %s%s (observed %s)",
+			what, result.GetEventId(), signed, formatTime(result.GetObservedAt()))
 	case graphv1.IngestResult_DUPLICATE_NOOP:
-		return p.writeLine("%s was already recorded as %s; nothing changed",
-			what, result.GetEventId())
+		return p.writeLine("%s was already recorded as %s%s; nothing changed",
+			what, result.GetEventId(), signed)
 	case graphv1.IngestResult_REJECTED:
 		return exitErrorf(ExitRejected, "%s was refused (%s): %s",
 			what, result.GetReasonCode(), result.GetReasonDetail())

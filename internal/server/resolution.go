@@ -282,6 +282,7 @@ func (s *ResolutionService) decide(ctx context.Context, kind string, subject []s
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	result.Principal = p.Key()
 	if result.GetStatus() == graphv1.IngestResult_APPLIED {
 		if err := s.recordPrincipal(ctx, p); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)

@@ -624,6 +624,7 @@ message IngestResult {
   Status status = 2;
   string reason_code = 3; string reason_detail = 4;
   google.protobuf.Timestamp observed_at = 5;
+  string principal = 6;   // the person a human decision was signed as (009 FR-012); empty otherwise
 }
 
 service IngestService {

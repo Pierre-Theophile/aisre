@@ -4506,6 +4506,7 @@ type IngestResult struct {
 	ReasonCode    string                 `protobuf:"bytes,3,opt,name=reason_code,json=reasonCode,proto3" json:"reason_code,omitempty"`
 	ReasonDetail  string                 `protobuf:"bytes,4,opt,name=reason_detail,json=reasonDetail,proto3" json:"reason_detail,omitempty"`
 	ObservedAt    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	Principal     string                 `protobuf:"bytes,6,opt,name=principal,proto3" json:"principal,omitempty"` // the person a human decision was signed as (009 FR-012); empty otherwise
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4573,6 +4574,13 @@ func (x *IngestResult) GetObservedAt() *timestamppb.Timestamp {
 		return x.ObservedAt
 	}
 	return nil
+}
+
+func (x *IngestResult) GetPrincipal() string {
+	if x != nil {
+		return x.Principal
+	}
+	return ""
 }
 
 type IngestBatchRequest struct {
@@ -8386,7 +8394,7 @@ const file_sreagent_graph_v1_graph_proto_rawDesc = "" +
 	"\x05title\x18\v \x01(\tR\x05title\x12-\n" +
 	"\x12declaring_identity\x18\f \x01(\tR\x11declaringIdentity\x12\x18\n" +
 	"\asampled\x18\r \x01(\bR\asampled\x128\n" +
-	"\x18sampled_interval_seconds\x18\x0e \x01(\x03R\x16sampledIntervalSeconds\"\xbd\x02\n" +
+	"\x18sampled_interval_seconds\x18\x0e \x01(\x03R\x16sampledIntervalSeconds\"\xdb\x02\n" +
 	"\fIngestResult\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12>\n" +
 	"\x06status\x18\x02 \x01(\x0e2&.sreagent.graph.v1.IngestResult.StatusR\x06status\x12\x1f\n" +
@@ -8394,7 +8402,8 @@ const file_sreagent_graph_v1_graph_proto_rawDesc = "" +
 	"reasonCode\x12#\n" +
 	"\rreason_detail\x18\x04 \x01(\tR\freasonDetail\x12;\n" +
 	"\vobserved_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"observedAt\"O\n" +
+	"observedAt\x12\x1c\n" +
+	"\tprincipal\x18\x06 \x01(\tR\tprincipal\"O\n" +
 	"\x06Status\x12\x16\n" +
 	"\x12STATUS_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aAPPLIED\x10\x01\x12\x12\n" +

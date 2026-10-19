@@ -51,6 +51,7 @@ type clientSet struct {
 	ingest     graphv1connect.IngestServiceClient
 	query      graphv1connect.QueryServiceClient
 	resolution graphv1connect.ResolutionServiceClient
+	catalog    graphv1connect.CatalogServiceClient
 }
 
 // newClients builds the clients for the configured server and token.
@@ -67,6 +68,7 @@ func newClients(opts *globalOptions) (*clientSet, error) {
 		ingest:     graphv1connect.NewIngestServiceClient(httpClient, base),
 		query:      graphv1connect.NewQueryServiceClient(httpClient, base),
 		resolution: graphv1connect.NewResolutionServiceClient(httpClient, base),
+		catalog:    graphv1connect.NewCatalogServiceClient(httpClient, base),
 	}, nil
 }
 

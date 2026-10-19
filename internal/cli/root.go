@@ -188,6 +188,8 @@ func NewRootCommand() *cobra.Command {
 		newFeedCommand(opts),
 		newQueryCommand(opts),
 		newResolveCommand(opts),
+		newCatalogCommand(opts),
+		newAttributeCommand(opts),
 		newFixtureCommand(opts),
 		newInvestigateCommand(opts),
 		newWorkerCommand(opts),
