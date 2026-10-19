@@ -999,7 +999,11 @@ over it is reported.
   neither yields a reference, the engine MUST NOT guess one: it proceeds under FR-003 and FR-026 to
   the outcome `unknown` with "name the affected service(s)" as the resolving action, and MUST accept
   those services when a human supplies them as a fact under FR-057a, reopening the investigation
-  under FR-057b and starting from the declared services.
+  under FR-057b and starting from the declared services. *(Amended 2026-10-19 by
+  specs/009-service-catalog, ADR-0015 item 8: a target reference MAY also come from an attribution of
+  the signal to a catalog entry at or above the published threshold of `attribution/rules@1`, whose
+  rule id and ruleset version are recorded exactly as for a parse rule, with provenance
+  `attribution`. Below the threshold the engine still MUST NOT guess, and proceeds as above.)*
 - **FR-003**: The engine MUST resolve the subject to a canonical graph entity before reasoning,
   MUST report both the identifier it was given and the entity it resolved to, and MUST NOT proceed
   on a guessed identity. An unresolvable subject MUST produce an outcome under FR-026.

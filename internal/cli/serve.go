@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Pierre-Theophile/aisre/internal/catalog"
 	"github.com/Pierre-Theophile/aisre/internal/embedding"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/budget"
@@ -102,6 +103,8 @@ type serveOptions struct {
 	// (008 SC-008). Swapping it is this flag and nothing else.
 	knowledgeStore string
 	slackAPI       string
+	// noAttributor leaves the service catalog's attributor out (009 research R4); it runs by default.
+	noAttributor bool
 }
 
 func newServeCommand(global *globalOptions) *cobra.Command {
@@ -168,6 +171,9 @@ func newServeCommand(global *globalOptions) *cobra.Command {
 	flags.StringVar(&opts.knowledgeStore, "knowledge-store", knowledgeStorePostgres,
 		"where document sections and their vectors are kept: postgres (the agent's own database) or memory "+
 			"(not durable: for evaluation and trials); any other pkg/knowledge.Store is plugged in from Go")
+	flags.BoolVar(&opts.noAttributor, "no-attributor", false,
+		"do not attribute alerts, declarations, documents and changes to service catalog entries (009); "+
+			"decisions already in the log stay")
 	flags.StringVar(&opts.slackAPI, "slack-api", "", "Slack API base URL, for tests against a twin")
 	_ = flags.MarkHidden("slack-api")
 
@@ -283,6 +289,12 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 			"model_config", opts.modelConfig,
 			"recording_root", opts.recordingRoot,
 			"budget_profiles", opts.budgetProfiles)
+	}
+	if !opts.noAttributor {
+		// The service catalog's attributor (009 research R4): it follows the log and appends its
+		// decisions under its own source, off the ingest path. A replay never runs it.
+		attributor := catalog.New(cfg.Projector, catalog.WithLogger(logger))
+		go attributor.Run(ctx)
 	}
 	srv, err := server.New(cfg)
 	if err != nil {

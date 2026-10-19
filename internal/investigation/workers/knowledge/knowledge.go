@@ -583,6 +583,10 @@ type LinkRequest struct {
 	// Provenance replaces the default `registered by <RegisteredBy>` link provenance, for a connector
 	// whose link was made by a rule an operator configured (`notion/notion-db@1 configured by …`).
 	Provenance string
+	// Unlinked registers a document that names no entity, for the service catalog to attribute from
+	// the names it carries (009 FR-006, research R3). Only a connector that records those names on
+	// the node sets it; a person linking a document names what it concerns.
+	Unlinked bool
 }
 
 // Validate refuses a registration that would produce an uncitable document.
@@ -593,7 +597,7 @@ func (r LinkRequest) Validate() error {
 	if !ValidKind(r.Kind) {
 		return fmt.Errorf("knowledge link kind %q is not published; the set is %v", r.Kind, Kinds())
 	}
-	if len(r.EntityRefs) == 0 {
+	if len(r.EntityRefs) == 0 && !r.Unlinked {
 		return fmt.Errorf(
 			"knowledge link names no entities; retrieval is scoped by the graph, so a document linked to nothing is a document that can never be retrieved (FR-049)")
 	}

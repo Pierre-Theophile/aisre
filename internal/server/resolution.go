@@ -154,6 +154,73 @@ func (s *ResolutionService) RejectDependency(ctx context.Context, req *connect.R
 		})
 }
 
+// The catalog decisions of feature 009 (ADR-0015 item 1). Each reaches `decide` like every other
+// human decision, so the principal is stamped and the decider role demanded in one place. The
+// subject of each is what a person names on the command line: an entry slug, or a name and the
+// entry it belongs to.
+
+// DeclareCatalogEntry states an entry's whole state: create, confirm, rename, hide or restore.
+func (s *ResolutionService) DeclareCatalogEntry(ctx context.Context, req *connect.Request[graphv1.DeclareCatalogEntry]) (*connect.Response[graphv1.IngestResult], error) {
+	msg := req.Msg
+	subject := []string{msg.GetSlug(), msg.GetDisplayName(), msg.GetKind(), msg.GetStatus(),
+		msg.GetOwner(), msg.GetDescription()}
+	return s.decide(ctx, "declare_catalog_entry", subject, msg.GetRationale(),
+		func(env *graphv1.EventEnvelope) {
+			env.Body = &graphv1.EventEnvelope_DeclareCatalogEntry{DeclareCatalogEntry: msg}
+		})
+}
+
+// DeclareAlias says a name denotes an entry (or, with entry "-", that it is not a service).
+func (s *ResolutionService) DeclareAlias(ctx context.Context, req *connect.Request[graphv1.DeclareAlias]) (*connect.Response[graphv1.IngestResult], error) {
+	msg := req.Msg
+	return s.decide(ctx, "declare_alias", aliasSubject(msg.GetName(), msg.GetEnvironment(), msg.GetEntrySlug()),
+		msg.GetRationale(),
+		func(env *graphv1.EventEnvelope) { env.Body = &graphv1.EventEnvelope_DeclareAlias{DeclareAlias: msg} })
+}
+
+// RetractAlias ends an alias from now on; its history stays.
+func (s *ResolutionService) RetractAlias(ctx context.Context, req *connect.Request[graphv1.RetractAlias]) (*connect.Response[graphv1.IngestResult], error) {
+	msg := req.Msg
+	return s.decide(ctx, "retract_alias", aliasSubject(msg.GetName(), msg.GetEnvironment(), msg.GetEntrySlug()),
+		msg.GetRationale(),
+		func(env *graphv1.EventEnvelope) { env.Body = &graphv1.EventEnvelope_RetractAlias{RetractAlias: msg} })
+}
+
+// RejectAlias refuses a proposed alias durably: a later identical proposal is a conflict.
+func (s *ResolutionService) RejectAlias(ctx context.Context, req *connect.Request[graphv1.RejectAlias]) (*connect.Response[graphv1.IngestResult], error) {
+	msg := req.Msg
+	return s.decide(ctx, "reject_alias", aliasSubject(msg.GetName(), msg.GetEnvironment(), msg.GetEntrySlug()),
+		msg.GetRationale(),
+		func(env *graphv1.EventEnvelope) { env.Body = &graphv1.EventEnvelope_RejectAlias{RejectAlias: msg} })
+}
+
+// CorrectAttribution says what a signal is about, outranking every automated decision.
+func (s *ResolutionService) CorrectAttribution(ctx context.Context, req *connect.Request[graphv1.CorrectAttribution]) (*connect.Response[graphv1.IngestResult], error) {
+	msg := req.Msg
+	subject := append([]string{graph.RefFromProto(msg.GetSignal()).String(), msg.GetScope()}, msg.GetEntrySlugs()...)
+	if msg.GetName() != nil {
+		subject = append(subject, aliasSubject(msg.GetName(), msg.GetEnvironment(), "")...)
+	}
+	return s.decide(ctx, "correct_attribution", subject, msg.GetRationale(),
+		func(env *graphv1.EventEnvelope) {
+			env.Body = &graphv1.EventEnvelope_CorrectAttribution{CorrectAttribution: msg}
+		})
+}
+
+// RevertCorrection undoes a correction from now on; the correction stays in history.
+func (s *ResolutionService) RevertCorrection(ctx context.Context, req *connect.Request[graphv1.RevertCorrection]) (*connect.Response[graphv1.IngestResult], error) {
+	msg := req.Msg
+	return s.decide(ctx, "revert_correction", []string{msg.GetCorrectionEventId()}, msg.GetRationale(),
+		func(env *graphv1.EventEnvelope) {
+			env.Body = &graphv1.EventEnvelope_RevertCorrection{RevertCorrection: msg}
+		})
+}
+
+// aliasSubject renders an alias decision's subject for the deterministic event id.
+func aliasSubject(name *graphv1.Ref, environment, slug string) []string {
+	return []string{graph.RefFromProto(name).String(), environment, slug}
+}
+
 // dependencySubject renders the triple for the deterministic event id, in the order asserted.
 //
 // The direction is part of the subject rather than sorted away: "checkout depends on orders-db"
@@ -215,6 +282,7 @@ func (s *ResolutionService) decide(ctx context.Context, kind string, subject []s
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
+	result.Principal = p.Key()
 	if result.GetStatus() == graphv1.IngestResult_APPLIED {
 		if err := s.recordPrincipal(ctx, p); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, err)

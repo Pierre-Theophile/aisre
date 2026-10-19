@@ -136,6 +136,8 @@ func New(cfg Config) (*Server, error) {
 		NewQueryService(cfg.Projector, cfg.Metrics, logger), interceptors))
 	mux.Handle(graphv1connect.NewResolutionServiceHandler(
 		NewResolutionService(cfg.Projector, cfg.Metrics, logger), interceptors))
+	mux.Handle(graphv1connect.NewCatalogServiceHandler(
+		NewCatalogService(cfg.Projector, cfg.Metrics, logger), interceptors))
 	if cfg.Investigation != nil {
 		mux.Handle(investigationv1connect.NewInvestigationServiceHandler(cfg.Investigation, interceptors))
 	}

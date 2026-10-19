@@ -10,6 +10,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 )
 
@@ -121,6 +123,10 @@ func (e *Engine) KnowledgeDocuments(ctx context.Context, refs []string, at AsOf)
 		}
 	}
 
+	if err := e.catalogScope(ctx, r, requested, at); err != nil {
+		return nil, err
+	}
+
 	links, err := e.knowledgeLinks(ctx, r, nil, at)
 	if err != nil {
 		return nil, err
@@ -208,13 +214,15 @@ type knowledgeLink struct {
 	since    time.Time
 }
 
-// knowledgeLinks reads the CONCERNS edges from documents valid at the instant, and the
+// knowledgeLinks reads the CONCERNS edges from documents valid at the instant, the ATTRIBUTED_TO
+// edges from documents to catalog entries, which link exactly as CONCERNS does (009 FR-022), and the
 // INVESTIGATED edges from investigations that started before it, into the target ids, or into
 // anything when targets is nil.
 func (e *Engine) knowledgeLinks(ctx context.Context, r *redirects, targets []string, at AsOf) ([]knowledgeLink, error) {
 	args := []any{targets, at.ValidAt.UTC(),
 		string(graph.EdgeTypeConcerns), string(graph.NodeTypeKnowledgeDoc),
-		string(graph.EdgeTypeInvestigated), string(graph.NodeTypeInvestigation)}
+		string(graph.EdgeTypeInvestigated), string(graph.NodeTypeInvestigation),
+		string(graph.EdgeTypeAttributedTo)}
 	// A nil targets reads every link (008 research R3); the parameter stays bound either way so
 	// the statement keeps one shape.
 	destination := "ev.dst_id = ANY($1)"
@@ -230,7 +238,7 @@ func (e *Engine) knowledgeLinks(ctx context.Context, r *redirects, targets []str
 		JOIN graph.entities en ON en.entity_id = ev.src_id
 		WHERE %s AND %s
 		  AND (
-		        (ev.type = $3 AND en.type = $4 AND ev.valid @> $2::timestamptz)
+		        (ev.type IN ($3, $7) AND en.type = $4 AND ev.valid @> $2::timestamptz)
 		     OR (ev.type = $5 AND en.type = $6 AND lower(ev.valid) < $2::timestamptz)
 		  )
 		ORDER BY ev.src_id, ev.dst_id, lower(ev.valid)`, destination, observed)
@@ -341,3 +349,59 @@ func (e *Engine) citableRefs(ctx context.Context, ids []string) (map[string]stri
 	}
 	return out, nil
 }
+
+// catalogScope widens what was requested through the catalog (009 FR-022, research R7): a requested
+// entity also requests the entries its names alias, and a requested entry also requests the
+// entities whose names alias it, each under the spelling the caller used. A postmortem filed under
+// *Candidate View* is then in scope for `datadog.service=production/candidate-api`, and one about
+// that service is in scope for `sre.catalog=candidate-view`. One step only: an entry does not
+// widen into the other entries of its entities. Aliases are read as of the observed instant.
+func (e *Engine) catalogScope(ctx context.Context, r *redirects, requested map[string][]string, at AsOf) error {
+	if len(requested) == 0 {
+		return nil
+	}
+	observed, args := at.observedPredicate("a.observed", 4)
+	rows, err := e.store.Pool().Query(ctx, fmt.Sprintf(`
+		WITH names AS (
+			SELECT entity_id, namespace, value, coalesce(attributes->>$1, '') AS env FROM graph.identity_claims
+			UNION
+			SELECT entity_id, namespace, value, coalesce(attributes->>$1, '') FROM graph.correlation_keys
+		)
+		SELECT DISTINCT n.entity_id, c.entity_id
+		FROM graph.catalog_alias_versions a
+		JOIN names n ON n.namespace = a.namespace AND n.value = a.value
+		            AND (a.environment = '' OR a.environment = n.env)
+		JOIN graph.identity_claims c ON c.namespace = $2 AND c.value = a.entry_slug
+		WHERE %s AND a.entry_slug <> $3
+		ORDER BY 1, 2`, observed),
+		append([]any{catalogEnvironmentAttr, graph.CatalogNamespace, graph.HiddenEntrySlug}, args...)...)
+	if err != nil {
+		return fmt.Errorf("query: read catalog scope: %w", err)
+	}
+	pairs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) ([2]string, error) {
+		var p [2]string
+		err := row.Scan(&p[0], &p[1])
+		return p, err
+	})
+	if err != nil {
+		return fmt.Errorf("query: read catalog scope: %w", err)
+	}
+	widened := map[string][]string{}
+	for _, p := range pairs {
+		named, entry := r.canonical(p[0]), r.canonical(p[1])
+		widened[entry] = append(widened[entry], requested[named]...)
+		widened[named] = append(widened[named], requested[entry]...)
+	}
+	for id, spellings := range widened {
+		for _, spelled := range spellings {
+			if !slices.Contains(requested[id], spelled) {
+				requested[id] = append(requested[id], spelled)
+			}
+		}
+	}
+	return nil
+}
+
+// catalogEnvironmentAttr is the claim attribute a name's environment is read from, as the
+// attributor reads it (internal/catalog.AttrEnvironment).
+const catalogEnvironmentAttr = "deployment.environment.name"

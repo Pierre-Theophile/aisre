@@ -285,6 +285,11 @@ func NewEngineService(e *query.Engine) *EngineService {
 	return &EngineService{engine: e, log: eventlog.New(e.Store())}
 }
 
+// WhyAttributed is the catalog read intake asks for the triggering signal's entries (009 FR-021).
+func (s *EngineService) WhyAttributed(ctx context.Context, req *graphv1.WhyAttributedRequest) (*graphv1.WhyAttributedResponse, error) {
+	return s.engine.WhyAttributed(ctx, req)
+}
+
 // Subgraph implements QueryService.
 func (s *EngineService) Subgraph(ctx context.Context, req *graphv1.SubgraphRequest) (*graphv1.SubgraphResponse, error) {
 	return s.engine.Subgraph(ctx, req)

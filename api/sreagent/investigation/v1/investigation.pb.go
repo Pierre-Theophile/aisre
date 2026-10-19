@@ -943,6 +943,7 @@ const (
 	TargetRefProvenance_PARSED_FROM_DECLARATION           TargetRefProvenance = 1 // by the published, stated, configurable naming rule
 	TargetRefProvenance_SUPPLIED_BY_HUMAN                 TargetRefProvenance = 2 // at declaration time or later, as a typed fact
 	TargetRefProvenance_FROM_MONITOR                      TargetRefProvenance = 3 // the monitor's own WATCHES edges
+	TargetRefProvenance_ATTRIBUTION                       TargetRefProvenance = 4 // the triggering signal's attribution to a catalog entry (009 FR-021)
 )
 
 // Enum value maps for TargetRefProvenance.
@@ -952,12 +953,14 @@ var (
 		1: "PARSED_FROM_DECLARATION",
 		2: "SUPPLIED_BY_HUMAN",
 		3: "FROM_MONITOR",
+		4: "ATTRIBUTION",
 	}
 	TargetRefProvenance_value = map[string]int32{
 		"TARGET_REF_PROVENANCE_UNSPECIFIED": 0,
 		"PARSED_FROM_DECLARATION":           1,
 		"SUPPLIED_BY_HUMAN":                 2,
 		"FROM_MONITOR":                      3,
+		"ATTRIBUTION":                       4,
 	}
 )
 
@@ -5657,13 +5660,16 @@ func (x *Ledger) GetBuckets() []*ConfidenceBucket {
 	return nil
 }
 
+// rule_id is the naming rule of a parse, or `<ruleset>/<rule>` of an attribution, whose decision is
+// decision_event_id.
 type TargetRef struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ref           *v1.Ref                `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
-	Provenance    TargetRefProvenance    `protobuf:"varint,2,opt,name=provenance,proto3,enum=sreagent.investigation.v1.TargetRefProvenance" json:"provenance,omitempty"`
-	RuleId        string                 `protobuf:"bytes,3,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Ref             *v1.Ref                `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	Provenance      TargetRefProvenance    `protobuf:"varint,2,opt,name=provenance,proto3,enum=sreagent.investigation.v1.TargetRefProvenance" json:"provenance,omitempty"`
+	RuleId          string                 `protobuf:"bytes,3,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	DecisionEventId string                 `protobuf:"bytes,4,opt,name=decision_event_id,json=decisionEventId,proto3" json:"decision_event_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *TargetRef) Reset() {
@@ -5713,6 +5719,13 @@ func (x *TargetRef) GetProvenance() TargetRefProvenance {
 func (x *TargetRef) GetRuleId() string {
 	if x != nil {
 		return x.RuleId
+	}
+	return ""
+}
+
+func (x *TargetRef) GetDecisionEventId() string {
+	if x != nil {
+		return x.DecisionEventId
 	}
 	return ""
 }
@@ -9347,13 +9360,14 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\tjudgments\x18\x03 \x03(\v2#.sreagent.investigation.v1.JudgmentR\tjudgments\x12C\n" +
 	"\bevidence\x18\x04 \x03(\v2'.sreagent.investigation.v1.EvidenceItemR\bevidence\x12.\n" +
 	"\x13ledger_rule_version\x18\x05 \x01(\tR\x11ledgerRuleVersion\x12E\n" +
-	"\abuckets\x18\x06 \x03(\v2+.sreagent.investigation.v1.ConfidenceBucketR\abuckets\"\x9e\x01\n" +
+	"\abuckets\x18\x06 \x03(\v2+.sreagent.investigation.v1.ConfidenceBucketR\abuckets\"\xca\x01\n" +
 	"\tTargetRef\x12(\n" +
 	"\x03ref\x18\x01 \x01(\v2\x16.sreagent.graph.v1.RefR\x03ref\x12N\n" +
 	"\n" +
 	"provenance\x18\x02 \x01(\x0e2..sreagent.investigation.v1.TargetRefProvenanceR\n" +
 	"provenance\x12\x17\n" +
-	"\arule_id\x18\x03 \x01(\tR\x06ruleId\"\x84\x06\n" +
+	"\arule_id\x18\x03 \x01(\tR\x06ruleId\x12*\n" +
+	"\x11decision_event_id\x18\x04 \x01(\tR\x0fdecisionEventId\"\x84\x06\n" +
 	"\aSymptom\x12\x1d\n" +
 	"\n" +
 	"symptom_id\x18\x01 \x01(\tR\tsymptomId\x12#\n" +
@@ -9807,12 +9821,13 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\fIntakeOrigin\x12\x1d\n" +
 	"\x19INTAKE_ORIGIN_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15INTAKE_ORIGIN_MONITOR\x10\x01\x12\x1a\n" +
-	"\x16INTAKE_ORIGIN_DECLARED\x10\x02*\x82\x01\n" +
+	"\x16INTAKE_ORIGIN_DECLARED\x10\x02*\x93\x01\n" +
 	"\x13TargetRefProvenance\x12%\n" +
 	"!TARGET_REF_PROVENANCE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17PARSED_FROM_DECLARATION\x10\x01\x12\x15\n" +
 	"\x11SUPPLIED_BY_HUMAN\x10\x02\x12\x10\n" +
-	"\fFROM_MONITOR\x10\x03*b\n" +
+	"\fFROM_MONITOR\x10\x03\x12\x0f\n" +
+	"\vATTRIBUTION\x10\x04*b\n" +
 	"\vCulpritKind\x12\x1c\n" +
 	"\x18CULPRIT_KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tCHANGE_ID\x10\x01\x12\x0e\n" +

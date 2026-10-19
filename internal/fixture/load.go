@@ -136,10 +136,18 @@ func WithHumanDecisions(m *Manifest, events []Event) ([]Event, error) {
 // verifier does, re-submits the same ids and gets DUPLICATE_NOOP rather than a second merge.
 func HumanDecisionEvents(m *Manifest) ([]Event, error) {
 	out := make([]Event, 0, len(m.HumanDecisions))
+	ids := make([]string, 0, len(m.HumanDecisions))
 	for i, decision := range m.HumanDecisions {
 		kind, refs, err := decision.Kind()
 		if err != nil {
 			return nil, fmt.Errorf("fixture: %s: human_decisions[%d]: %w", m.ID, i, err)
+		}
+		if kind == "revert_correction" {
+			id, err := resolveRevert(refs[0], ids, i)
+			if err != nil {
+				return nil, fmt.Errorf("fixture: %s: human_decisions[%d]: %w", m.ID, i, err)
+			}
+			refs = []string{id}
 		}
 		env := &graphv1.EventEnvelope{
 			EventId:       graph.HumanEventID(kind, refs, decision.Principal, decision.Reason),
@@ -147,7 +155,13 @@ func HumanDecisionEvents(m *Manifest) ([]Event, error) {
 			SchemaVersion: m.SchemaVersion,
 		}
 		env.IdempotencyKey = env.EventId
-		if err := setDecisionBody(env, kind, refs, decision.Reason); err != nil {
+		ids = append(ids, env.EventId)
+		if _, _, catalog := decision.catalogKind(); catalog > 0 {
+			err = decision.setCatalogBody(env, kind, refs)
+		} else {
+			err = setDecisionBody(env, kind, refs, decision.Reason)
+		}
+		if err != nil {
 			return nil, fmt.Errorf("fixture: %s: human_decisions[%d]: %w", m.ID, i, err)
 		}
 		out = append(out, Event{

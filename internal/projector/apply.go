@@ -261,6 +261,25 @@ func (p *Projector) project(ctx context.Context, tx pgx.Tx, env *graphv1.EventEn
 		return p.applyConfirmDependency(ctx, tx, env, body.ConfirmDependency, observedAt, principal)
 	case *graphv1.EventEnvelope_RejectDependency:
 		return p.applyRejectDependency(ctx, tx, env, body.RejectDependency, observedAt, principal)
+	// Feature 009 (ADR-0015): the catalog, its aliases, and attribution.
+	case *graphv1.EventEnvelope_ProposeCatalogEntry:
+		return p.applyProposeCatalogEntry(ctx, tx, env, body.ProposeCatalogEntry, observedAt)
+	case *graphv1.EventEnvelope_DeclareCatalogEntry:
+		return p.applyDeclareCatalogEntry(ctx, tx, env, body.DeclareCatalogEntry, observedAt)
+	case *graphv1.EventEnvelope_DeclareAlias:
+		return p.applyDeclareAlias(ctx, tx, env, body.DeclareAlias, observedAt, principal)
+	case *graphv1.EventEnvelope_RetractAlias:
+		return p.applyRetractAlias(ctx, tx, env, body.RetractAlias, observedAt)
+	case *graphv1.EventEnvelope_ProposeAlias:
+		return p.applyProposeAlias(ctx, tx, env, body.ProposeAlias, observedAt)
+	case *graphv1.EventEnvelope_RejectAlias:
+		return p.applyRejectAlias(ctx, tx, env, body.RejectAlias, observedAt, principal)
+	case *graphv1.EventEnvelope_AttributeSignal:
+		return p.applyAttributeSignal(ctx, tx, env, body.AttributeSignal, observedAt)
+	case *graphv1.EventEnvelope_CorrectAttribution:
+		return p.applyCorrectAttribution(ctx, tx, env, body.CorrectAttribution, observedAt, principal)
+	case *graphv1.EventEnvelope_RevertCorrection:
+		return p.applyRevertCorrection(ctx, tx, env, body.RevertCorrection, observedAt, principal)
 	default:
 		return fmt.Errorf("projector: event %s has no body", env.GetEventId())
 	}
@@ -328,6 +347,42 @@ func (p *Projector) checkResolvable(ctx context.Context, tx pgx.Tx, env *graphv1
 		return p.checkProposalDecision(ctx, tx, principal, "reject_dependency",
 			body.RejectDependency.GetSrc(), body.RejectDependency.GetDst(),
 			body.RejectDependency.GetType())
+	// Feature 009. A person's catalog decision carries a principal (FR-041); no catalog event may
+	// name an entry, a signal or a correction the graph does not know.
+	case *graphv1.EventEnvelope_DeclareCatalogEntry:
+		return p.checkDecision(ctx, tx, principal, "declare_catalog_entry")
+	case *graphv1.EventEnvelope_DeclareAlias:
+		if r, err := p.checkDecision(ctx, tx, principal, "declare_alias"); r != nil || err != nil {
+			return r, err
+		}
+		return p.checkEntries(ctx, tx, "declare_alias", body.DeclareAlias.GetEntrySlug())
+	case *graphv1.EventEnvelope_RetractAlias:
+		if r, err := p.checkDecision(ctx, tx, principal, "retract_alias"); r != nil || err != nil {
+			return r, err
+		}
+		return p.checkRetractAlias(ctx, tx, body.RetractAlias)
+	case *graphv1.EventEnvelope_RejectAlias:
+		if r, err := p.checkDecision(ctx, tx, principal, "reject_alias"); r != nil || err != nil {
+			return r, err
+		}
+		return p.checkEntries(ctx, tx, "reject_alias", body.RejectAlias.GetEntrySlug())
+	case *graphv1.EventEnvelope_ProposeAlias:
+		return p.checkEntries(ctx, tx, "propose_alias", body.ProposeAlias.GetEntrySlug())
+	case *graphv1.EventEnvelope_AttributeSignal:
+		return p.checkAttribution(ctx, tx, "attribute_signal", body.AttributeSignal.GetSignal(),
+			append(attributedSlugs(body.AttributeSignal.GetEntries()),
+				attributedSlugs(body.AttributeSignal.GetSuggestions())...))
+	case *graphv1.EventEnvelope_CorrectAttribution:
+		if r, err := p.checkDecision(ctx, tx, principal, "correct_attribution"); r != nil || err != nil {
+			return r, err
+		}
+		return p.checkAttribution(ctx, tx, "correct_attribution", body.CorrectAttribution.GetSignal(),
+			body.CorrectAttribution.GetEntrySlugs())
+	case *graphv1.EventEnvelope_RevertCorrection:
+		if r, err := p.checkDecision(ctx, tx, principal, "revert_correction"); r != nil || err != nil {
+			return r, err
+		}
+		return p.checkRevert(ctx, tx, env.GetEventId(), body.RevertCorrection)
 	default:
 	}
 	return nil, nil

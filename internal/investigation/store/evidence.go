@@ -470,20 +470,23 @@ func parseRefs(raw []byte) []*graphv1.Ref {
 }
 
 // targetRow is the stored shape of a target reference: the reference, its provenance, and — for
-// a parsed one — the rule id and version that produced it, and nothing else (FR-002b, U2).
+// a parsed one — the rule id and version that produced it, and nothing else (FR-002b, U2). An
+// attribution adds the decision it came from (009 FR-021).
 type targetRow struct {
-	Ref        string `json:"ref"`
-	Provenance string `json:"provenance"`
-	RuleID     string `json:"rule_id,omitempty"`
+	Ref             string `json:"ref"`
+	Provenance      string `json:"provenance"`
+	RuleID          string `json:"rule_id,omitempty"`
+	DecisionEventID string `json:"decision_event_id,omitempty"`
 }
 
 func targetRows(targets []*investigationv1.TargetRef) []targetRow {
 	out := make([]targetRow, 0, len(targets))
 	for _, t := range targets {
 		out = append(out, targetRow{
-			Ref:        graph.RefFromProto(t.GetRef()).String(),
-			Provenance: targetProvenanceName(t.GetProvenance()),
-			RuleID:     t.GetRuleId(),
+			Ref:             graph.RefFromProto(t.GetRef()).String(),
+			Provenance:      targetProvenanceName(t.GetProvenance()),
+			RuleID:          t.GetRuleId(),
+			DecisionEventID: t.GetDecisionEventId(),
 		})
 	}
 	return out
@@ -501,9 +504,10 @@ func parseTargets(raw []byte) []*investigationv1.TargetRef {
 			continue
 		}
 		out = append(out, &investigationv1.TargetRef{
-			Ref:        ref.Proto(),
-			Provenance: targetProvenanceProto(row.Provenance),
-			RuleId:     row.RuleID,
+			Ref:             ref.Proto(),
+			Provenance:      targetProvenanceProto(row.Provenance),
+			RuleId:          row.RuleID,
+			DecisionEventId: row.DecisionEventID,
 		})
 	}
 	return out
@@ -517,6 +521,8 @@ func targetProvenanceName(p investigationv1.TargetRefProvenance) string {
 		return "supplied_by_human"
 	case investigationv1.TargetRefProvenance_FROM_MONITOR:
 		return "from_monitor"
+	case investigationv1.TargetRefProvenance_ATTRIBUTION:
+		return "attribution"
 	default:
 		return ""
 	}
@@ -530,6 +536,8 @@ func targetProvenanceProto(s string) investigationv1.TargetRefProvenance {
 		return investigationv1.TargetRefProvenance_SUPPLIED_BY_HUMAN
 	case "from_monitor":
 		return investigationv1.TargetRefProvenance_FROM_MONITOR
+	case "attribution":
+		return investigationv1.TargetRefProvenance_ATTRIBUTION
 	default:
 		return investigationv1.TargetRefProvenance_TARGET_REF_PROVENANCE_UNSPECIFIED
 	}

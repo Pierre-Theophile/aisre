@@ -234,15 +234,20 @@ func (f *Feeder) observe(ctx context.Context, em feeder.Emitter, b *Binding, rea
 	}
 
 	mapped, unmapped := b.Map(page.Values)
-	for _, v := range unmapped {
-		f.skip(read.Binding, page, SkipUnmappedValue+" "+v)
+	if b.Legacy() {
+		for _, v := range unmapped {
+			f.skip(read.Binding, page, SkipUnmappedValue+" "+v)
+		}
 	}
 	current := map[string]*graphv1.Ref{}
 	for _, r := range mapped {
 		current[graph.RefFromProto(r).String()] = r
 	}
+	// Without an `entities` map the catalog decides what a page concerns (009 FR-006): every page
+	// with a value is registered, carrying its values, and linked by attribution rather than here.
+	unlinked := len(current) == 0 && !b.Legacy() && len(page.Values) > 0
 
-	if len(current) == 0 {
+	if len(current) == 0 && !unlinked {
 		// Nothing links the page any more: the links it had end at the edit that removed them.
 		for _, key := range sortedKeys(previous) {
 			if err := f.retract(ctx, em, ref, previous[key], page.Edited, "value removed"); err != nil {
@@ -278,6 +283,7 @@ func (f *Feeder) observe(ctx context.Context, em feeder.Emitter, b *Binding, rea
 		ConfiguredBy:     f.cfg.Principal,
 		SummaryTruncated: truncated,
 		Provenance:       Rule + " configured by " + f.cfg.Principal,
+		Unlinked:         unlinked,
 	}
 	if request.AuthoredAt.IsZero() {
 		request.AuthoredAt = page.Created
@@ -287,11 +293,21 @@ func (f *Feeder) observe(ctx context.Context, em feeder.Emitter, b *Binding, rea
 		return nil //nolint:nilerr // an untitled page is reported, not fatal
 	}
 	nodeProps := request.Props(at)
+	// The raw values of the entity property, always, map or no map: they are the names the catalog
+	// attributes the page by, `notion.value=<database>/<value>` (009 research R3, ADR-0015 item 7).
+	if len(page.Values) > 0 {
+		values := make([]any, 0, len(page.Values))
+		for _, v := range page.Values {
+			values = append(values, v)
+		}
+		nodeProps[graph.NotionValuesProp] = values
+		nodeProps[graph.NotionDatabaseProp] = read.Database
+	}
 	props, err := structpb.NewStruct(nodeProps)
 	if err != nil {
 		return fmt.Errorf("notion: page %s: properties: %w", page.ID, err)
 	}
-	digest := contentDigest(request)
+	digest := contentDigest(request, page.Values...)
 	if err := emitOne(ctx, em, feeder.UpsertNode(f.desc, f.id(ref, "node", digest), feeder.NodeFact{
 		Meta:        feeder.Meta{SourceObservedAt: at},
 		Ref:         ref,
@@ -396,9 +412,9 @@ func (f *Feeder) id(ref *graphv1.Ref, parts ...string) string {
 }
 
 // contentDigest covers what a citation shows: title, summary, kind, location and authored instant.
-func contentDigest(r knowledge.LinkRequest) string {
+func contentDigest(r knowledge.LinkRequest, values ...string) string {
 	h := sha256.New()
-	for _, s := range []string{r.Title, r.Summary, r.Kind, r.Location, r.AuthoredAt.UTC().Format(time.RFC3339)} {
+	for _, s := range append([]string{r.Title, r.Summary, r.Kind, r.Location, r.AuthoredAt.UTC().Format(time.RFC3339)}, values...) {
 		h.Write([]byte(s))
 		h.Write([]byte{0})
 	}

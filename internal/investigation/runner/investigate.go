@@ -165,6 +165,9 @@ func (r *Runner) start(ctx context.Context, in startInput, emit emitFunc) (*inve
 	if err != nil {
 		return nil, err
 	}
+	if err := intake.Attribute(ctx, r.cfg.Graph, in.intake, &set); err != nil {
+		return nil, err
+	}
 
 	rule := r.cfg.GroupingRule
 	open, err := r.dao.OpenIncidents(ctx, in.intake.ValidAt, groupingWindow(rule))
@@ -715,6 +718,10 @@ func subjectsOf(in *intake.Intake, set intake.ResolutionSet) []*graphv1.Ref {
 	out := make([]*graphv1.Ref, 0, len(set.Resolutions))
 	for _, res := range set.Resolutions {
 		out = append(out, res.Given.Proto())
+	}
+	// The catalog entries the signal is attributed to are what it is about, too (009 FR-021).
+	for _, a := range set.Attributions {
+		out = append(out, a.Entry.Proto())
 	}
 	if len(out) > 0 {
 		return out

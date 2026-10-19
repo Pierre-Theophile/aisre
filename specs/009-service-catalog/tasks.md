@@ -39,9 +39,9 @@ interface in `pkg/attribution/`, fixtures in `fixtures/attribution/`.
 
 **Purpose**: publish the shared names before any code depends on them.
 
-- [ ] T001 Write `docs/decisions/ADR-0015-shared-contract-additions-for-009.md`: events 30–38, `EdgeType.ATTRIBUTED_TO`, `graph.v1.CatalogService`, the `sre.catalog.*`, `sre.attribution.*` and `sre.notion.values` props, the reserved namespace and its reason code, the `attribution:` configuration block, the ruleset `attribution/rules@1`, and the 002 FR-002b amendment, with the alternatives rejected in research R1, R2, R4 and R8 (research R12); fixture: unit (`scripts/check-specs.sh`)
-- [ ] T002 Add contracts §1–§3 to `api/sreagent/graph/v1/graph.proto` and regenerate with `buf generate`; `buf lint` and `buf breaking` against `main` pass (research R12); fixture: unit (CI schema job)
-- [ ] T003 Amend 002 FR-002b in `specs/002-investigation-engine/spec.md` as research R7 states, citing this feature, as 008 amended FR-049; fixture: unit (`scripts/check-specs.sh`)
+- [x] T001 Write `docs/decisions/ADR-0015-shared-contract-additions-for-009.md`: events 30–38, `EdgeType.ATTRIBUTED_TO`, `graph.v1.CatalogService`, the `sre.catalog.*`, `sre.attribution.*` and `sre.notion.values` props, the reserved namespace and its reason code, the `attribution:` configuration block, the ruleset `attribution/rules@1`, and the 002 FR-002b amendment, with the alternatives rejected in research R1, R2, R4 and R8 (research R12); fixture: unit (`scripts/check-specs.sh`)
+- [x] T002 Add contracts §1–§3 to `api/sreagent/graph/v1/graph.proto` and regenerate with `buf generate`; `buf lint` and `buf breaking` against `main` pass (research R12); fixture: unit (CI schema job)
+- [x] T003 Amend 002 FR-002b in `specs/002-investigation-engine/spec.md` as research R7 states, citing this feature, as 008 amended FR-049; fixture: unit (`scripts/check-specs.sh`)
 
 **Checkpoint**: ADR-0015 and the schema merged in this PR before any dependent code.
 
@@ -51,13 +51,13 @@ interface in `pkg/attribution/`, fixtures in `fixtures/attribution/`.
 
 **Purpose**: the tables, the projector handlers and the reads. Blocks every story.
 
-- [ ] T004 Write `internal/store/postgres/migrations/0015_catalog.sql`: `graph.catalog_aliases`, `graph.alias_proposals`, `graph.attribution_decisions`, bitemporal with `btree_gist` range indexes as `0012_correlation_keys.sql` does (data-model §Alias, §Attribution); fixture: unit (migration test)
-- [ ] T005 Write `internal/projector/catalog_entry.go`: `ProposeCatalogEntry` and `DeclareCatalogEntry` as `service` nodes in `sre.catalog`, status transitions of data-model §Catalog entry, refusal without a principal, and refusal of any other event naming `sre.catalog` with `catalog_namespace_reserved` (FR-001–FR-004, research R1); fixture: unit, idempotency and double delivery
-- [ ] T006 Write `internal/projector/catalog_alias.go`: `DeclareAlias` and `RetractAlias` into `graph.catalog_aliases`, reassignment closes the previous row, hidden names as the reserved entry `sre.catalog=-` (FR-003, FR-015, FR-050, data-model §Alias, §Hidden name); fixture: unit
-- [ ] T007 Write `internal/projector/attribution.go`: `AttributeSignal` into `ATTRIBUTED_TO` edges and decision rows, superseding decisions closing observed intervals, `CorrectAttribution` (signal- and name-level, the latter also an alias row) and `RevertCorrection` (FR-031, FR-041–FR-045, research R8); fixture: unit
-- [ ] T008 Write `internal/query/catalog.go` and `internal/server/catalog.go`: `ListEntries`, `GetEntry`, `WhyAttributed`, `AttributedSignals` as of both instants, authenticated (FR-005, FR-039, FR-052); fixture: unit
-- [ ] T009 Write `internal/catalog/names.go`: the per-kind name extractors of research R3 for alerts, declarations, knowledge documents and changes, read as of the signal's observed instant; fixture: unit against `fixtures/datadog-apm-topology-01` and `fixtures/slack-intake-01`
-- [ ] T010 [P] Write `sre.notion.values` on every `KNOWLEDGE_DOC` from `internal/feeders/notion/feeder.go`, with or without a legacy `entities` map, and regenerate the Notion twins' goldens (G3, research R3); fixture: notion-knowledge-twin-01, notion-knowledge-twin-02
+- [x] T004 Write `internal/store/postgres/migrations/0015_catalog.sql`: `graph.catalog_aliases`, `graph.alias_proposals`, `graph.attribution_decisions`, bitemporal with `btree_gist` range indexes as `0012_correlation_keys.sql` does (data-model §Alias, §Attribution); fixture: unit (migration test)
+- [x] T005 Write `internal/projector/catalog_entry.go`: `ProposeCatalogEntry` and `DeclareCatalogEntry` as `service` nodes in `sre.catalog`, status transitions of data-model §Catalog entry, refusal without a principal, and refusal of any other event naming `sre.catalog` with `catalog_namespace_reserved` (FR-001–FR-004, research R1); fixture: unit, idempotency and double delivery
+- [x] T006 Write `internal/projector/catalog_alias.go`: `DeclareAlias` and `RetractAlias` into `graph.catalog_aliases`, reassignment closes the previous row, hidden names as the reserved entry `sre.catalog=-` (FR-003, FR-015, FR-050, data-model §Alias, §Hidden name); fixture: unit
+- [x] T007 Write `internal/projector/attribution.go`: `AttributeSignal` into `ATTRIBUTED_TO` edges and decision rows, superseding decisions closing observed intervals, `CorrectAttribution` (signal- and name-level, the latter also an alias row) and `RevertCorrection` (FR-031, FR-041–FR-045, research R8); fixture: unit
+- [x] T008 Write `internal/query/catalog.go` and `internal/server/catalog.go`: `ListEntries`, `GetEntry`, `WhyAttributed`, `AttributedSignals` as of both instants, authenticated (FR-005, FR-039, FR-052); fixture: unit
+- [x] T009 Write `internal/catalog/names.go`: the per-kind name extractors of research R3 for alerts, declarations, knowledge documents and changes, read as of the signal's observed instant; fixture: unit against `fixtures/datadog-apm-topology-01` and `fixtures/slack-intake-01`
+- [x] T010 [P] Write `sre.notion.values` on every `KNOWLEDGE_DOC` from `internal/feeders/notion/feeder.go`, with or without a legacy `entities` map, and regenerate the Notion twins' goldens (G3, research R3); fixture: notion-knowledge-twin-01, notion-knowledge-twin-02
 
 **Checkpoint**: entries, aliases and decisions project and replay; nothing attributes yet.
 
@@ -69,13 +69,13 @@ interface in `pkg/attribution/`, fixtures in `fixtures/attribution/`.
 
 **Independent Test**: an alert on `candidate-api` and two equally matching postmortems under *Candidate View* and *Infra*; the first ranks first and is cited in scope (spec US1).
 
-- [ ] T011 [US1] Write `internal/catalog/rules.go` with layers 0 (`H`) and 1 (`A1`) of research R5, environment matching of research R2, and the ruleset id; fixture: unit
-- [ ] T012 [US1] Write `internal/catalog/attributor.go`: the in-process consumer of research R4, emitting `AttributeSignal` under `sre.attributor` through the runner's append path, re-attributing current signals when an alias, correction or entry status changes, never running during replay (FR-020, FR-030, FR-036); wire it into `internal/cli/serve.go`; fixture: unit
-- [ ] T013 [US1] Add attributed entries as subjects with provenance `attribution` in `internal/investigation/intake/alert.go` and the runner (FR-021, research R7); fixture: unit
-- [ ] T014 [US1] Treat `ATTRIBUTED_TO` from a document as a link in `internal/query/knowledge.go`, and compute the in-scope flag through entries and their aliases in `internal/investigation/workers/knowledge/knowledge.go` (FR-022, research R7); 008's goldens must not change; fixture: knowledge-scope-01, retrieval/*
-- [ ] T015 [US1] Write `internal/catalog/importfile.go` and `aisre catalog import <catalog.yaml>`: the difference against the catalog as of now as human decisions, idempotent, conflicts listed and never undone (FR-013, research R10, contracts §5); fixture: unit
-- [ ] T016 [US1] Write `fixtures/attribution/catalog-alias-01/`: a Datadog alert on `candidate-api`, a declared catalog, two postmortems with equally matching symptoms under *Candidate View* and *Infra*; labels; an incident manifest asserting the *Candidate View* postmortem is cited `in_scope: true` at rank 1 (SC-001); verified by `aisre fixture verify`; fixture: catalog-alias-01
-- [ ] T017 [US1] Write `fixtures/attribution/catalog-alias-gcp-01/`: the same incident from a GCP Cloud Monitoring policy on the Cloud Run service, with no Datadog source, and the same labels (SC-006); fixture: catalog-alias-gcp-01
+- [x] T011 [US1] Write `internal/catalog/rules.go` with layers 0 (`H`) and 1 (`A1`) of research R5, environment matching of research R2, and the ruleset id; fixture: unit
+- [x] T012 [US1] Write `internal/catalog/attributor.go`: the in-process consumer of research R4, emitting `AttributeSignal` under `sre.attributor` through the runner's append path, re-attributing current signals when an alias, correction or entry status changes, never running during replay (FR-020, FR-030, FR-036); wire it into `internal/cli/serve.go`; fixture: unit
+- [x] T013 [US1] Add attributed entries as subjects with provenance `attribution` in `internal/investigation/intake/alert.go` and the runner (FR-021, research R7); fixture: unit
+- [x] T014 [US1] Treat `ATTRIBUTED_TO` from a document as a link in `internal/query/knowledge.go`, and compute the in-scope flag through entries and their aliases in `internal/investigation/workers/knowledge/knowledge.go` (FR-022, research R7); 008's goldens must not change; fixture: knowledge-scope-01, retrieval/*
+- [x] T015 [US1] Write `internal/catalog/importfile.go` and `aisre catalog import <catalog.yaml>`: the difference against the catalog as of now as human decisions, idempotent, conflicts listed and never undone (FR-013, research R10, contracts §5); fixture: unit
+- [x] T016 [US1] Write `fixtures/attribution/catalog-alias-01/`: a Datadog alert on `candidate-api`, a declared catalog, two postmortems with equally matching symptoms under *Candidate View* and *Infra*; labels; an incident manifest asserting the *Candidate View* postmortem is cited `in_scope: true` at rank 1 (SC-001); verified by `aisre fixture verify`; fixture: catalog-alias-01
+- [x] T017 [US1] Write `fixtures/attribution/catalog-alias-gcp-01/`: the same incident from a GCP Cloud Monitoring policy on the Cloud Run service, with no Datadog source, and the same labels (SC-006); fixture: catalog-alias-gcp-01
 
 **Checkpoint**: the owner's case works with a declared catalog.
 
@@ -87,9 +87,9 @@ interface in `pkg/attribution/`, fixtures in `fixtures/attribution/`.
 
 **Independent Test**: an automated attribution, a correction, a re-attribution and a full replay; the correction wins in both, the earlier pinned investigation is unchanged (spec US3).
 
-- [ ] T018 [US3] Write `internal/cli/catalog.go` and `internal/cli/attribute.go`: every command of contracts §4 except `proposals`, `alias accept|reject` and the legacy imports (PR 2), each printing the event appended and the principal (FR-012, FR-040); fixture: unit (`internal/cli/testdata`)
-- [ ] T019 [US3] Assert in `internal/catalog/attributor_test.go` that a correction outranks every layer, survives re-attribution, that a name-level correction attributes the next signal by `A1`, and that a later disagreeing automated decision is recorded as a conflict (FR-042, FR-043, SC-005); fixture: unit
-- [ ] T020 [US3] Write `fixtures/attribution/correction-01/`: an automated attribution, a signal-level and a name-level correction, an investigation pinned before them and one after, and a revert; verified by `aisre fixture verify`, asserting the pinned investigation replays unchanged and every correction carries its principal (FR-044, FR-045, SC-004); fixture: correction-01
+- [x] T018 [US3] Write `internal/cli/catalog.go` and `internal/cli/attribute.go`: every command of contracts §4 except `proposals`, `alias accept|reject` and the legacy imports (PR 2), each printing the event appended and the principal (FR-012, FR-040); fixture: unit (`internal/cli/testdata`)
+- [x] T019 [US3] Assert in `internal/catalog/attributor_test.go` that a correction outranks every layer, survives re-attribution, that a name-level correction attributes the next signal by `A1`, and that a later disagreeing automated decision is recorded as a conflict (FR-042, FR-043, SC-005); fixture: unit
+- [x] T020 [US3] Write `fixtures/attribution/correction-01/`: an automated attribution, a signal-level and a name-level correction, an investigation pinned before them and one after, and a revert; verified by `aisre fixture verify`, asserting the pinned investigation replays unchanged and every correction carries its principal (FR-044, FR-045, SC-004); fixture: correction-01
 
 **Checkpoint**: PR 1 complete; merge when green.
 

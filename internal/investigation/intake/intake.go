@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
+	"github.com/Pierre-Theophile/aisre/internal/graph"
 )
 
 // The two front doors, one shape (FR-002, FR-002a, FR-008b, ADR-0005 D2).
@@ -83,6 +84,9 @@ type Intake struct {
 	// UnresolvedTargets is true when the intake names no entity at all. It is not an error: the
 	// investigation opens, and reaches `unknown` with a request for the target (FR-002b, FR-026).
 	UnresolvedTargets bool
+	// Signal is the graph node the intake came from, when it is one: a monitor. Its attribution to
+	// catalog entries joins the subjects (009 FR-021).
+	Signal graph.Ref
 }
 
 // Origin reports the intake origin kind — `monitor` or `declared` — carried on the symptom.

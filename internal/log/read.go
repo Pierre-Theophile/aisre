@@ -326,6 +326,62 @@ func setBody(env *graphv1.EventEnvelope, eventType string, payload []byte) error
 			return err
 		}
 		env.Body = &graphv1.EventEnvelope_CorrelateEntity{CorrelateEntity: body}
+	// ADR-0015 (feature 009). Here for the reason every case above is: a type this switch does
+	// not know is a type that cannot be replayed.
+	case "propose_catalog_entry":
+		body := &graphv1.ProposeCatalogEntry{}
+		if err := decode(body); err != nil {
+			return err
+		}
+		env.Body = &graphv1.EventEnvelope_ProposeCatalogEntry{ProposeCatalogEntry: body}
+	case "declare_catalog_entry":
+		body := &graphv1.DeclareCatalogEntry{}
+		if err := decode(body); err != nil {
+			return err
+		}
+		env.Body = &graphv1.EventEnvelope_DeclareCatalogEntry{DeclareCatalogEntry: body}
+	case "declare_alias":
+		body := &graphv1.DeclareAlias{}
+		if err := decode(body); err != nil {
+			return err
+		}
+		env.Body = &graphv1.EventEnvelope_DeclareAlias{DeclareAlias: body}
+	case "retract_alias":
+		body := &graphv1.RetractAlias{}
+		if err := decode(body); err != nil {
+			return err
+		}
+		env.Body = &graphv1.EventEnvelope_RetractAlias{RetractAlias: body}
+	case "propose_alias":
+		body := &graphv1.ProposeAlias{}
+		if err := decode(body); err != nil {
+			return err
+		}
+		env.Body = &graphv1.EventEnvelope_ProposeAlias{ProposeAlias: body}
+	case "reject_alias":
+		body := &graphv1.RejectAlias{}
+		if err := decode(body); err != nil {
+			return err
+		}
+		env.Body = &graphv1.EventEnvelope_RejectAlias{RejectAlias: body}
+	case "attribute_signal":
+		body := &graphv1.AttributeSignal{}
+		if err := decode(body); err != nil {
+			return err
+		}
+		env.Body = &graphv1.EventEnvelope_AttributeSignal{AttributeSignal: body}
+	case "correct_attribution":
+		body := &graphv1.CorrectAttribution{}
+		if err := decode(body); err != nil {
+			return err
+		}
+		env.Body = &graphv1.EventEnvelope_CorrectAttribution{CorrectAttribution: body}
+	case "revert_correction":
+		body := &graphv1.RevertCorrection{}
+		if err := decode(body); err != nil {
+			return err
+		}
+		env.Body = &graphv1.EventEnvelope_RevertCorrection{RevertCorrection: body}
 	default:
 		return fmt.Errorf("log: event %s has unknown type %q", env.GetEventId(), eventType)
 	}

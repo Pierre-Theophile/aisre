@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# What each signal is about once people have corrected the catalog (research R13).
+labels:
+  - signal: datadog.monitor=101
+    expect: [candidate-view]
+  - signal: datadog.monitor=102
+    expect: [candidate-view]

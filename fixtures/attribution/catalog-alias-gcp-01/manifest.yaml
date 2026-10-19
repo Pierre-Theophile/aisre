@@ -1,0 +1,74 @@
+# Hand-authored fixture: the service catalog without Datadog (feature 009 T017, SC-006).
+id: catalog-alias-gcp-01
+family: conformance
+description: >-
+  catalog-alias-01's case with no Datadog source at all, because a customer may not use Datadog
+  and the catalog is the agent's own (009 FR-001). A Cloud Monitoring alert policy on the Cloud
+  Run service `candidate-api` opens an incident at 14:07; two postmortems from the Notion twin,
+  word for word the same, are filed under "Candidate View" and "Infra". A person declared the
+  catalog at 13:55, naming the Cloud Run service and the Notion value as Candidate View's.
+
+  The attributor attributes the policy and the Candidate View postmortem to *Candidate View*
+  and the other postmortem to *Infra*, by alias (`A1`), exactly as it does when the alert comes
+  from Datadog: the labels are catalog-alias-01's, spelled in this vendor's names.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: gcp:twin
+    kind: gcp
+    ordering: none
+    reordering_window: 10m0s
+  - source_id: notion:twin
+    kind: notion
+    ordering: none
+    reordering_window: 0s
+  - source_id: sre.attributor
+    kind: attributor
+    ordering: none
+    reordering_window: 0s
+
+clock:
+  start: 2026-09-21T13:50:00Z
+  end:   2026-09-21T16:00:00Z
+
+human_decisions:
+  - catalog_entry: {slug: candidate-view, name: Candidate View, kind: service, owner: candidate team}
+    at: 2026-09-21T13:55:00Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as the candidate team wrote it
+  - catalog_entry: {slug: infra, name: Infra, kind: platform}
+    at: 2026-09-21T13:55:01Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as the candidate team wrote it
+  - alias: {name: gcp.cloudrun.service=twin-production/europe-west1/candidate-api, entry: candidate-view}
+    at: 2026-09-21T13:55:02Z
+    principal: sre-agent-dev|operator
+    reason: the Cloud Run service is Candidate View's API
+  - alias: {name: "notion.value=0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9/Candidate View", entry: candidate-view}
+    at: 2026-09-21T13:55:03Z
+    principal: sre-agent-dev|operator
+    reason: the postmortem database files Candidate View under its own name
+  - alias: {name: "notion.value=0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9/Infra", entry: infra}
+    at: 2026-09-21T13:55:04Z
+    principal: sre-agent-dev|operator
+    reason: the postmortem database files Infra under its own name
+
+queries:
+  - name: catalog-1500
+    kind: catalog
+    valid_at: 2026-09-21T15:00:00Z
+  - name: policy-1500
+    kind: attribution
+    focus: gcp.monitoring.alert_policy=projects/twin-production/alertPolicies/5566778899
+    valid_at: 2026-09-21T15:00:00Z
+  - name: candidate-view-postmortem-1500
+    kind: attribution
+    focus: notion.page=d4000000-0000-4000-8000-000000000021
+    valid_at: 2026-09-21T15:00:00Z
+  - name: infra-postmortem-1500
+    kind: attribution
+    focus: notion.page=d4000000-0000-4000-8000-000000000022
+    valid_at: 2026-09-21T15:00:00Z

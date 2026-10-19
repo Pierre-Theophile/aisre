@@ -1,0 +1,88 @@
+# Hand-authored fixture: corrections (feature 009 T020, FR-040–FR-045, SC-004, SC-005).
+id: correction-01
+family: conformance
+description: >-
+  009 US3: the catalog is wrong, the agent follows it, and people correct it.
+
+  At 09:00 the catalog says `datadog.log_service=candidate-api` is *Infra*. Two monitors on the
+  production `candidate-api` fire at 09:10 and 09:12 and the attributor follows the catalog:
+  both are *Infra* (`A1`). At 10:00 Pierre corrects monitor 101 alone: it is about *Candidate
+  View* (`H`). At 10:30 he corrects the name instead: everything called `candidate-api` is
+  *Candidate View*. The alias moves, and the attributor re-attributes monitor 102 at layer 0.
+  At 11:00 Alice reverts the 10:00 correction; monitor 101 stays *Candidate View*, now through
+  the name.
+
+  The `-0930` queries are an investigation pinned before any correction: they answer *Infra*,
+  and still do after everything that followed, because each correction is a new decision in
+  the log and changes nothing observed before it (FR-044, SC-004). The `-1130` queries show
+  each correction with its principal, and the revert, in the history (FR-045).
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: datadog:demo
+    kind: datadog
+    ordering: none
+    reordering_window: 30s
+  - source_id: sre.attributor
+    kind: attributor
+    ordering: none
+    reordering_window: 0s
+
+clock:
+  start: 2026-10-19T08:00:00Z
+  end:   2026-10-19T12:00:00Z
+
+human_decisions:
+  - catalog_entry: {slug: candidate-view, name: Candidate View, kind: service}
+    at: 2026-10-19T09:00:00Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written
+  - catalog_entry: {slug: infra, name: Infra, kind: platform}
+    at: 2026-10-19T09:00:01Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written
+  - alias: {name: datadog.log_service=candidate-api, entry: infra}
+    at: 2026-10-19T09:00:02Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written, wrongly
+  - correct: {signal: datadog.monitor=101, entries: [candidate-view]}
+    at: 2026-10-19T10:00:00Z
+    principal: sre-agent-dev|pierre
+    reason: this monitor watches the candidate API, which is Candidate View
+  - correct: {signal: datadog.monitor=101, entries: [candidate-view], name: datadog.log_service=candidate-api}
+    at: 2026-10-19T10:30:00Z
+    principal: sre-agent-dev|pierre
+    reason: candidate-api is Candidate View everywhere, not only on this monitor
+  - revert: "#3"
+    at: 2026-10-19T11:00:00Z
+    principal: sre-agent-dev|alice
+    reason: the name-level correction covers it
+
+queries:
+  - name: monitor-101-0930
+    kind: attribution
+    focus: datadog.monitor=101
+    valid_at: 2026-10-19T09:30:00Z
+    observed_at: 2026-10-19T09:30:00Z
+  - name: monitor-102-0930
+    kind: attribution
+    focus: datadog.monitor=102
+    valid_at: 2026-10-19T09:30:00Z
+    observed_at: 2026-10-19T09:30:00Z
+  - name: monitor-101-1130
+    kind: attribution
+    focus: datadog.monitor=101
+    valid_at: 2026-10-19T11:30:00Z
+    observed_at: 2026-10-19T11:30:00Z
+  - name: monitor-102-1130
+    kind: attribution
+    focus: datadog.monitor=102
+    valid_at: 2026-10-19T11:30:00Z
+    observed_at: 2026-10-19T11:30:00Z
+  - name: catalog-1130
+    kind: catalog
+    valid_at: 2026-10-19T11:30:00Z
+    observed_at: 2026-10-19T11:30:00Z

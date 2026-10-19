@@ -170,6 +170,10 @@ func Validate(env *graphv1.EventEnvelope, accepted SchemaVersions) *Rejection {
 			"schema_version %q; accepted: %s", env.GetSchemaVersion(), accepted)
 	}
 
+	if r := checkCatalogReserved(env); r != nil {
+		return r
+	}
+
 	switch body := env.GetBody().(type) {
 	case *graphv1.EventEnvelope_UpsertNode:
 		return validateUpsertNode(body.UpsertNode)
@@ -218,6 +222,28 @@ func Validate(env *graphv1.EventEnvelope, accepted SchemaVersions) *Rejection {
 		return validateDependencyEnds("reject_dependency",
 			body.RejectDependency.GetSrc(), body.RejectDependency.GetDst(),
 			body.RejectDependency.GetType())
+	// ADR-0015 (feature 009): the catalog, its aliases and attribution (validate_catalog.go).
+	case *graphv1.EventEnvelope_ProposeCatalogEntry:
+		return validateProposeCatalogEntry(body.ProposeCatalogEntry)
+	case *graphv1.EventEnvelope_DeclareCatalogEntry:
+		return validateDeclareCatalogEntry(body.DeclareCatalogEntry)
+	case *graphv1.EventEnvelope_DeclareAlias:
+		return validateAlias("declare_alias", body.DeclareAlias.GetName(), body.DeclareAlias.GetEntrySlug())
+	case *graphv1.EventEnvelope_RetractAlias:
+		return validateAlias("retract_alias", body.RetractAlias.GetName(), body.RetractAlias.GetEntrySlug())
+	case *graphv1.EventEnvelope_ProposeAlias:
+		return validateProposeAlias(body.ProposeAlias)
+	case *graphv1.EventEnvelope_RejectAlias:
+		return validateAlias("reject_alias", body.RejectAlias.GetName(), body.RejectAlias.GetEntrySlug())
+	case *graphv1.EventEnvelope_AttributeSignal:
+		return validateAttributeSignal(body.AttributeSignal)
+	case *graphv1.EventEnvelope_CorrectAttribution:
+		return validateCorrectAttribution(body.CorrectAttribution)
+	case *graphv1.EventEnvelope_RevertCorrection:
+		if body.RevertCorrection.GetCorrectionEventId() == "" {
+			return reject(ReasonMissingRef, "revert_correction.correction_event_id")
+		}
+		return nil
 	default:
 		return reject(ReasonUntyped, "body")
 	}

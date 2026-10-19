@@ -516,8 +516,11 @@ enum TargetRefProvenance {
   PARSED_FROM_DECLARATION = 1;   // by the published, stated, configurable naming rule
   SUPPLIED_BY_HUMAN = 2;         // at declaration time or later, as a typed fact
   FROM_MONITOR = 3;              // the monitor's own WATCHES edges
+  ATTRIBUTION = 4;               // the triggering signal's attribution to a catalog entry (009 FR-021)
 }
-message TargetRef { sreagent.graph.v1.Ref ref = 1; TargetRefProvenance provenance = 2; string rule_id = 3; }
+// rule_id is the naming rule of a parse, or `<ruleset>/<rule>` of an attribution, whose decision is
+// decision_event_id.
+message TargetRef { sreagent.graph.v1.Ref ref = 1; TargetRefProvenance provenance = 2; string rule_id = 3; string decision_event_id = 4; }
 
 message Symptom {
   string symptom_id = 1; string origin_system = 2; string origin_ref = 3;

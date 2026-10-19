@@ -166,6 +166,13 @@ type HumanDecision struct {
 	// Principal is the authenticated individual who decided, as auth.Principal.Key() spells it:
 	// `<issuer>|<subject>`, e.g. `sre-agent-dev|alice` (FR-041, data-model.md §graph.principals).
 	Principal string `yaml:"principal"`
+
+	// The catalog's decisions (feature 009, catalog_decisions.go).
+	CatalogEntry *CatalogEntryDecision `yaml:"catalog_entry"`
+	Alias        *AliasDecision        `yaml:"alias"`
+	RetractAlias *AliasDecision        `yaml:"retract_alias"`
+	Correct      *CorrectionDecision   `yaml:"correct"`
+	Revert       string                `yaml:"revert"`
 }
 
 // Kind returns the decision kind and the references it names, in the spelling the event carries.
@@ -184,9 +191,16 @@ func (d HumanDecision) Kind() (kind string, refs []string, err error) {
 	if d.Split != "" {
 		kind, refs, set = "split", append([]string{d.Split}, d.Detach...), set+1
 	}
+	if catalogKind, subject, n := d.catalogKind(); n > 0 {
+		if set > 0 || n > 1 {
+			return "", nil, fmt.Errorf("a human_decisions entry names more than one decision; write them as separate entries")
+		}
+		return catalogKind, subject, nil
+	}
 	switch {
 	case set == 0:
-		return "", nil, fmt.Errorf("a human_decisions entry names no decision; want one of confirm, reject, merge, split")
+		return "", nil, fmt.Errorf("a human_decisions entry names no decision; want one of confirm, reject, merge, split, " +
+			"catalog_entry, alias, retract_alias, correct, revert")
 	case set > 1:
 		return "", nil, fmt.Errorf("a human_decisions entry names more than one decision; write them as separate entries")
 	case kind != "split" && len(refs) != 2:
@@ -208,7 +222,8 @@ type Query struct {
 	// Name is the query's identity within the fixture and the middle part of its golden file
 	// name.
 	Name string `yaml:"name"`
-	// Kind is one of subgraph, diff, impact, pointers, history, audit, suggestions, extent.
+	// Kind is one of subgraph, diff, impact, pointers, history, audit, suggestions, extent, and
+	// feature 009's catalog and attribution.
 	Kind string `yaml:"kind"`
 
 	// Focus is the entity the query starts from, written `<namespace>=<value>`, e.g.

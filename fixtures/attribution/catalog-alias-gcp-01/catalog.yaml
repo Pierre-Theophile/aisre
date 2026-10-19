@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# The catalog the manifest's human_decisions declare, as a file (contracts/catalog.md §5).
+version: 1
+entries:
+  - slug: candidate-view
+    name: Candidate View
+    kind: service
+    owner: candidate team
+    aliases:
+      - gcp.cloudrun.service=twin-production/europe-west1/candidate-api
+      - notion.value=0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9/Candidate View
+  - slug: infra
+    name: Infra
+    kind: platform
+    aliases:
+      - notion.value=0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9/Infra
