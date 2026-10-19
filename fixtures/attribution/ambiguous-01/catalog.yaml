@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+version: 1
+entries:
+  - slug: search
+    name: Search
+  - slug: search-web
+    name: Search Web
+  - slug: billing
+    name: Billing
+    aliases: [gcp.cloudsql.instance=prod/billing-db]
