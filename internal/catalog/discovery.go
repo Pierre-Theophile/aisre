@@ -56,7 +56,7 @@ type catalogEntry struct {
 
 // Discover appends the proposals discovery finds and returns how many it appended.
 func (a *Attributor) Discover(ctx context.Context) (int, error) {
-	facts, err := a.facts(ctx, "")
+	facts, err := a.facts(ctx, Signal{})
 	if err != nil {
 		return 0, err
 	}
@@ -256,7 +256,7 @@ func (a *Attributor) proposeAlias(ctx context.Context, name Name, slug, rule str
 		&graphv1.EventEnvelope{Body: &graphv1.EventEnvelope_ProposeAlias{ProposeAlias: &graphv1.ProposeAlias{
 			Name: name.Ref.Proto(), Environment: name.Environment, EntrySlug: slug, RuleId: rule, Score: score,
 			Rationale: fmt.Sprintf("%s is named like the entry %s (%s)", name, slug, rule),
-			Evidence: ev,
+			Evidence:  ev,
 		}}})
 }
 

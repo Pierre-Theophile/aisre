@@ -305,7 +305,7 @@ func (a *Attributor) Decide(ctx context.Context, entityID string) (*graphv1.Even
 	if signal.Ref.IsZero() {
 		return nil, fmt.Errorf("catalog: %s has no ref to name it by: %w", entityID, ErrNotSignal)
 	}
-	facts, err := a.facts(ctx, signal.EntityID)
+	facts, err := a.facts(ctx, signal)
 	if err != nil {
 		return nil, err
 	}
@@ -404,9 +404,10 @@ func (a *Attributor) current(ctx context.Context, signalID string) (currentDecis
 }
 
 // facts reads the part of the catalog a decision needs.
-func (a *Attributor) facts(ctx context.Context, signalID string) (Facts, error) {
+func (a *Attributor) facts(ctx context.Context, signal Signal) (Facts, error) {
 	pool := a.projector.Store().Pool()
 	facts := Facts{Hidden: map[string]bool{}}
+	signalID := signal.EntityID
 
 	var entries []byte
 	err := pool.QueryRow(ctx, `
@@ -472,7 +473,55 @@ func (a *Attributor) facts(ctx context.Context, signalID string) (Facts, error) 
 	for _, slug := range hidden {
 		facts.Hidden[slug] = true
 	}
+
+	known, err := a.entries(ctx)
+	if err != nil {
+		return facts, err
+	}
+	facts.Entries = make(map[string]Entry, len(known))
+	for slug, e := range known {
+		facts.Entries[slug] = Entry{Display: e.display, Status: e.status}
+	}
+	if len(signal.Owners) > 0 {
+		if facts.EntryOwners, err = a.entryOwners(ctx); err != nil {
+			return facts, err
+		}
+	}
 	return facts, nil
+}
+
+// entryOwners reads, per entry, the owners of the entities its aliases name (rule P4).
+func (a *Attributor) entryOwners(ctx context.Context) (map[string][]string, error) {
+	rows, err := a.projector.Store().Pool().Query(ctx, `
+		WITH named AS (
+			SELECT a.entry_slug, c.entity_id FROM graph.catalog_alias_versions a
+			JOIN graph.identity_claims c ON c.namespace = a.namespace AND c.value = a.value
+			WHERE upper_inf(a.observed) AND a.entry_slug <> $2
+			UNION
+			SELECT a.entry_slug, k.entity_id FROM graph.catalog_alias_versions a
+			JOIN graph.correlation_keys k ON k.namespace = a.namespace AND k.value = a.value
+			WHERE upper_inf(a.observed) AND a.entry_slug <> $2
+		)
+		SELECT DISTINCT named.entry_slug, coalesce(t.merged_into, o.dst_id)
+		FROM named
+		JOIN graph.entities m ON m.entity_id = named.entity_id
+		JOIN graph.edge_versions o ON o.src_id = coalesce(m.merged_into, m.entity_id)
+		LEFT JOIN graph.entities t ON t.entity_id = o.dst_id
+		WHERE o.type = $1 AND upper_inf(o.observed) AND upper_inf(o.valid)
+		ORDER BY 1, 2`, string(graph.EdgeTypeOwnedBy), graph.HiddenEntrySlug)
+	if err != nil {
+		return nil, fmt.Errorf("catalog: read entry owners: %w", err)
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var slug, owner string
+		if err := rows.Scan(&slug, &owner); err != nil {
+			return nil, fmt.Errorf("catalog: scan entry owner: %w", err)
+		}
+		out[slug] = append(out[slug], owner)
+	}
+	return out, rows.Err()
 }
 
 // lookup resolves a ref to its canonical entity, without creating anything.

@@ -293,7 +293,11 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 	if !opts.noAttributor {
 		// The service catalog's attributor (009 research R4): it follows the log and appends its
 		// decisions under its own source, off the ingest path. A replay never runs it.
-		attributor := catalog.New(cfg.Projector, catalog.WithLogger(logger))
+		rules, err := attributionRules(opts.modelConfig)
+		if err != nil {
+			return err
+		}
+		attributor := catalog.New(cfg.Projector, catalog.WithLogger(logger), catalog.WithRules(rules))
 		go attributor.Run(ctx)
 	}
 	srv, err := server.New(cfg)
@@ -533,6 +537,27 @@ func knowledgeSemantic(ctx context.Context, configPath string, store knowledge.S
 	indexer := embedding.NewIndexer(store, embedder, logger)
 	go indexer.Run(ctx)
 	return embedder, indexer.Ready, nil
+}
+
+// attributionRules is the decision model the model configuration's `attribution:` block names, or
+// the published one when there is no configuration or no block (009 contracts §6).
+func attributionRules(configPath string) (catalog.Rules, error) {
+	if strings.TrimSpace(configPath) == "" {
+		return catalog.DefaultRules(), nil
+	}
+	config, err := model.LoadConfig(configPath)
+	if err != nil {
+		return catalog.Rules{}, exitWith(ExitUsage, err)
+	}
+	if config.Attribution == nil {
+		return catalog.DefaultRules(), nil
+	}
+	a := config.Attribution
+	rules, err := catalog.RulesFromConfig(a.Ruleset, a.Threshold, a.Margin)
+	if err != nil {
+		return catalog.Rules{}, exitWith(ExitUsage, err)
+	}
+	return rules, nil
 }
 
 func retrievalMode(embedder knowledge.Embedder) string {

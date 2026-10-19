@@ -10,7 +10,8 @@ description: >-
   service entity and per Notion value, never a merge: the Cloud Run service names the entry
   `candidate-api`, the Datadog one shares its name and is proposed as its alias (`P1`), and
   `candidate-api`'s names are proposed as *Candidate View*'s (`P2`, 0.65, by the shared token).
-  Until a person decides, signals are attributed to the proposed entries.
+  Until a person decides, signals are attributed to the proposed entries: the alert policy to
+  `candidate-api` by its alias (`A1`), the Datadog monitor by its name (`P1`, 0.85).
 
   At 14:20 a person hides *Other* ("not a service"); at 14:40 they confirm *Candidate View*,
   accept the `P2` suggestion, reject the `P1` one and give *Candidate View* the Datadog service
