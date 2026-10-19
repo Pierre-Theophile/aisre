@@ -124,8 +124,8 @@ func (n *Names) Signal(ctx context.Context, entityID string) (Signal, error) {
 	)
 	err = n.store.Pool().QueryRow(ctx, `
 		SELECT display_name, props FROM graph.entity_versions
-		WHERE entity_id = $1 AND upper_inf(observed) AND upper_inf(valid)
-		ORDER BY version_id LIMIT 1`, canonical).Scan(&display, &props)
+		WHERE entity_id = $1 AND upper_inf(observed)
+		ORDER BY upper_inf(valid) DESC, lower(valid) DESC, version_id LIMIT 1`, canonical).Scan(&display, &props)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return Signal{}, fmt.Errorf("catalog: read %s: %w", canonical, err)
 	}
@@ -186,10 +186,11 @@ func SlugTokens(channel string) []string {
 	return slices.Compact(tokens)
 }
 
-// targets reads the entities a signal's edges reach and every identity claim and correlation key of
-// each, with its environment: a Datadog service is named `<env>/<service>` and correlated by the bare
-// `datadog.log_service` name, which is the one an environment-free alias matches. inbound reads edges INTO the signal (a change is the destination of
-// `changed_by`); otherwise edges out of it.
+// targets reads the entities a signal's edges reach, and every identity claim and correlation
+// key of each with its environment: a Datadog service is named `<env>/<service>` and correlated by
+// the bare `datadog.log_service` name, which is the one an environment-free alias matches. inbound
+// reads edges INTO the signal (a change is the destination of `changed_by`), at any instant since a
+// change is one; otherwise current edges out of it.
 func (n *Names) targets(ctx context.Context, signalID string, typ graph.EdgeType, inbound bool) ([]Name, error) {
 	near, far := "src_id", "dst_id"
 	if inbound {
@@ -200,7 +201,7 @@ func (n *Names) targets(ctx context.Context, signalID string, typ graph.EdgeType
 			SELECT DISTINCT coalesce(t.merged_into, e.%[2]s) AS id
 			FROM graph.edge_versions e
 			LEFT JOIN graph.entities t ON t.entity_id = e.%[2]s
-			WHERE e.%[1]s = $1 AND e.type = $2 AND upper_inf(e.observed) AND upper_inf(e.valid)
+			WHERE e.%[1]s = $1 AND e.type = $2 AND upper_inf(e.observed) AND (upper_inf(e.valid) OR $4)
 		)
 		SELECT c.namespace, c.value, coalesce(c.attributes->>$3, '')
 		FROM ends JOIN graph.entities m ON m.entity_id = ends.id OR m.merged_into = ends.id
@@ -209,7 +210,7 @@ func (n *Names) targets(ctx context.Context, signalID string, typ graph.EdgeType
 		SELECT k.namespace, k.value, coalesce(k.attributes->>$3, '')
 		FROM ends JOIN graph.entities m ON m.entity_id = ends.id OR m.merged_into = ends.id
 		JOIN graph.correlation_keys k ON k.entity_id = m.entity_id
-		ORDER BY 1, 2, 3`, near, far), signalID, string(typ), AttrEnvironment)
+		ORDER BY 1, 2, 3`, near, far), signalID, string(typ), AttrEnvironment, inbound)
 	if err != nil {
 		return nil, fmt.Errorf("catalog: read %s targets of %s: %w", typ, signalID, err)
 	}

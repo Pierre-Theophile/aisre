@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# The catalog the manifest's human_decisions declare, as a file (contracts/catalog.md §5).
+version: 1
+entries:
+  - slug: checkout-flow
+    name: Checkout Flow
+    kind: service
+    owner: checkout team
+    aliases:
+      - otel.service.name=checkout
+      - notion.value=0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9/Checkout Flow
+  - slug: infra
+    name: Infra
+    kind: platform
+    aliases:
+      - notion.value=0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9/Infra

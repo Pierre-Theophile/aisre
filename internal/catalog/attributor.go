@@ -202,15 +202,18 @@ func affected(env *graphv1.EventEnvelope) (refs []graph.Ref, all bool) {
 	return nil, false
 }
 
-// Sweep re-attributes every current signal and returns how many decisions it appended.
+// Sweep re-attributes every current signal and returns how many decisions it appended. A change
+// is an instant, never valid now, so every change the graph still believes in is current.
 func (a *Attributor) Sweep(ctx context.Context) (int, error) {
 	rows, err := a.projector.Store().Pool().Query(ctx, `
 		SELECT e.entity_id FROM graph.entities e
 		WHERE e.merged_into IS NULL AND e.type = ANY($1)
 		  AND EXISTS (SELECT 1 FROM graph.entity_versions v
-		              WHERE v.entity_id = e.entity_id AND upper_inf(v.observed) AND upper_inf(v.valid))
+		              WHERE v.entity_id = e.entity_id AND upper_inf(v.observed)
+		                AND (upper_inf(v.valid) OR e.type = $2))
 		ORDER BY e.entity_id`,
-		[]string{string(graph.NodeTypeAlert), string(graph.NodeTypeKnowledgeDoc), string(graph.NodeTypeChange)})
+		[]string{string(graph.NodeTypeAlert), string(graph.NodeTypeKnowledgeDoc), string(graph.NodeTypeChange)},
+		string(graph.NodeTypeChange))
 	if err != nil {
 		return 0, fmt.Errorf("catalog: list current signals: %w", err)
 	}

@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# What each signal is about (research R13).
+labels:
+  - signal: datadog.monitor=20110
+    expect: [checkout-flow]
+  - signal: notion.page=c3000000-0000-4000-8000-000000000011
+    expect: [checkout-flow]
+  - signal: notion.page=c3000000-0000-4000-8000-000000000012
+    expect: [infra]

@@ -1,0 +1,208 @@
+# Hand-authored fixture: the service catalog's case (feature 009 T016, SC-001).
+id: catalog-alias-01
+family: conformance
+description: >-
+  009 US1, the owner's case: the alert names a service in its monitoring tool's words, the
+  postmortems are filed under the organisation's own words for it, and nothing but the agent's
+  service catalog connects the two. The incident underneath is knowledge-scope-01's, a payments
+  rollout at 14:20 that turns checkout's error rate up.
+
+  - The catalog is declared by a person at 13:05 (catalog.yaml is the same catalog as a file):
+    *Checkout Flow* goes by `otel.service.name=checkout` and by the Notion value "Checkout Flow",
+    *Infra* by the Notion value "Infra".
+  - Two postmortems are registered by the Notion connector in catalog mode, that is without a
+    map from Notion values to graph entities: no CONCERNS edge, only the page's database and
+    values. They carry the same text word for word, so the text cannot tell them apart. One is
+    filed under "Checkout Flow", the other under "Infra".
+  - The attributor attributes each page to its entry and the monitor `datadog.monitor=20110`,
+    which watches checkout, to *Checkout Flow* (layer 1, `A1`). Its decisions are in the log;
+    a replay projects them without running it.
+
+  The investigation of the 14:32 alert asks the knowledge worker about checkout and payments.
+  Through the catalog, the *Checkout Flow* postmortem is in scope and ranks first; the *Infra*
+  postmortem, which matches the symptom as well, is eligible, flagged out of scope and ranked
+  below it (008 SC-004). Before 009 neither was linked to anything and neither was in scope.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+  - source_id: notion:twin
+    kind: notion
+    ordering: none
+    reordering_window: 0s
+  - source_id: datadog:demo
+    kind: datadog
+    ordering: none
+    reordering_window: 0s
+  - source_id: sre.attributor
+    kind: attributor
+    ordering: none
+    reordering_window: 0s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+human_decisions:
+  - catalog_entry: {slug: checkout-flow, name: Checkout Flow, kind: service, owner: checkout team}
+    at: 2026-09-01T13:05:00Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as the checkout team wrote it
+  - catalog_entry: {slug: infra, name: Infra, kind: platform}
+    at: 2026-09-01T13:05:01Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as the checkout team wrote it
+  - alias: {name: otel.service.name=checkout, entry: checkout-flow}
+    at: 2026-09-01T13:05:02Z
+    principal: sre-agent-dev|operator
+    reason: checkout is what OpenTelemetry calls Checkout Flow
+  - alias: {name: "notion.value=0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9/Checkout Flow", entry: checkout-flow}
+    at: 2026-09-01T13:05:03Z
+    principal: sre-agent-dev|operator
+    reason: the postmortem database files Checkout Flow under its own name
+  - alias: {name: "notion.value=0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9/Infra", entry: infra}
+    at: 2026-09-01T13:05:04Z
+    principal: sre-agent-dev|operator
+    reason: the postmortem database files Infra under its own name
+
+queries:
+  - name: checkout-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: catalog-1432
+    kind: catalog
+    valid_at: 2026-09-01T14:32:00Z
+  - name: monitor-1432
+    kind: attribution
+    focus: datadog.monitor=20110
+    valid_at: 2026-09-01T14:32:00Z
+  - name: checkout-postmortem-1432
+    kind: attribution
+    focus: notion.page=c3000000-0000-4000-8000-000000000011
+    valid_at: 2026-09-01T14:32:00Z
+  - name: infra-postmortem-1432
+    kind: attribution
+    focus: notion.page=c3000000-0000-4000-8000-000000000012
+    valid_at: 2026-09-01T14:32:00Z
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "datadog.monitor=20110"
+    statement: "checkout error rate above 5 % for 5 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=checkout
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: k8s.change=shop/payments@rev7
+    causal_path:
+      - entity: k8s.change=shop/payments@rev7
+        via: changed-by
+        role: cause
+      - entity: otel.service.name=payments
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=checkout
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          errors_by_version:
+            pointer: "METRIC otel.service.name=payments"
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+            version_attribute: service.version
+        field_path: versions[version=rev7].error_rate
+        op: gt
+        value: 0.05
+        note: the new revision carries the errors; askable only because the metric pointer publishes a version join key.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=payments"
+            windows: {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: up
+        note: payments' error rate rises across the onset by more than an order of magnitude.
+      - term:
+          error_spans:
+            src: otel.service.name=checkout
+            dst: otel.service.name=payments
+            edge_type: CALLS
+            window: "2026-09-01T14:20:00Z..2026-09-01T14:32:00Z"
+        field_path: groups[error_kind=deadline_exceeded].join_keys.version
+        op: eq
+        value: rev7
+        note: the failing spans on the call path from the alerting service carry the new version.
+      - term:
+          knowledge_search:
+            entity_ids: [otel.service.name=checkout, otel.service.name=payments]
+            query_terms: [connection, pool, 5xx, rollout]
+            limit: 10
+        field_path: knowledge.items[document_id=notion.page=c3000000-0000-4000-8000-000000000011].in_scope
+        op: eq
+        value: true
+        note: >-
+          the postmortem filed under Checkout Flow is linked to nothing in the graph but its
+          entry, and the entry's alias is checkout: it is in scope through the catalog (009 SC-001).
+      - term:
+          knowledge_search:
+            entity_ids: [otel.service.name=checkout, otel.service.name=payments]
+            query_terms: [connection, pool, 5xx, rollout]
+            limit: 10
+        field_path: knowledge.items[document_id=notion.page=c3000000-0000-4000-8000-000000000012].in_scope
+        op: absent
+        note: >-
+          the postmortem filed under Infra says the same words and is eligible, but it is about
+          another entry: never cited as in scope, and ranked below the Checkout Flow one.
+
+    decoys: []
+    exonerating_evidence: {}
+
+    # Nobody sees the future: this investigation observes the world at `fired_at` (14:32), so the
+    # decisive windows above end there and no predicate rests on telemetry after it
+    # (constitution II). The evidence itself exists earlier: the onset is 14:20, and the five
+    # one-minute samples after it — `onset.MinSustainedPoints`, the shortest run this project
+    # calls a symptom — are complete at 14:25, by which instant rev7's error rate over them is
+    # an order of magnitude above the 5 % floor the predicate asks for. Asked before 14:25,
+    # `unknown` is the correct answer and naming payments is a lucky guess.
+    knowability_time: 2026-09-01T14:25:00Z
+    onset: {at: 2026-09-01T14:20:00Z, tolerance_seconds: 120}
+    prior_rank_of_culprit: 1
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    hop_radius: 2
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:20:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    note: >-
+      One grid entry centred on the estimated onset. The world is the cross product of
+      (pointers in the neighbourhood) x (grid) x (the recorder's statistic set: ERROR_RATE,
+      P95, RATE) plus monitor_state, log patterns, onset, errors_by_version where a version
+      join key exists, error_spans per edge, and the depth-1 drill-downs those answers mint,
+      so each further grid entry doubles the directory. The cap is the grid, the hop radius
+      and the drill-down depth; all three are read back from this block by
+      `fixture record-world`, so widening one is an edit a reviewer sees.
+
+  runs: 3

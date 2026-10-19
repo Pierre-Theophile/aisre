@@ -81,9 +81,26 @@ func (r *Runner) Run(ctx context.Context, q fixture.Query) (proto.Message, error
 		return r.engine.Suggestions(ctx, req)
 	case "extent":
 		return r.engine.log.Extent(ctx)
+	case "catalog":
+		return r.engine.ListEntries(ctx, &graphv1.ListEntriesRequest{AsOf: catalogQueryAsOf(q), Status: q.Status})
+	case "attribution":
+		ref, err := q.FocusRef()
+		if err != nil {
+			return nil, err
+		}
+		return r.engine.WhyAttributed(ctx, &graphv1.WhyAttributedRequest{Signal: ref.Proto(), AsOf: catalogQueryAsOf(q)})
 	default:
 		return nil, fmt.Errorf("query: %q: %w", q.Kind, fixture.ErrUnsupportedQueryKind)
 	}
+}
+
+// catalogQueryAsOf is the as-of of a `catalog` or `attribution` query (feature 009).
+func catalogQueryAsOf(q fixture.Query) *graphv1.AsOf {
+	at := &graphv1.AsOf{ValidAt: timestamppb.New(q.ValidAt.UTC())}
+	if !q.ObservedAt.IsZero() {
+		at.ObservedAt = timestamppb.New(q.ObservedAt.UTC())
+	}
+	return at
 }
 
 // SubgraphRequestFromQuery builds a SubgraphRequest from a manifest query. Unset numeric fields
