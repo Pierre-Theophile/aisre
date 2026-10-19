@@ -51,7 +51,7 @@ type discoveryCandidate struct {
 
 // catalogEntry is an entry as discovery reads it.
 type catalogEntry struct {
-	slug, display, status string
+	slug, display, status, description string
 }
 
 // Discover appends the proposals discovery finds and returns how many it appended.
@@ -319,7 +319,9 @@ func (a *Attributor) entries(ctx context.Context) (map[string]catalogEntry, erro
 		if err := rows.Scan(&e.slug, &e.display, &props); err != nil {
 			return nil, fmt.Errorf("catalog: scan entry: %w", err)
 		}
-		e.status, _ = propValues(props)[graph.CatalogStatusProp].(string)
+		values := propValues(props)
+		e.status, _ = values[graph.CatalogStatusProp].(string)
+		e.description, _ = values[graph.CatalogDescriptionProp].(string)
 		out[e.slug] = e
 	}
 	return out, rows.Err()

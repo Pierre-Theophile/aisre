@@ -21,6 +21,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
+	"github.com/Pierre-Theophile/aisre/pkg/attribution"
 )
 
 // The attributor (research R4): an in-process consumer in `serve` that reads what the projector
@@ -49,6 +50,9 @@ type Attributor struct {
 	now       func() time.Time
 	// discover runs discovery before every sweep (the default).
 	discover bool
+	// classifier is layer 3, nil unless configured.
+	classifier        attribution.Classifier
+	classifierTimeout time.Duration
 }
 
 // Option configures an Attributor.
@@ -310,6 +314,11 @@ func (a *Attributor) Decide(ctx context.Context, entityID string) (*graphv1.Even
 		return nil, err
 	}
 	decision := a.rules.Decide(signal, facts)
+	if a.classifier != nil && AsksClassifier(decision) {
+		if decision, err = a.classify(ctx, signal, facts, decision); err != nil {
+			return nil, err
+		}
+	}
 
 	current, err := a.current(ctx, signal.EntityID)
 	if err != nil {
@@ -480,7 +489,7 @@ func (a *Attributor) facts(ctx context.Context, signal Signal) (Facts, error) {
 	}
 	facts.Entries = make(map[string]Entry, len(known))
 	for slug, e := range known {
-		facts.Entries[slug] = Entry{Display: e.display, Status: e.status}
+		facts.Entries[slug] = Entry{Display: e.display, Status: e.status, Description: e.description}
 	}
 	if len(signal.Owners) > 0 {
 		if facts.EntryOwners, err = a.entryOwners(ctx); err != nil {
