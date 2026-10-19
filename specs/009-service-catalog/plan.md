@@ -3,8 +3,8 @@
 **Branch**: `009-service-catalog` | **Date**: 2026-10-19 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/009-service-catalog/spec.md`, approved by the owner on
-2026-10-19 with all six defaults (Q1–Q6), and constitution 1.2.0. Plan and tasks proposed for the
-owner's approval.
+2026-10-19 with all six defaults (Q1–Q6), and constitution 1.2.0. Plan and tasks approved by the
+owner on 2026-10-19.
 
 ## Summary
 

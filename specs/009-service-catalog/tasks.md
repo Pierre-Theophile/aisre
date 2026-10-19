@@ -17,7 +17,7 @@ calibration gate of FR-061, and replay byte-identity for every new event (consti
 **Organization**: grouped by the plan's three pull requests. PR 1 delivers US1 and US3 on a declared
 catalog; PR 2 adds discovery and the probable rules (US2, US4); PR 3 the classifier (US5).
 
-**Status**: spec approved by the owner on 2026-10-19; plan and these tasks proposed for approval.
+**Status**: spec, plan and these tasks approved by the owner on 2026-10-19 (all three PRs); in implementation.
 
 ## Format: `[ID] [P?] [Story] Description`
 
