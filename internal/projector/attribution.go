@@ -253,12 +253,17 @@ func (p *Projector) applyRevertCorrection(ctx context.Context, tx pgx.Tx, env *g
 		}
 	}
 
+	// The evidence names the correction undone: a later correction of the same signal still stands.
+	evidence, err := json.Marshal(map[string]string{graph.RevertedCorrectionEvidence: correction.eventID})
+	if err != nil {
+		return fmt.Errorf("projector: encode revert of %s: %w", correction.eventID, err)
+	}
 	return p.insertAttribution(ctx, tx, attributionRecord{
 		eventID:   env.GetEventId(),
 		kind:      decisionRevert,
 		signalID:  correction.signalID,
 		signalRef: correction.signalRef,
-		evidence:  []byte("{}"),
+		evidence:  evidence,
 		scope:     correction.scope,
 		principal: principal,
 	}, observedAt)
@@ -459,8 +464,9 @@ func (p *Projector) checkAttribution(ctx context.Context, tx pgx.Tx, field strin
 	return p.checkEntries(ctx, tx, field, slugs...)
 }
 
-// checkRevert refuses a revert of something that is not a standing correction.
-func (p *Projector) checkRevert(ctx context.Context, tx pgx.Tx, body *graphv1.RevertCorrection) (*eventlog.Rejection, error) {
+// checkRevert refuses a revert of something that is not a standing correction. The revert that
+// already took it back is let through, so its re-delivery reaches the log as a duplicate.
+func (p *Projector) checkRevert(ctx context.Context, tx pgx.Tx, eventID string, body *graphv1.RevertCorrection) (*eventlog.Rejection, error) {
 	correction, found, err := p.attributionDecision(ctx, tx, body.GetCorrectionEventId())
 	if err != nil {
 		return nil, err
@@ -471,7 +477,7 @@ func (p *Projector) checkRevert(ctx context.Context, tx pgx.Tx, body *graphv1.Re
 			ReasonCode:   eventlog.ReasonRefUnresolvable,
 			ReasonDetail: fmt.Sprintf("revert_correction names %q, which is not a correction", body.GetCorrectionEventId()),
 		}, nil
-	case correction.revertedBy != "":
+	case correction.revertedBy != "" && correction.revertedBy != eventID:
 		return &eventlog.Rejection{
 			ReasonCode:   eventlog.ReasonRefUnresolvable,
 			ReasonDetail: fmt.Sprintf("the correction %q was already reverted", body.GetCorrectionEventId()),

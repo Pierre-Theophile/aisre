@@ -55,6 +55,9 @@ const (
 	AttributionPrincipalProp = "sre.attribution.principal"
 )
 
+// RevertedCorrectionEvidence is the evidence key of a revert decision naming the correction it undid.
+const RevertedCorrectionEvidence = "reverted_correction_event_id"
+
 // Attribution layers, in precedence order (ADR-0015 item 5).
 const (
 	AttributionLayerCorrection = "correction"

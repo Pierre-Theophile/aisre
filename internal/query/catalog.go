@@ -427,17 +427,30 @@ func (e *Engine) attributionHistory(ctx context.Context, asOf AsOf, signalIDs []
 // currentAttribution replays the decisions in order the way the projector applied them: a
 // correction stands until reverted, and an automated decision does not move it.
 func currentAttribution(history []*graphv1.AttributionDecision) *graphv1.AttributionDecision {
-	var current, standing *graphv1.AttributionDecision
+	// Corrections stand in the order they were made; a revert takes back the one it names, so an
+	// earlier correction's revert leaves a later one standing. A revert naming none (recorded before
+	// the evidence carried it) takes back every correction.
+	var current *graphv1.AttributionDecision
+	var standing []*graphv1.AttributionDecision
 	for _, d := range history {
 		switch d.GetKind() {
 		case "attribute":
-			if standing == nil {
+			if len(standing) == 0 {
 				current = d
 			}
 		case "correct":
-			current, standing = d, d
+			standing = append(standing, d)
+			current = d
 		case "revert":
-			current, standing = nil, nil
+			reverted := d.GetEvidence().GetFields()[graph.RevertedCorrectionEvidence].GetStringValue()
+			standing = slices.DeleteFunc(standing, func(c *graphv1.AttributionDecision) bool {
+				return reverted == "" || c.GetEventId() == reverted
+			})
+			if len(standing) > 0 {
+				current = standing[len(standing)-1]
+			} else {
+				current = nil
+			}
 		}
 	}
 	return current

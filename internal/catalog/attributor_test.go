@@ -18,6 +18,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
+	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
 )
 
@@ -225,6 +226,24 @@ func TestACorrectionOutranksEveryLayerAndSurvivesReattribution(t *testing.T) {
 	if got := w.attributed("1"); got != "candidate-view/H" {
 		t.Errorf("after the correction: %q", got)
 	}
+	// A later automated decision that disagrees (a ruleset that saw the signal before the
+	// correction, say) is recorded as a conflict, never applied.
+	w.apply(graph.AttributorSourceID, "", func(e *graphv1.EventEnvelope) {
+		e.Body = &graphv1.EventEnvelope_AttributeSignal{AttributeSignal: &graphv1.AttributeSignal{
+			Signal:  ref("datadog.monitor", "1"),
+			Entries: []*graphv1.Attributed{{EntrySlug: "infra", Layer: graph.AttributionLayerAlias, RuleId: "A1", Score: 1}},
+			Ruleset: "attribution/rules@1",
+		}}
+	})
+	var conflicts int
+	if err := w.p.Store().Pool().QueryRow(ctx, `SELECT count(*) FROM graph.attribution_decisions
+		WHERE signal_entity_id = $1 AND kind = 'conflict'`, graph.EntityID("datadog.monitor", "1")).Scan(&conflicts); err != nil || conflicts != 1 {
+		t.Errorf("a disagreeing automated decision: %d conflicts recorded, %v", conflicts, err)
+	}
+	if got := w.attributed("1"); got != "candidate-view/H" {
+		t.Errorf("a conflict moved a corrected signal: %q", got)
+	}
+
 	// The alias changes; the correction still stands.
 	w.alias(ref("datadog.log_service", "candidate-api"), "", "candidate-view")
 	w.sweep()
@@ -256,6 +275,23 @@ func TestACorrectionOutranksEveryLayerAndSurvivesReattribution(t *testing.T) {
 	w.sweep()
 	if got := w.attributed("1"); got != "infra/H" {
 		t.Errorf("after reverting the earlier correction: %q", got)
+	}
+	why, err := query.NewEngine(w.p.Store()).WhyAttributed(ctx, &graphv1.WhyAttributedRequest{
+		Signal: ref("datadog.monitor", "1"), AsOf: &graphv1.AsOf{ValidAt: timestamppb.New(w.at)}})
+	if err != nil {
+		t.Fatalf("why: %v", err)
+	}
+	if got := why.GetCurrent(); got.GetKind() != "correct" || got.GetEventId() == correction {
+		t.Errorf("why answers %s %s, want the standing name-level correction", got.GetKind(), got.GetEventId())
+	}
+
+	// The revert re-delivered is a duplicate, not a revert of something already reverted.
+	r, err := w.p.ApplyWithOptions(ctx, &graphv1.EventEnvelope{
+		EventId: revert, IdempotencyKey: revert, SourceId: "human", SchemaVersion: "1.0.0",
+		Body: &graphv1.EventEnvelope_RevertCorrection{RevertCorrection: &graphv1.RevertCorrection{CorrectionEventId: correction}},
+	}, projector.ApplyOptions{ObservedAt: w.at, Principal: person})
+	if err != nil || r.GetStatus() != graphv1.IngestResult_DUPLICATE_NOOP {
+		t.Errorf("re-delivered revert: %v %s %s", err, r.GetStatus(), r.GetReasonDetail())
 	}
 }
 

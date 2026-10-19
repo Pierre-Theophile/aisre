@@ -84,8 +84,9 @@ ruleset version, and every attribution records the version it ran under.
 
 ### Item 7 — props written by connectors
 
-`sre.notion.values` on every Notion `KNOWLEDGE_DOC`: the raw values of the entity property, so the
-attributor can name a page by `notion.value=<database>/<value>`. Slack slug tokens are named
+`sre.notion.values` on every Notion `KNOWLEDGE_DOC`: the raw values of the entity property, and
+`sre.notion.database`, the database the page was read from, so the attributor can name a page by
+`notion.value=<database>/<value>`. Slack slug tokens are named
 `slack.slug=<token>`.
 
 ### Item 8 — 002 FR-002b is amended

@@ -382,7 +382,7 @@ func (p *Projector) checkResolvable(ctx context.Context, tx pgx.Tx, env *graphv1
 		if r, err := p.checkDecision(ctx, tx, principal, "revert_correction"); r != nil || err != nil {
 			return r, err
 		}
-		return p.checkRevert(ctx, tx, body.RevertCorrection)
+		return p.checkRevert(ctx, tx, env.GetEventId(), body.RevertCorrection)
 	default:
 	}
 	return nil, nil

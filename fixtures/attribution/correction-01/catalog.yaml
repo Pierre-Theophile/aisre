@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# The catalog at the end of the stream, as a file: the name-level correction moved the alias.
+version: 1
+entries:
+  - slug: candidate-view
+    name: Candidate View
+    kind: service
+    aliases:
+      - datadog.log_service=candidate-api
+  - slug: infra
+    name: Infra
+    kind: platform

@@ -55,6 +55,16 @@ each is a query and an in-memory corpus, graded by `aisre eval retrieval`, and n
 `manifest.yaml`, so `fixture verify fixtures/*/` reports the directory as an empty group and moves
 on. See [`fixtures/retrieval/README.md`](retrieval/README.md).
 
+`fixtures/attribution/` holds feature 009's **attribution cases**. Each is a graph fixture like
+any other, verified by `fixture verify fixtures/*/` as a group member, with two files more: a
+`catalog.yaml`, the catalog its stream declares, and a `labels.yaml`, what each signal is about.
+The attributor's decisions are in `events.jsonl` as the log recorded them, since a replay never
+runs it; `TestAttributionCases` (`internal/catalog/fixtures_test.go`) runs the attributor from the
+same stream and checks that it takes exactly those decisions, that it ends on the labels, and that
+`catalog.yaml` is the declared catalog. `SRE_AGENT_GEN_FIXTURES=1` rewrites the decisions instead.
+The catalog's human decisions (`catalog_entry`, `alias`, `retract_alias`, `correct`, `revert`) are
+replayed from `human_decisions`, as merges are (`internal/fixture/catalog_decisions.go`).
+
 ### baseline-topology-01
 
 **Recorded**, on 2026-09-16, from the disposable kind cluster of `deploy/kind/` running the
