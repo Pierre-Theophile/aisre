@@ -41,3 +41,8 @@ database 4e5f6071-8293-44a4-b5c6-d7e8f90a1b2c (postmortem)
       Timeline (body, 66 chars)
   ended (trashed, moved or deleted): 0
   outside the configured databases: 0
+catalog: 3 name(s) observed
+  the catalog could not be read (see stderr); the names are not checked
+  notion.value=4e5f6071-8293-44a4-b5c6-d7e8f90a1b2c/Checkout: not checked
+  notion.value=4e5f6071-8293-44a4-b5c6-d7e8f90a1b2c/Payments: not checked
+  notion.value=4e5f6071-8293-44a4-b5c6-d7e8f90a1b2c/Reporting: not checked
