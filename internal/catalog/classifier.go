@@ -11,6 +11,8 @@ import (
 
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/pkg/attribution"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Layer 3 in the attributor (feature 009 T034, research R6, FR-034–FR-036): off unless the model
@@ -39,7 +41,15 @@ func (a *Attributor) classify(ctx context.Context, signal Signal, facts Facts, d
 	}
 	call, cancel := context.WithTimeout(ctx, a.classifierTimeout)
 	defer cancel()
+	call, span := a.telemetry.tracer.Start(call, "catalog.attributor.classify",
+		trace.WithAttributes(attribute.String("sre.attribution.classifier", a.classifier.ID()), attribute.Int("sre.attribution.entries", len(profiles))))
+	started := time.Now()
 	scored, err := a.classifier.Classify(call, classifierSignal(signal), profiles)
+	a.telemetry.classified(ctx, a.classifier.ID(), time.Since(started), err != nil && ctx.Err() == nil)
+	if err != nil {
+		span.RecordError(err)
+	}
+	span.End()
 	if err != nil {
 		if ctx.Err() != nil {
 			// The attributor itself is stopping: no decision, rather than one recording a fallback

@@ -22,6 +22,10 @@ import (
 	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/pkg/attribution"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // The attributor (research R4): an in-process consumer in `serve` that reads what the projector
@@ -53,6 +57,10 @@ type Attributor struct {
 	// classifier is layer 3, nil unless configured.
 	classifier        attribution.Classifier
 	classifierTimeout time.Duration
+
+	meterProvider  metric.MeterProvider
+	tracerProvider trace.TracerProvider
+	telemetry      telemetry
 }
 
 // Option configures an Attributor.
@@ -89,6 +97,7 @@ func New(p *projector.Projector, opts ...Option) *Attributor {
 	for _, opt := range opts {
 		opt(a)
 	}
+	a.telemetry = newTelemetry(a.meterProvider, a.tracerProvider)
 	return a
 }
 
@@ -239,9 +248,17 @@ func discovers(env *graphv1.EventEnvelope) bool {
 // Sweep runs discovery, re-attributes every current signal, and returns how many events it
 // appended. A change is an instant, never valid now, so every change the graph still believes in
 // is current.
-func (a *Attributor) Sweep(ctx context.Context) (int, error) {
+func (a *Attributor) Sweep(ctx context.Context) (appended int, err error) {
+	ctx, span := a.telemetry.tracer.Start(ctx, "catalog.attributor.sweep")
+	defer func() {
+		span.SetAttributes(attribute.Int("sre.attribution.appended", appended))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
 	// Discovery first, so a signal is attributed to an entry proposed in the same pass.
-	appended := 0
 	if a.discover {
 		n, err := a.Discover(ctx)
 		if err != nil {
@@ -290,6 +307,8 @@ func (a *Attributor) Attribute(ctx context.Context, entityID string) (bool, erro
 	}
 	switch result.GetStatus() {
 	case graphv1.IngestResult_APPLIED:
+		layer, _ := env.GetAttributeSignal().GetEvidence().GetFields()["decided_by"].AsInterface().(string)
+		a.telemetry.decided(ctx, layer)
 		return true, nil
 	case graphv1.IngestResult_REJECTED:
 		return false, fmt.Errorf("catalog: decision on %s refused: %s %s", entityID,

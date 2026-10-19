@@ -303,6 +303,9 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 			return err
 		} else if classifier != nil {
 			attributorOpts = append(attributorOpts, classifier)
+		} else {
+			// FR-034: with no classifier block, attribution needs no network and no model.
+			logger.Info("attribution: no classifier; layers 0-2 decide", "ruleset", rules.Ruleset, "classifier", "none")
 		}
 		attributor := catalog.New(cfg.Projector, attributorOpts...)
 		go attributor.Run(ctx)
