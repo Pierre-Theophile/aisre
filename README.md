@@ -21,6 +21,12 @@ The thesis, in five lines:
 5. The schema is the contribution, and it is open, regardless of which agent ends up sitting on
    top of it.
 
+It is not an observability product. It stores no telemetry and reads the backends a team
+already runs, where logs-first tools ask you to move your logs into theirs. It is open,
+self-hostable, and every dependency is pluggable. The roadmap and why it has this shape are in
+[ADR-0004](docs/decisions/ADR-0004-roadmap-reorder-from-coverage-audit.md) and
+[ADR-0016](docs/decisions/ADR-0016-roadmap-after-the-sazabi-review.md).
+
 Feature 001 is the substrate. Features 002 to 004 put an investigator on top of it and feed it the
 cloud platform and the deploys an organisation actually runs.
 
@@ -32,10 +38,13 @@ cloud platform and the deploys an organisation actually runs.
 | [002 Investigation engine](specs/002-investigation-engine/spec.md) | complete; [quickstart run](specs/002-investigation-engine/quickstart-run-2026-09-18.md) on a clean machine |
 | [003 GCP integration](specs/003-gcp-integration/spec.md) | built and verified on synthetic twins ([quickstart run](specs/003-gcp-integration/quickstart-run-2026-09-22.md)); the recording campaign against a real estate and what can only be shown on it wait on a credential and a named signatory |
 | [004 Deploy feeders](specs/004-deploy-feeders/spec.md) (GitHub, Vercel) | built and verified on synthetic twins; waits on the same campaign, and on a real project-scoped Vercel token to establish the token regime |
-| [005 Datadog connector](specs/005-datadog-connector/spec.md) | specified; not yet planned |
+| [005 Datadog connector](specs/005-datadog-connector/spec.md) (log search, monitor intake, optional APM topology) | built and verified on synthetic twins ([quickstart run](specs/005-datadog-connector/quickstart-run-2026-09-27.md)) |
 | [006 Slack connector](specs/006-slack-connector/spec.md) (incident-channel intake, report in the channel, chat reader) | built and verified on synthetic twins ([docs](docs/connectors/slack.md)); the recording campaign and the live quickstart wait on the two apps being installed in the workspace and a named signatory |
 | [007 Notion knowledge](specs/007-notion-knowledge/spec.md) (postmortems and runbooks cited by investigations) | built, verified on a synthetic twin and recorded from the owner's real postmortem database (kept private) ([docs](docs/connectors/notion.md)); connector experimental, because that recording cannot be published |
 | [008 Postmortem RAG](specs/008-postmortem-rag/spec.md) (postmortems retrieved by section, lexical and semantic, with any OpenAI-compatible embedder, self-hosted included) | complete: verified on synthetic twins, a self-hosted embedder and the owner's seven real postmortems, each found at rank 1 against 3 or 4 of 7 for 007 ([docs](docs/knowledge/retrieval.md)) |
+| [009 Service catalog](specs/009-service-catalog/spec.md) (the agent's own catalog, automatic signal attribution, human corrections) | in progress: PR 1 merged (catalog, aliases, corrections, attribution-scoped investigations); discovery, rules and the pluggable classifier next |
+| 010 MCP server (read-only, for coding agents) | planned by [ADR-0016](docs/decisions/ADR-0016-roadmap-after-the-sazabi-review.md); not yet specified |
+| 011 Change-watch intake (the graph starts an investigation when a change is followed by a shift) | planned by [ADR-0016](docs/decisions/ADR-0016-roadmap-after-the-sazabi-review.md); not yet specified |
 
 Each feature's `tasks.md` says exactly what is open and why. What follows is feature 001's part.
 
