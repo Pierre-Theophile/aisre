@@ -122,8 +122,6 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("%s: kind %q; a Notion database feeds one of %v", where, b.Kind, Kinds)
 		case strings.TrimSpace(b.EntityProperty) == "":
 			return fmt.Errorf("%s: entity_property is required; it is the property that says which services a page concerns (FR-030)", where)
-		case len(b.Entities) == 0:
-			return fmt.Errorf("%s: entities is empty; a page whose values map to nothing can never be retrieved (FR-031)", where)
 		case len(b.SummaryProperties) > MaxSummaryProperties:
 			return fmt.Errorf("%s: %d summary properties, at most %d (FR-021)", where, len(b.SummaryProperties), MaxSummaryProperties)
 		}
@@ -148,6 +146,10 @@ func validKind(kind string) bool {
 	}
 	return false
 }
+
+// Legacy reports whether the binding maps values to entities itself (007's `entities` map). Without
+// one, the service catalog attributes the pages (009 FR-006).
+func (b *Binding) Legacy() bool { return len(b.Entities) > 0 }
 
 // properties are the property names the binding reads, in configuration order.
 func (b *Binding) properties() []string {

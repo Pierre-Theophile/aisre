@@ -21,7 +21,6 @@ func TestConfigurationRefusals(t *testing.T) {
 		{"no databases", base, "no databases"},
 		{"an unpublished kind", db("    kind: decision\n    entity_property: S\n    entities: {A: k8s.service=a}\n"), "kind \"decision\""},
 		{"no entity property", db("    kind: runbook\n    entities: {A: k8s.service=a}\n"), "entity_property is required"},
-		{"an empty map", db("    kind: runbook\n    entity_property: S\n"), "entities is empty"},
 		{"four summary properties", db("    kind: runbook\n    entity_property: S\n    entities: {A: k8s.service=a}\n" +
 			"    summary_properties: [a, b, c, d]\n"), "at most 3"},
 		{"a bad entity ref", db("    kind: runbook\n    entity_property: S\n    entities: {A: checkout}\n"), "entities[\"A\"]"},
@@ -37,6 +36,19 @@ func TestConfigurationRefusals(t *testing.T) {
 				t.Errorf("err = %v, want one naming %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// Without an `entities` map the binding is in catalog mode (009 FR-006): every page with a value is
+// registered with its values, and the service catalog attributes it.
+func TestABindingWithoutAMapIsLeftToTheCatalog(t *testing.T) {
+	cfg, err := notion.ParseConfig([]byte("workspace: acme\nprincipal: x\ndatabases:\n" +
+		"  - database: 0a1b2c3d4e5f60718293a4b5c6d7e8f9\n    kind: postmortem\n    entity_property: Services\n"))
+	if err != nil {
+		t.Fatalf("a binding with no map: %v", err)
+	}
+	if cfg.Databases[0].Legacy() {
+		t.Error("a binding with no map reads as a legacy map")
 	}
 }
 

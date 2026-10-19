@@ -77,6 +77,8 @@ const (
 	NotionValueNamespace = "notion.value"
 	// NotionValuesProp is where the Notion feeder writes those raw values on the page's node.
 	NotionValuesProp = "sre.notion.values"
+	// NotionDatabaseProp is the database the page was read from, the first half of its names.
+	NotionDatabaseProp = "sre.notion.database"
 	// SlackSlugNamespace names a declared incident by one token of its channel slug.
 	SlackSlugNamespace = "slack.slug"
 )
