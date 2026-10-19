@@ -33,6 +33,8 @@ const (
 	QueryServiceName = "sreagent.graph.v1.QueryService"
 	// ResolutionServiceName is the fully-qualified name of the ResolutionService service.
 	ResolutionServiceName = "sreagent.graph.v1.ResolutionService"
+	// CatalogServiceName is the fully-qualified name of the CatalogService service.
+	CatalogServiceName = "sreagent.graph.v1.CatalogService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -89,6 +91,35 @@ const (
 	// ResolutionServiceRejectDependencyProcedure is the fully-qualified name of the ResolutionService's
 	// RejectDependency RPC.
 	ResolutionServiceRejectDependencyProcedure = "/sreagent.graph.v1.ResolutionService/RejectDependency"
+	// ResolutionServiceDeclareCatalogEntryProcedure is the fully-qualified name of the
+	// ResolutionService's DeclareCatalogEntry RPC.
+	ResolutionServiceDeclareCatalogEntryProcedure = "/sreagent.graph.v1.ResolutionService/DeclareCatalogEntry"
+	// ResolutionServiceDeclareAliasProcedure is the fully-qualified name of the ResolutionService's
+	// DeclareAlias RPC.
+	ResolutionServiceDeclareAliasProcedure = "/sreagent.graph.v1.ResolutionService/DeclareAlias"
+	// ResolutionServiceRetractAliasProcedure is the fully-qualified name of the ResolutionService's
+	// RetractAlias RPC.
+	ResolutionServiceRetractAliasProcedure = "/sreagent.graph.v1.ResolutionService/RetractAlias"
+	// ResolutionServiceRejectAliasProcedure is the fully-qualified name of the ResolutionService's
+	// RejectAlias RPC.
+	ResolutionServiceRejectAliasProcedure = "/sreagent.graph.v1.ResolutionService/RejectAlias"
+	// ResolutionServiceCorrectAttributionProcedure is the fully-qualified name of the
+	// ResolutionService's CorrectAttribution RPC.
+	ResolutionServiceCorrectAttributionProcedure = "/sreagent.graph.v1.ResolutionService/CorrectAttribution"
+	// ResolutionServiceRevertCorrectionProcedure is the fully-qualified name of the ResolutionService's
+	// RevertCorrection RPC.
+	ResolutionServiceRevertCorrectionProcedure = "/sreagent.graph.v1.ResolutionService/RevertCorrection"
+	// CatalogServiceListEntriesProcedure is the fully-qualified name of the CatalogService's
+	// ListEntries RPC.
+	CatalogServiceListEntriesProcedure = "/sreagent.graph.v1.CatalogService/ListEntries"
+	// CatalogServiceGetEntryProcedure is the fully-qualified name of the CatalogService's GetEntry RPC.
+	CatalogServiceGetEntryProcedure = "/sreagent.graph.v1.CatalogService/GetEntry"
+	// CatalogServiceWhyAttributedProcedure is the fully-qualified name of the CatalogService's
+	// WhyAttributed RPC.
+	CatalogServiceWhyAttributedProcedure = "/sreagent.graph.v1.CatalogService/WhyAttributed"
+	// CatalogServiceAttributedSignalsProcedure is the fully-qualified name of the CatalogService's
+	// AttributedSignals RPC.
+	CatalogServiceAttributedSignalsProcedure = "/sreagent.graph.v1.CatalogService/AttributedSignals"
 )
 
 // IngestServiceClient is a client for the sreagent.graph.v1.IngestService service.
@@ -514,6 +545,13 @@ type ResolutionServiceClient interface {
 	// resolve.
 	ConfirmDependency(context.Context, *connect.Request[v1.ConfirmDependency]) (*connect.Response[v1.IngestResult], error)
 	RejectDependency(context.Context, *connect.Request[v1.RejectDependency]) (*connect.Response[v1.IngestResult], error)
+	// ADR-0015 (feature 009): the catalog decisions a person makes, stamped and forwarded the same way.
+	DeclareCatalogEntry(context.Context, *connect.Request[v1.DeclareCatalogEntry]) (*connect.Response[v1.IngestResult], error)
+	DeclareAlias(context.Context, *connect.Request[v1.DeclareAlias]) (*connect.Response[v1.IngestResult], error)
+	RetractAlias(context.Context, *connect.Request[v1.RetractAlias]) (*connect.Response[v1.IngestResult], error)
+	RejectAlias(context.Context, *connect.Request[v1.RejectAlias]) (*connect.Response[v1.IngestResult], error)
+	CorrectAttribution(context.Context, *connect.Request[v1.CorrectAttribution]) (*connect.Response[v1.IngestResult], error)
+	RevertCorrection(context.Context, *connect.Request[v1.RevertCorrection]) (*connect.Response[v1.IngestResult], error)
 }
 
 // NewResolutionServiceClient constructs a client for the sreagent.graph.v1.ResolutionService
@@ -563,17 +601,59 @@ func NewResolutionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(resolutionServiceMethods.ByName("RejectDependency")),
 			connect.WithClientOptions(opts...),
 		),
+		declareCatalogEntry: connect.NewClient[v1.DeclareCatalogEntry, v1.IngestResult](
+			httpClient,
+			baseURL+ResolutionServiceDeclareCatalogEntryProcedure,
+			connect.WithSchema(resolutionServiceMethods.ByName("DeclareCatalogEntry")),
+			connect.WithClientOptions(opts...),
+		),
+		declareAlias: connect.NewClient[v1.DeclareAlias, v1.IngestResult](
+			httpClient,
+			baseURL+ResolutionServiceDeclareAliasProcedure,
+			connect.WithSchema(resolutionServiceMethods.ByName("DeclareAlias")),
+			connect.WithClientOptions(opts...),
+		),
+		retractAlias: connect.NewClient[v1.RetractAlias, v1.IngestResult](
+			httpClient,
+			baseURL+ResolutionServiceRetractAliasProcedure,
+			connect.WithSchema(resolutionServiceMethods.ByName("RetractAlias")),
+			connect.WithClientOptions(opts...),
+		),
+		rejectAlias: connect.NewClient[v1.RejectAlias, v1.IngestResult](
+			httpClient,
+			baseURL+ResolutionServiceRejectAliasProcedure,
+			connect.WithSchema(resolutionServiceMethods.ByName("RejectAlias")),
+			connect.WithClientOptions(opts...),
+		),
+		correctAttribution: connect.NewClient[v1.CorrectAttribution, v1.IngestResult](
+			httpClient,
+			baseURL+ResolutionServiceCorrectAttributionProcedure,
+			connect.WithSchema(resolutionServiceMethods.ByName("CorrectAttribution")),
+			connect.WithClientOptions(opts...),
+		),
+		revertCorrection: connect.NewClient[v1.RevertCorrection, v1.IngestResult](
+			httpClient,
+			baseURL+ResolutionServiceRevertCorrectionProcedure,
+			connect.WithSchema(resolutionServiceMethods.ByName("RevertCorrection")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // resolutionServiceClient implements ResolutionServiceClient.
 type resolutionServiceClient struct {
-	confirm           *connect.Client[v1.ConfirmMerge, v1.IngestResult]
-	reject            *connect.Client[v1.RejectMerge, v1.IngestResult]
-	split             *connect.Client[v1.SplitEntity, v1.IngestResult]
-	merge             *connect.Client[v1.ManualMerge, v1.IngestResult]
-	confirmDependency *connect.Client[v1.ConfirmDependency, v1.IngestResult]
-	rejectDependency  *connect.Client[v1.RejectDependency, v1.IngestResult]
+	confirm             *connect.Client[v1.ConfirmMerge, v1.IngestResult]
+	reject              *connect.Client[v1.RejectMerge, v1.IngestResult]
+	split               *connect.Client[v1.SplitEntity, v1.IngestResult]
+	merge               *connect.Client[v1.ManualMerge, v1.IngestResult]
+	confirmDependency   *connect.Client[v1.ConfirmDependency, v1.IngestResult]
+	rejectDependency    *connect.Client[v1.RejectDependency, v1.IngestResult]
+	declareCatalogEntry *connect.Client[v1.DeclareCatalogEntry, v1.IngestResult]
+	declareAlias        *connect.Client[v1.DeclareAlias, v1.IngestResult]
+	retractAlias        *connect.Client[v1.RetractAlias, v1.IngestResult]
+	rejectAlias         *connect.Client[v1.RejectAlias, v1.IngestResult]
+	correctAttribution  *connect.Client[v1.CorrectAttribution, v1.IngestResult]
+	revertCorrection    *connect.Client[v1.RevertCorrection, v1.IngestResult]
 }
 
 // Confirm calls sreagent.graph.v1.ResolutionService.Confirm.
@@ -606,6 +686,36 @@ func (c *resolutionServiceClient) RejectDependency(ctx context.Context, req *con
 	return c.rejectDependency.CallUnary(ctx, req)
 }
 
+// DeclareCatalogEntry calls sreagent.graph.v1.ResolutionService.DeclareCatalogEntry.
+func (c *resolutionServiceClient) DeclareCatalogEntry(ctx context.Context, req *connect.Request[v1.DeclareCatalogEntry]) (*connect.Response[v1.IngestResult], error) {
+	return c.declareCatalogEntry.CallUnary(ctx, req)
+}
+
+// DeclareAlias calls sreagent.graph.v1.ResolutionService.DeclareAlias.
+func (c *resolutionServiceClient) DeclareAlias(ctx context.Context, req *connect.Request[v1.DeclareAlias]) (*connect.Response[v1.IngestResult], error) {
+	return c.declareAlias.CallUnary(ctx, req)
+}
+
+// RetractAlias calls sreagent.graph.v1.ResolutionService.RetractAlias.
+func (c *resolutionServiceClient) RetractAlias(ctx context.Context, req *connect.Request[v1.RetractAlias]) (*connect.Response[v1.IngestResult], error) {
+	return c.retractAlias.CallUnary(ctx, req)
+}
+
+// RejectAlias calls sreagent.graph.v1.ResolutionService.RejectAlias.
+func (c *resolutionServiceClient) RejectAlias(ctx context.Context, req *connect.Request[v1.RejectAlias]) (*connect.Response[v1.IngestResult], error) {
+	return c.rejectAlias.CallUnary(ctx, req)
+}
+
+// CorrectAttribution calls sreagent.graph.v1.ResolutionService.CorrectAttribution.
+func (c *resolutionServiceClient) CorrectAttribution(ctx context.Context, req *connect.Request[v1.CorrectAttribution]) (*connect.Response[v1.IngestResult], error) {
+	return c.correctAttribution.CallUnary(ctx, req)
+}
+
+// RevertCorrection calls sreagent.graph.v1.ResolutionService.RevertCorrection.
+func (c *resolutionServiceClient) RevertCorrection(ctx context.Context, req *connect.Request[v1.RevertCorrection]) (*connect.Response[v1.IngestResult], error) {
+	return c.revertCorrection.CallUnary(ctx, req)
+}
+
 // ResolutionServiceHandler is an implementation of the sreagent.graph.v1.ResolutionService service.
 type ResolutionServiceHandler interface {
 	Confirm(context.Context, *connect.Request[v1.ConfirmMerge]) (*connect.Response[v1.IngestResult], error)
@@ -621,6 +731,13 @@ type ResolutionServiceHandler interface {
 	// resolve.
 	ConfirmDependency(context.Context, *connect.Request[v1.ConfirmDependency]) (*connect.Response[v1.IngestResult], error)
 	RejectDependency(context.Context, *connect.Request[v1.RejectDependency]) (*connect.Response[v1.IngestResult], error)
+	// ADR-0015 (feature 009): the catalog decisions a person makes, stamped and forwarded the same way.
+	DeclareCatalogEntry(context.Context, *connect.Request[v1.DeclareCatalogEntry]) (*connect.Response[v1.IngestResult], error)
+	DeclareAlias(context.Context, *connect.Request[v1.DeclareAlias]) (*connect.Response[v1.IngestResult], error)
+	RetractAlias(context.Context, *connect.Request[v1.RetractAlias]) (*connect.Response[v1.IngestResult], error)
+	RejectAlias(context.Context, *connect.Request[v1.RejectAlias]) (*connect.Response[v1.IngestResult], error)
+	CorrectAttribution(context.Context, *connect.Request[v1.CorrectAttribution]) (*connect.Response[v1.IngestResult], error)
+	RevertCorrection(context.Context, *connect.Request[v1.RevertCorrection]) (*connect.Response[v1.IngestResult], error)
 }
 
 // NewResolutionServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -666,6 +783,42 @@ func NewResolutionServiceHandler(svc ResolutionServiceHandler, opts ...connect.H
 		connect.WithSchema(resolutionServiceMethods.ByName("RejectDependency")),
 		connect.WithHandlerOptions(opts...),
 	)
+	resolutionServiceDeclareCatalogEntryHandler := connect.NewUnaryHandler(
+		ResolutionServiceDeclareCatalogEntryProcedure,
+		svc.DeclareCatalogEntry,
+		connect.WithSchema(resolutionServiceMethods.ByName("DeclareCatalogEntry")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resolutionServiceDeclareAliasHandler := connect.NewUnaryHandler(
+		ResolutionServiceDeclareAliasProcedure,
+		svc.DeclareAlias,
+		connect.WithSchema(resolutionServiceMethods.ByName("DeclareAlias")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resolutionServiceRetractAliasHandler := connect.NewUnaryHandler(
+		ResolutionServiceRetractAliasProcedure,
+		svc.RetractAlias,
+		connect.WithSchema(resolutionServiceMethods.ByName("RetractAlias")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resolutionServiceRejectAliasHandler := connect.NewUnaryHandler(
+		ResolutionServiceRejectAliasProcedure,
+		svc.RejectAlias,
+		connect.WithSchema(resolutionServiceMethods.ByName("RejectAlias")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resolutionServiceCorrectAttributionHandler := connect.NewUnaryHandler(
+		ResolutionServiceCorrectAttributionProcedure,
+		svc.CorrectAttribution,
+		connect.WithSchema(resolutionServiceMethods.ByName("CorrectAttribution")),
+		connect.WithHandlerOptions(opts...),
+	)
+	resolutionServiceRevertCorrectionHandler := connect.NewUnaryHandler(
+		ResolutionServiceRevertCorrectionProcedure,
+		svc.RevertCorrection,
+		connect.WithSchema(resolutionServiceMethods.ByName("RevertCorrection")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/sreagent.graph.v1.ResolutionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ResolutionServiceConfirmProcedure:
@@ -680,6 +833,18 @@ func NewResolutionServiceHandler(svc ResolutionServiceHandler, opts ...connect.H
 			resolutionServiceConfirmDependencyHandler.ServeHTTP(w, r)
 		case ResolutionServiceRejectDependencyProcedure:
 			resolutionServiceRejectDependencyHandler.ServeHTTP(w, r)
+		case ResolutionServiceDeclareCatalogEntryProcedure:
+			resolutionServiceDeclareCatalogEntryHandler.ServeHTTP(w, r)
+		case ResolutionServiceDeclareAliasProcedure:
+			resolutionServiceDeclareAliasHandler.ServeHTTP(w, r)
+		case ResolutionServiceRetractAliasProcedure:
+			resolutionServiceRetractAliasHandler.ServeHTTP(w, r)
+		case ResolutionServiceRejectAliasProcedure:
+			resolutionServiceRejectAliasHandler.ServeHTTP(w, r)
+		case ResolutionServiceCorrectAttributionProcedure:
+			resolutionServiceCorrectAttributionHandler.ServeHTTP(w, r)
+		case ResolutionServiceRevertCorrectionProcedure:
+			resolutionServiceRevertCorrectionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -711,4 +876,176 @@ func (UnimplementedResolutionServiceHandler) ConfirmDependency(context.Context, 
 
 func (UnimplementedResolutionServiceHandler) RejectDependency(context.Context, *connect.Request[v1.RejectDependency]) (*connect.Response[v1.IngestResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.ResolutionService.RejectDependency is not implemented"))
+}
+
+func (UnimplementedResolutionServiceHandler) DeclareCatalogEntry(context.Context, *connect.Request[v1.DeclareCatalogEntry]) (*connect.Response[v1.IngestResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.ResolutionService.DeclareCatalogEntry is not implemented"))
+}
+
+func (UnimplementedResolutionServiceHandler) DeclareAlias(context.Context, *connect.Request[v1.DeclareAlias]) (*connect.Response[v1.IngestResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.ResolutionService.DeclareAlias is not implemented"))
+}
+
+func (UnimplementedResolutionServiceHandler) RetractAlias(context.Context, *connect.Request[v1.RetractAlias]) (*connect.Response[v1.IngestResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.ResolutionService.RetractAlias is not implemented"))
+}
+
+func (UnimplementedResolutionServiceHandler) RejectAlias(context.Context, *connect.Request[v1.RejectAlias]) (*connect.Response[v1.IngestResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.ResolutionService.RejectAlias is not implemented"))
+}
+
+func (UnimplementedResolutionServiceHandler) CorrectAttribution(context.Context, *connect.Request[v1.CorrectAttribution]) (*connect.Response[v1.IngestResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.ResolutionService.CorrectAttribution is not implemented"))
+}
+
+func (UnimplementedResolutionServiceHandler) RevertCorrection(context.Context, *connect.Request[v1.RevertCorrection]) (*connect.Response[v1.IngestResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.ResolutionService.RevertCorrection is not implemented"))
+}
+
+// CatalogServiceClient is a client for the sreagent.graph.v1.CatalogService service.
+type CatalogServiceClient interface {
+	ListEntries(context.Context, *connect.Request[v1.ListEntriesRequest]) (*connect.Response[v1.ListEntriesResponse], error)
+	GetEntry(context.Context, *connect.Request[v1.GetEntryRequest]) (*connect.Response[v1.GetEntryResponse], error)
+	WhyAttributed(context.Context, *connect.Request[v1.WhyAttributedRequest]) (*connect.Response[v1.WhyAttributedResponse], error)
+	AttributedSignals(context.Context, *connect.Request[v1.AttributedSignalsRequest]) (*connect.Response[v1.AttributedSignalsResponse], error)
+}
+
+// NewCatalogServiceClient constructs a client for the sreagent.graph.v1.CatalogService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewCatalogServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) CatalogServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	catalogServiceMethods := v1.File_sreagent_graph_v1_graph_proto.Services().ByName("CatalogService").Methods()
+	return &catalogServiceClient{
+		listEntries: connect.NewClient[v1.ListEntriesRequest, v1.ListEntriesResponse](
+			httpClient,
+			baseURL+CatalogServiceListEntriesProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("ListEntries")),
+			connect.WithClientOptions(opts...),
+		),
+		getEntry: connect.NewClient[v1.GetEntryRequest, v1.GetEntryResponse](
+			httpClient,
+			baseURL+CatalogServiceGetEntryProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("GetEntry")),
+			connect.WithClientOptions(opts...),
+		),
+		whyAttributed: connect.NewClient[v1.WhyAttributedRequest, v1.WhyAttributedResponse](
+			httpClient,
+			baseURL+CatalogServiceWhyAttributedProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("WhyAttributed")),
+			connect.WithClientOptions(opts...),
+		),
+		attributedSignals: connect.NewClient[v1.AttributedSignalsRequest, v1.AttributedSignalsResponse](
+			httpClient,
+			baseURL+CatalogServiceAttributedSignalsProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("AttributedSignals")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// catalogServiceClient implements CatalogServiceClient.
+type catalogServiceClient struct {
+	listEntries       *connect.Client[v1.ListEntriesRequest, v1.ListEntriesResponse]
+	getEntry          *connect.Client[v1.GetEntryRequest, v1.GetEntryResponse]
+	whyAttributed     *connect.Client[v1.WhyAttributedRequest, v1.WhyAttributedResponse]
+	attributedSignals *connect.Client[v1.AttributedSignalsRequest, v1.AttributedSignalsResponse]
+}
+
+// ListEntries calls sreagent.graph.v1.CatalogService.ListEntries.
+func (c *catalogServiceClient) ListEntries(ctx context.Context, req *connect.Request[v1.ListEntriesRequest]) (*connect.Response[v1.ListEntriesResponse], error) {
+	return c.listEntries.CallUnary(ctx, req)
+}
+
+// GetEntry calls sreagent.graph.v1.CatalogService.GetEntry.
+func (c *catalogServiceClient) GetEntry(ctx context.Context, req *connect.Request[v1.GetEntryRequest]) (*connect.Response[v1.GetEntryResponse], error) {
+	return c.getEntry.CallUnary(ctx, req)
+}
+
+// WhyAttributed calls sreagent.graph.v1.CatalogService.WhyAttributed.
+func (c *catalogServiceClient) WhyAttributed(ctx context.Context, req *connect.Request[v1.WhyAttributedRequest]) (*connect.Response[v1.WhyAttributedResponse], error) {
+	return c.whyAttributed.CallUnary(ctx, req)
+}
+
+// AttributedSignals calls sreagent.graph.v1.CatalogService.AttributedSignals.
+func (c *catalogServiceClient) AttributedSignals(ctx context.Context, req *connect.Request[v1.AttributedSignalsRequest]) (*connect.Response[v1.AttributedSignalsResponse], error) {
+	return c.attributedSignals.CallUnary(ctx, req)
+}
+
+// CatalogServiceHandler is an implementation of the sreagent.graph.v1.CatalogService service.
+type CatalogServiceHandler interface {
+	ListEntries(context.Context, *connect.Request[v1.ListEntriesRequest]) (*connect.Response[v1.ListEntriesResponse], error)
+	GetEntry(context.Context, *connect.Request[v1.GetEntryRequest]) (*connect.Response[v1.GetEntryResponse], error)
+	WhyAttributed(context.Context, *connect.Request[v1.WhyAttributedRequest]) (*connect.Response[v1.WhyAttributedResponse], error)
+	AttributedSignals(context.Context, *connect.Request[v1.AttributedSignalsRequest]) (*connect.Response[v1.AttributedSignalsResponse], error)
+}
+
+// NewCatalogServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	catalogServiceMethods := v1.File_sreagent_graph_v1_graph_proto.Services().ByName("CatalogService").Methods()
+	catalogServiceListEntriesHandler := connect.NewUnaryHandler(
+		CatalogServiceListEntriesProcedure,
+		svc.ListEntries,
+		connect.WithSchema(catalogServiceMethods.ByName("ListEntries")),
+		connect.WithHandlerOptions(opts...),
+	)
+	catalogServiceGetEntryHandler := connect.NewUnaryHandler(
+		CatalogServiceGetEntryProcedure,
+		svc.GetEntry,
+		connect.WithSchema(catalogServiceMethods.ByName("GetEntry")),
+		connect.WithHandlerOptions(opts...),
+	)
+	catalogServiceWhyAttributedHandler := connect.NewUnaryHandler(
+		CatalogServiceWhyAttributedProcedure,
+		svc.WhyAttributed,
+		connect.WithSchema(catalogServiceMethods.ByName("WhyAttributed")),
+		connect.WithHandlerOptions(opts...),
+	)
+	catalogServiceAttributedSignalsHandler := connect.NewUnaryHandler(
+		CatalogServiceAttributedSignalsProcedure,
+		svc.AttributedSignals,
+		connect.WithSchema(catalogServiceMethods.ByName("AttributedSignals")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/sreagent.graph.v1.CatalogService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case CatalogServiceListEntriesProcedure:
+			catalogServiceListEntriesHandler.ServeHTTP(w, r)
+		case CatalogServiceGetEntryProcedure:
+			catalogServiceGetEntryHandler.ServeHTTP(w, r)
+		case CatalogServiceWhyAttributedProcedure:
+			catalogServiceWhyAttributedHandler.ServeHTTP(w, r)
+		case CatalogServiceAttributedSignalsProcedure:
+			catalogServiceAttributedSignalsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedCatalogServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedCatalogServiceHandler struct{}
+
+func (UnimplementedCatalogServiceHandler) ListEntries(context.Context, *connect.Request[v1.ListEntriesRequest]) (*connect.Response[v1.ListEntriesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.CatalogService.ListEntries is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) GetEntry(context.Context, *connect.Request[v1.GetEntryRequest]) (*connect.Response[v1.GetEntryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.CatalogService.GetEntry is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) WhyAttributed(context.Context, *connect.Request[v1.WhyAttributedRequest]) (*connect.Response[v1.WhyAttributedResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.CatalogService.WhyAttributed is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) AttributedSignals(context.Context, *connect.Request[v1.AttributedSignalsRequest]) (*connect.Response[v1.AttributedSignalsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.CatalogService.AttributedSignals is not implemented"))
 }

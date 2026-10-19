@@ -381,11 +381,13 @@ func (p *Projector) nodeAssertions(ctx context.Context, tx pgx.Tx, eventIDs []st
 	// `alert_transition` is read back here too, because it *is* a node assertion about the
 	// alert: state from this instant until contradicted (alert_transition.go). Reading it as
 	// anything else would make a second transition on the same monitor fold as though the
-	// first had asserted nothing, and the version it produced would lose its state.
+	// first had asserted nothing, and the version it produced would lose its state. The two
+	// catalog entry events are read back for the same reason (catalog_entry.go).
 	rows, err := tx.Query(ctx, `
 		SELECT event_id, source_id, coalesce(valid_at, source_observed_at, observed_at), valid_from_unknown, payload, type
 		FROM log.events
-		WHERE event_id = ANY($1) AND type IN ('upsert_node', 'alert_transition')`, eventIDs)
+		WHERE event_id = ANY($1)
+		  AND type IN ('upsert_node', 'alert_transition', 'propose_catalog_entry', 'declare_catalog_entry')`, eventIDs)
 	if err != nil {
 		return nil, fmt.Errorf("projector: read node assertions: %w", err)
 	}
@@ -424,6 +426,15 @@ func (p *Projector) nodeAssertions(ctx context.Context, tx pgx.Tx, eventIDs []st
 			}
 			assertion.sourceID = alertLane(assertion.sourceID)
 			transitions = append(transitions, pendingTransition{assertion, transition})
+			continue
+		}
+		if eventType == "propose_catalog_entry" || eventType == "declare_catalog_entry" {
+			body, err := catalogEntryAssertion(eventType, payload)
+			if err != nil {
+				return nil, fmt.Errorf("projector: %s: %w", assertion.eventID, err)
+			}
+			assertion.sourceID = catalogLane
+			fill(assertion, body)
 			continue
 		}
 		body := &graphv1.UpsertNode{}

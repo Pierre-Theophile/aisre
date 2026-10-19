@@ -107,6 +107,8 @@ const (
 	EdgeTypeWatches      EdgeType = "watches"      // alert -> the entity it watches
 	EdgeTypeInvestigated EdgeType = "investigated" // investigation -> a subject or target
 	EdgeTypeConcerns     EdgeType = "concerns"     // knowledge document -> entity
+	// ADR-0015 item 4 (feature 009): a signal -> the catalog entry it is judged to be about.
+	EdgeTypeAttributedTo EdgeType = "attributed_to"
 )
 
 var (
@@ -122,6 +124,7 @@ var (
 		EdgeTypeWatches:      graphv1.EdgeType_WATCHES,
 		EdgeTypeInvestigated: graphv1.EdgeType_INVESTIGATED,
 		EdgeTypeConcerns:     graphv1.EdgeType_CONCERNS,
+		EdgeTypeAttributedTo: graphv1.EdgeType_ATTRIBUTED_TO,
 	}
 	protoToEdgeType = invertEdgeTypes(edgeTypeToProto)
 )

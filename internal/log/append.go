@@ -437,6 +437,26 @@ func EventType(env *graphv1.EventEnvelope) string {
 		return "confirm_dependency"
 	case *graphv1.EventEnvelope_RejectDependency:
 		return "reject_dependency"
+	// ADR-0015 (feature 009): the service catalog and attribution. Migration 0015 widens
+	// events_type_check to match.
+	case *graphv1.EventEnvelope_ProposeCatalogEntry:
+		return "propose_catalog_entry"
+	case *graphv1.EventEnvelope_DeclareCatalogEntry:
+		return "declare_catalog_entry"
+	case *graphv1.EventEnvelope_DeclareAlias:
+		return "declare_alias"
+	case *graphv1.EventEnvelope_RetractAlias:
+		return "retract_alias"
+	case *graphv1.EventEnvelope_ProposeAlias:
+		return "propose_alias"
+	case *graphv1.EventEnvelope_RejectAlias:
+		return "reject_alias"
+	case *graphv1.EventEnvelope_AttributeSignal:
+		return "attribute_signal"
+	case *graphv1.EventEnvelope_CorrectAttribution:
+		return "correct_attribution"
+	case *graphv1.EventEnvelope_RevertCorrection:
+		return "revert_correction"
 	default:
 		return ""
 	}
@@ -486,6 +506,24 @@ func BodyMessage(env *graphv1.EventEnvelope) proto.Message {
 		return body.ConfirmDependency
 	case *graphv1.EventEnvelope_RejectDependency:
 		return body.RejectDependency
+	case *graphv1.EventEnvelope_ProposeCatalogEntry:
+		return body.ProposeCatalogEntry
+	case *graphv1.EventEnvelope_DeclareCatalogEntry:
+		return body.DeclareCatalogEntry
+	case *graphv1.EventEnvelope_DeclareAlias:
+		return body.DeclareAlias
+	case *graphv1.EventEnvelope_RetractAlias:
+		return body.RetractAlias
+	case *graphv1.EventEnvelope_ProposeAlias:
+		return body.ProposeAlias
+	case *graphv1.EventEnvelope_RejectAlias:
+		return body.RejectAlias
+	case *graphv1.EventEnvelope_AttributeSignal:
+		return body.AttributeSignal
+	case *graphv1.EventEnvelope_CorrectAttribution:
+		return body.CorrectAttribution
+	case *graphv1.EventEnvelope_RevertCorrection:
+		return body.RevertCorrection
 	default:
 		return nil
 	}

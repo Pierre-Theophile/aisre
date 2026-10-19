@@ -44,6 +44,10 @@ enum EdgeType {
   WATCHES = 8;      // alert -> the entity it watches (ADR-0003 D10, ADR-0004 D4)
   INVESTIGATED = 9; // investigation -> a subject or target entity
   CONCERNS = 10;    // knowledge document -> entity; the graph is the retrieval index
+  // ADR-0015 item 4 (feature 009). A signal (alert, declared incident, knowledge document, change)
+  // -> the catalog entry it is judged to be about. A judgement, not a source fact: never WATCHES or
+  // CONCERNS, so a wrong attribution stays distinguishable from what a source said.
+  ATTRIBUTED_TO = 11;
 }
 
 // Extensible: unknown kinds are carried as CHANGE_KIND_OTHER + change.kind_other.
@@ -243,6 +247,18 @@ message EventEnvelope {
     // 004 T148. The second way two things can be related, and the one most of an SRE agent's
     // reasoning actually uses: a value SEVERAL entities share.
     CorrelateEntity correlate_entity = 29;
+    // ADR-0015 item 1 (feature 009): the service catalog, its aliases, and the attribution of
+    // signals to it. Proposals and attributions come only from the source `sre.attributor`; every
+    // other one of these is a person's decision and carries a principal.
+    ProposeCatalogEntry propose_catalog_entry = 30;
+    DeclareCatalogEntry declare_catalog_entry = 31;
+    DeclareAlias declare_alias = 32;
+    RetractAlias retract_alias = 33;
+    ProposeAlias propose_alias = 34;
+    RejectAlias reject_alias = 35;
+    AttributeSignal attribute_signal = 36;
+    CorrectAttribution correct_attribution = 37;
+    RevertCorrection revert_correction = 38;
   }
 }
 
@@ -399,6 +415,106 @@ message RejectDependency {
   Ref dst = 2;
   EdgeType type = 3;
   string rationale = 4;
+}
+
+// ---------- Service catalog and attribution (ADR-0015, feature 009) ----------
+//
+// The agent's own list of services. No connector or vendor is authoritative: each one's names for a
+// service are ALIASES of a catalog entry, and every signal is ATTRIBUTED to entries by the published
+// ruleset `attribution/rules@1`, or corrected by a person.
+//
+// An entry is a SERVICE node whose ref is `sre.catalog=<slug>`. Both entry events carry the entry's
+// whole state, so the latest decision about an entry is its current version.
+
+// ProposeCatalogEntry is the attributor proposing an entry for a service entity no alias covers yet
+// (research R9). The entity's own identity claims become the entry's aliases: they are its names by
+// 001's certain rules, so carrying them over infers nothing. Status is always `proposed`.
+message ProposeCatalogEntry {
+  string slug = 1;
+  string display_name = 2;
+  Ref from_entity = 3;          // the entity the proposal was made from; unset for a bare name
+  repeated Ref aliases = 4;
+}
+
+// DeclareCatalogEntry is a person stating an entry's whole state: creating, confirming, renaming,
+// hiding or restoring it.
+message DeclareCatalogEntry {
+  string slug = 1;
+  string display_name = 2;
+  string kind = 3;              // service | platform
+  string status = 4;            // confirmed | hidden
+  string owner = 5;
+  string description = 6;
+  string rationale = 7;
+}
+
+// DeclareAlias says a name denotes an entry. `entry_slug = "-"` hides the name ("not a service").
+// An alias never merges the entry with entities carrying the name: environments stay distinct
+// entities (ADR-0015 item 3).
+message DeclareAlias {
+  Ref name = 1;
+  string environment = 2;       // empty matches every environment
+  string entry_slug = 3;
+  string rationale = 4;
+}
+message RetractAlias {
+  Ref name = 1;
+  string environment = 2;
+  string entry_slug = 3;
+  string rationale = 4;
+}
+
+// ProposeAlias is a probable rule suggesting a name belongs to an entry. Never an alias until a
+// person declares it (001 SC-007).
+message ProposeAlias {
+  Ref name = 1;
+  string environment = 2;
+  string entry_slug = 3;
+  string rule_id = 4;
+  double score = 5;
+  string rationale = 6;
+  google.protobuf.Struct evidence = 7;
+}
+message RejectAlias {
+  Ref name = 1;
+  string environment = 2;
+  string entry_slug = 3;
+  string rationale = 4;
+}
+
+// One entry a signal is, or might be, about.
+message Attributed {
+  string entry_slug = 1;
+  string layer = 2;             // correction | alias | probable | classifier
+  string rule_id = 3;           // H, A1, P1..P4, M
+  double score = 4;
+  string rationale = 5;
+}
+
+// AttributeSignal is the attributor's decision about one signal. Empty `entries` is `unknown`, with
+// the best candidates in `suggestions`. A re-attribution names the decision it supersedes.
+message AttributeSignal {
+  Ref signal = 1;
+  repeated Attributed entries = 2;
+  repeated Attributed suggestions = 3;
+  string ruleset = 4;
+  google.protobuf.Struct evidence = 5;
+  string supersedes_event_id = 6;
+}
+
+// CorrectAttribution is a person saying what a signal is about. `scope = name` makes it an alias of
+// `name` as well, so every later signal carrying that name is attributed the same way.
+message CorrectAttribution {
+  Ref signal = 1;
+  repeated string entry_slugs = 2;  // empty: about no catalog entry
+  string scope = 3;                 // signal | name
+  Ref name = 4;
+  string environment = 5;
+  string rationale = 6;
+}
+message RevertCorrection {
+  string correction_event_id = 1;
+  string rationale = 2;
 }
 
 // ---------- Investigation events (ADR-0005 D2/D3; feature 002 emits them) ----------
@@ -683,6 +799,52 @@ message ProposedDependenciesResponse {
   string next_cursor = 2;
 }
 
+// ---------- Catalog queries (ADR-0015 item 6) ----------
+
+message CatalogAlias {
+  Ref name = 1;
+  string environment = 2;
+  string decided_by_event_id = 3;
+  string principal = 4;         // set when a person decided it
+  string rule_id = 5;           // set when a proposal carried it
+  google.protobuf.Timestamp observed_from = 6;
+}
+message CatalogEntry {
+  string slug = 1;
+  NodeVersion node = 2;
+  string kind = 3;
+  string status = 4;
+  string owner = 5;
+  string description = 6;
+  repeated CatalogAlias aliases = 7;
+}
+message ListEntriesRequest { AsOf as_of = 1; string status = 2; }
+message ListEntriesResponse { repeated CatalogEntry entries = 1; repeated CatalogAlias hidden = 2; }
+message GetEntryRequest { string slug = 1; AsOf as_of = 2; }
+message GetEntryResponse { CatalogEntry entry = 1; repeated NodeVersion history = 2; }
+
+// One attribution decision as the audit reads it back.
+message AttributionDecision {
+  string event_id = 1;
+  string kind = 2;              // attribute | correct | revert
+  repeated Attributed entries = 3;
+  repeated Attributed suggestions = 4;
+  string ruleset = 5;
+  google.protobuf.Struct evidence = 6;
+  string principal = 7;
+  google.protobuf.Timestamp decided_at = 8;
+  string superseded_by_event_id = 9;
+}
+message WhyAttributedRequest { Ref signal = 1; AsOf as_of = 2; }
+message WhyAttributedResponse {
+  NodeVersion signal = 1;
+  AttributionDecision current = 2;
+  repeated AttributionDecision history = 3;   // oldest first, the current one included
+}
+message AttributedSignalsRequest { string slug = 1; AsOf as_of = 2; uint32 limit = 3; string cursor = 4; }
+message AttributedSignal { NodeVersion signal = 1; Attributed how = 2; string decision_event_id = 3; }
+message AttributedSignalsResponse { repeated AttributedSignal signals = 1; string next_cursor = 2; }
+
 message ExtentRequest {}
 message Extent { google.protobuf.Timestamp earliest_observed = 1; google.protobuf.Timestamp latest_observed = 2; repeated SourceExtent sources = 3; }
 message SourceExtent { string source_id = 1; google.protobuf.Timestamp last_checkpoint = 2; repeated Interval gaps = 3; }
@@ -719,4 +881,19 @@ service ResolutionService {
   // resolve.
   rpc ConfirmDependency(.sreagent.graph.v1.ConfirmDependency) returns (IngestResult);
   rpc RejectDependency(.sreagent.graph.v1.RejectDependency) returns (IngestResult);
+  // ADR-0015 (feature 009): the catalog decisions a person makes, stamped and forwarded the same way.
+  rpc DeclareCatalogEntry(.sreagent.graph.v1.DeclareCatalogEntry) returns (IngestResult);
+  rpc DeclareAlias(.sreagent.graph.v1.DeclareAlias) returns (IngestResult);
+  rpc RetractAlias(.sreagent.graph.v1.RetractAlias) returns (IngestResult);
+  rpc RejectAlias(.sreagent.graph.v1.RejectAlias) returns (IngestResult);
+  rpc CorrectAttribution(.sreagent.graph.v1.CorrectAttribution) returns (IngestResult);
+  rpc RevertCorrection(.sreagent.graph.v1.RevertCorrection) returns (IngestResult);
+}
+
+// The service catalog read back (ADR-0015 item 6). Writes go through ResolutionService.
+service CatalogService {
+  rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
+  rpc GetEntry(GetEntryRequest) returns (GetEntryResponse);
+  rpc WhyAttributed(WhyAttributedRequest) returns (WhyAttributedResponse);
+  rpc AttributedSignals(AttributedSignalsRequest) returns (AttributedSignalsResponse);
 }
