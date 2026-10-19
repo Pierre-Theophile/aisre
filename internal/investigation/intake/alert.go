@@ -113,6 +113,7 @@ func NormaliseAlert(in MonitorIntake) (*Intake, error) {
 		Window:            windowFor(validAt, lookback),
 		Lookback:          lookback,
 		UnresolvedTargets: len(named) == 0,
+		Signal:            graph.RefFromProto(body.GetMonitor()),
 	}, nil
 }
 

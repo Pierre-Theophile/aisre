@@ -162,6 +162,15 @@ func resolutionFromParent(symptom *investigationv1.Symptom) intake.ResolutionSet
 			set.Unresolved = append(set.Unresolved, ref)
 		}
 	}
+	for _, target := range symptom.GetTargetRefs() {
+		if target.GetProvenance() != investigationv1.TargetRefProvenance_ATTRIBUTION {
+			continue
+		}
+		set.Attributions = append(set.Attributions, intake.Attribution{
+			Entry: graph.RefFromProto(target.GetRef()), RuleID: target.GetRuleId(),
+			DecisionEventID: target.GetDecisionEventId(),
+		})
+	}
 	return set
 }
 

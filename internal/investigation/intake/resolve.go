@@ -88,6 +88,8 @@ type ResolutionSet struct {
 	Unresolved []graph.Ref
 	// Evidence is every audit, in order.
 	Evidence []ledger.EvidenceItem
+	// Attributions are the catalog entries the triggering signal is attributed to (Attribute).
+	Attributions []Attribution
 }
 
 // AnyUnresolved reports whether the engine must proceed to `unknown` under FR-003/FR-026 rather
