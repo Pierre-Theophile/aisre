@@ -35,7 +35,6 @@
   query, 008's in-scope boost) because it extends approved requirements of 001, 006, 007 and 008; it
   names no storage, library or model.
 - The six forks (Q1–Q6) are written as defaults, not [NEEDS CLARIFICATION] markers, following 006–008:
-  the owner approves or changes them on the spec PR. Q4 cites the owner's "à la Jev" reference, which is
-  not yet understood and may change the decision model.
+  the owner approves or changes them on the spec PR. The owner approved all six on 2026-10-19.
 - No constitution amendment is needed: aliases follow Principle VI as merges do; attributions are
   audited, calibrated decisions (Principle V) that never merge entities.

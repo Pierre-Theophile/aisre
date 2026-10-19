@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-19
 
-**Status**: Draft, defaults proposed for the owner's approval
+**Status**: Approved by the owner 2026-10-19 (all six defaults); planning
 
 **Input**: User description: "I don't think Datadog should be the source of truth (a customer may not
 use Datadog at all). We should have our own internal mapping and automatically identify which service
@@ -41,10 +41,10 @@ What this feature adds, in priority order:
 
 ## Clarifications
 
-### Defaults proposed on 2026-10-19, for the owner's approval
+### Session 2026-10-19 — defaults approved by the owner
 
-Each default is written into the requirements below. The owner approves or changes them on the spec
-pull request, as for 006, 007 and 008.
+Each default is written into the requirements below. The owner approved all six as written on
+2026-10-19 ("Perfect, looks good").
 
 - Q1: What is the source of truth for services? → **Default: the agent's own catalog, held in the
   graph as events like every other fact.** A catalog entry is a canonical `SERVICE` entity with a
@@ -73,8 +73,8 @@ pull request, as for 006, 007 and 008.
      text, such as a postmortem's symptoms or a Slack message), off by default, which the operator
      plugs in like 008's embedding provider.
   A signal is attributed automatically only at or above a published confidence threshold; below it
-  the answer is `unknown` with ranked suggestions. The owner's "à la Jev" reference is not yet
-  understood and may change this default. (FR-030–FR-039)
+  the answer is `unknown` with ranked suggestions. The owner's "à la Jev" reference was not
+  clarified; the layered model was approved as written. (FR-030–FR-039)
 - Q5: How does a user correct an attribution, and what does a correction change? → **Default: from
   the command line and the API, authenticated, recorded as a human decision (001 FR-040, FR-041).**
   A correction names either one signal ("this alert is about *Candidate View*") or a name ("the
