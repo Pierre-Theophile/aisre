@@ -103,10 +103,10 @@ interface in `pkg/attribution/`, fixtures in `fixtures/attribution/`.
 
 **Independent Test**: an empty catalog over a topology fixture and the Notion twin; the proposed entries, a scored alias suggestion, and accepting it attributes both names (spec US2).
 
-- [ ] T021 [US2] Write `internal/catalog/discovery.go`: `ProposeCatalogEntry` for each `SERVICE` entity with no aliased claim, after 001's certain rules, and for unaliased Notion values and Slack slugs; raised once, not re-raised while pending; hidden names never proposed (FR-010, FR-014, FR-015, research R9); fixture: unit
-- [ ] T022 [US2] Add `ProposeAlias` and `RejectAlias` handling to `internal/projector/catalog_alias.go`, a rejected pair staying rejected and a later proposal recorded as a conflict (FR-011, research R9); fixture: unit
-- [ ] T023 [US2] Add `ListProposals` to `CatalogService` and `aisre catalog proposals`, `alias accept`, `alias reject` (FR-010, FR-012); fixture: unit (`internal/cli/testdata`)
-- [ ] T024 [US2] Write `fixtures/attribution/discovery-01/`: `candidate-api` from Datadog and Cloud Run in production, *Candidate View* and *Other* from the Notion twin, an empty catalog; asserting one proposed entry per 001 entity, a `P2` suggestion with score, *Other* hidden by a decision in the stream, and both names attributed after acceptance (SC-008); fixture: discovery-01
+- [x] T021 [US2] Write `internal/catalog/discovery.go`: `ProposeCatalogEntry` for each `SERVICE` entity with no aliased claim, after 001's certain rules, and for unaliased Notion values and Slack slugs; raised once, not re-raised while pending; hidden names never proposed (FR-010, FR-014, FR-015, research R9); fixture: unit
+- [x] T022 [US2] Add `ProposeAlias` and `RejectAlias` handling to `internal/projector/catalog_alias.go`, a rejected pair staying rejected and a later proposal recorded as a conflict (FR-011, research R9); fixture: unit
+- [x] T023 [US2] Add `ListProposals` to `CatalogService` and `aisre catalog proposals`, `alias accept`, `alias reject` (FR-010, FR-012); fixture: unit (`internal/cli/testdata`)
+- [x] T024 [US2] Write `fixtures/attribution/discovery-01/`: `candidate-api` from Datadog and Cloud Run in production, *Candidate View* and *Other* from the Notion twin, an empty catalog; asserting one proposed entry per 001 entity, a `P2` suggestion with score, *Other* hidden by a decision in the stream, and both names attributed after acceptance (SC-008); fixture: discovery-01
 
 **Checkpoint**: a fresh install has a usable, unconfirmed catalog.
 
@@ -118,11 +118,11 @@ interface in `pkg/attribution/`, fixtures in `fixtures/attribution/`.
 
 **Independent Test**: a signal with only weak evidence is `unknown` with ranked suggestions and no edge (spec US4).
 
-- [ ] T025 [US4] Add rules `P1`–`P4`, noisy-OR within the layer, τ, δ and the suggestions of research R5 to `internal/catalog/rules.go`, reading τ and δ from the `attribution:` configuration block (FR-030–FR-032, FR-038); fixture: unit with hand-computed scores
-- [ ] T026 [US4] Write `fixtures/attribution/ambiguous-01/`: an uptime check on an IP, a monitor whose name matches two entries within δ, and a monitor matched only by topology; labels expecting `unknown`, `unknown` and the topology entry; fixture: ambiguous-01
-- [ ] T027 [US4] Write `internal/eval/attribution/` and `aisre eval attribution <dir>...`: precision, coverage and ten-bin calibration per layer and in aggregate, reusing the `fixture_calibration` report; exit 4 under the gate (FR-061, research R13); fixture: attribution/*
-- [ ] T028 [US4] Fit the starting scores of `P1`–`P4` on the labelled set, publish them as `attribution/rules@1` in `internal/catalog/rules.go` and ADR-0015, and add the gate (precision ≥ 0.95, every populated bin within 10 points) to `ci.yml`'s test job with a planted regression that lowers τ and fails (FR-033, FR-062, SC-002, SC-003); fixture: attribution/*
-- [ ] T029 [US4] Add a correction to each labelled case and include them in the calibration set (FR-046); fixture: attribution/*
+- [x] T025 [US4] Add rules `P1`–`P4`, noisy-OR within the layer, τ, δ and the suggestions of research R5 to `internal/catalog/rules.go`, reading τ and δ from the `attribution:` configuration block (FR-030–FR-032, FR-038); fixture: unit with hand-computed scores
+- [x] T026 [US4] Write `fixtures/attribution/ambiguous-01/`: an uptime check on an IP, a monitor whose name matches two entries within δ, and a monitor matched only by topology; labels expecting `unknown`, `unknown` and the topology entry; fixture: ambiguous-01
+- [x] T027 [US4] Write `internal/eval/attribution/` and `aisre eval attribution <dir>...`: precision, coverage and ten-bin calibration per layer and in aggregate, reusing the `fixture_calibration` report; exit 4 under the gate (FR-061, research R13); fixture: attribution/*
+- [x] T028 [US4] Fit the starting scores of `P1`–`P4` on the labelled set, publish them as `attribution/rules@1` in `internal/catalog/rules.go` and ADR-0015, and add the gate (precision ≥ 0.95, every populated bin within 10 points) to `ci.yml`'s test job with a planted regression that lowers τ and fails (FR-033, FR-062, SC-002, SC-003); fixture: attribution/*
+- [x] T029 [US4] Add a correction to each labelled case and include them in the calibration set (FR-046); fixture: attribution/*
 
 **Checkpoint**: SC-002 and SC-003 gated in CI.
 

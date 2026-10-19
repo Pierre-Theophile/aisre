@@ -66,6 +66,10 @@ human_decisions:
     at: 2026-09-21T14:40:03Z
     principal: sre-agent-dev|pierre
     reason: the Datadog service is the same API
+  - correct: {signal: datadog.monitor=101, entries: [candidate-view]}
+    at: 2026-09-21T15:30:00Z
+    principal: sre-agent-dev|pierre
+    reason: the on-call confirms the monitor is Candidate View
 
 queries:
   - name: catalog-1415

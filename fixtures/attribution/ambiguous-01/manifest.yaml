@@ -2,7 +2,7 @@
 id: ambiguous-01
 family: conformance
 description: >-
-  009 US4: four monitors, and only one of them has evidence enough.
+  009 US4: five monitors, and only one of them has evidence enough.
 
   The catalog has *Search*, *Search Web* and *Billing*, and says the Cloud SQL instance
   `billing-db` is Billing's. Nothing in it names the workloads the monitors watch, so layer 1 has
@@ -17,8 +17,14 @@ description: >-
     0.65), it depends on `billing-db` (`P3`, 0.55) and has its owner (`P4`, 0.50). By noisy-OR,
     1 − 0.35 × 0.45 × 0.50 = 0.92125 (recorded to four places, 0.9213), over τ with nothing else
     scoring: *Billing*, at layer 2.
+  - 305 watches `billing-reports`, the data team's report job, which only reads Billing's exports.
+    Its name shares a token with *Billing* (`P2`, 0.65), and nothing else says so: `unknown`,
+    *Billing* suggested. It is the signal a lowered τ gets wrong (009 T028's planted regression).
 
   None of the watched entities is a SERVICE, so discovery proposes nothing.
+
+  At 10:45 Pierre says 303 is *Billing* (`H`). The label is his: the attributor's `unknown` is
+  scored as a miss in coverage, not as a mistake (FR-046).
 schema_version: 1.0.0
 sdk_version: 0.1.0
 hand_authored: true
@@ -59,6 +65,10 @@ human_decisions:
     at: 2026-10-05T08:55:03Z
     principal: sre-agent-dev|operator
     reason: billing-db is Billing's database
+  - correct: {signal: datadog.monitor=303, entries: [billing]}
+    at: 2026-10-05T10:45:00Z
+    principal: sre-agent-dev|pierre
+    reason: ledger-sync is Billing's, which topology alone could not decide
 
 queries:
   - name: uptime-1030
@@ -76,4 +86,8 @@ queries:
   - name: three-signs-1030
     kind: attribution
     focus: datadog.monitor=304
+    valid_at: 2026-10-05T10:30:00Z
+  - name: shared-word-1030
+    kind: attribution
+    focus: datadog.monitor=305
     valid_at: 2026-10-05T10:30:00Z

@@ -168,8 +168,12 @@ func (r Rules) Decide(s Signal, f Facts) Decision {
 	if len(hidden) > 0 {
 		evidence["hidden_names"] = anyList(sortedUnique(hidden))
 	}
-	if len(byName) == 0 {
+	if len(byName) == 0 && len(byDiscovery) > 0 {
+		// Nobody declared an alias for these names: the attributor's own discovery decides, and the
+		// evidence says so, because a discovered alias is the attributor's inference and a declared
+		// one is a person's catalog (the evaluation scores them apart).
 		byName = byDiscovery
+		evidence[EvidenceAliasDiscovered] = true
 	} else if len(byDiscovery) > 0 {
 		evidence["outranked_discovered"] = matchedEvidence(byDiscovery)
 	}
@@ -207,7 +211,8 @@ func (r Rules) Decide(s Signal, f Facts) Decision {
 	return Decision{Suggestions: suggestions(probable), Evidence: evidence}
 }
 
-// Probable rules (layer 2, research R5). Starting scores; T028 fits them on the labelled set.
+// Probable rules (layer 2, research R5), published in ADR-0015 Item 5 and confirmed on the labelled
+// set by `aisre eval attribution` (009 T028).
 const (
 	RuleTopology = "P3"
 	RuleOwner    = "P4"
@@ -218,6 +223,10 @@ const (
 	// maxSuggestions is how many entries an `unknown` lists.
 	maxSuggestions = 3
 )
+
+// EvidenceAliasDiscovered is the evidence key an alias-layer decision carries when the aliases that
+// decided were the attributor's own discoveries (rule D1), not a person's.
+const EvidenceAliasDiscovered = "alias_discovered"
 
 // scored is one entry's layer-2 score, the rules that fired, and the name that weighed most.
 type scored struct {
@@ -425,7 +434,7 @@ const (
 	RuleNormalised = "P1"
 	RuleTokens     = "P2"
 
-	// ScoreNormalised is P1's starting score.
+	// ScoreNormalised is P1's published score.
 	ScoreNormalised = 0.85
 	// tokenFloor is the Jaccard index below which P2 does not fire.
 	tokenFloor = 0.5

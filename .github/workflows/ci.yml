@@ -280,6 +280,17 @@ jobs:
           set -o pipefail
           bin/aisre eval retrieval fixtures/retrieval/ | tee -a "$GITHUB_STEP_SUMMARY"
 
+      - name: attribution gate
+        # 009 FR-061, SC-002, SC-003: every labelled case under fixtures/attribution replayed from
+        # empty, the attributor run over it, and its own decisions scored against labels.yaml:
+        # precision, coverage and ten-bin calibration per layer. Exits 4 when aggregate precision
+        # is below 0.95 or a populated bin is more than 10 points off. `go test` above runs the same
+        # gate and its planted regression (τ lowered to 0.5); this step publishes the table.
+        shell: bash
+        run: |
+          set -o pipefail
+          bin/aisre eval attribution fixtures/attribution/ --db "$PG_DSN" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: examples/mcp-feeder (nested module)
         # `go test ./...` does not descend into nested modules; the MCP connector example
         # builds against the working tree through its `replace ../..` directive.
