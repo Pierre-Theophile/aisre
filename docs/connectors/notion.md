@@ -78,9 +78,6 @@ databases:
   - database: 0a1b2c3d4e5f60718293a4b5c6d7e8f9
     kind: postmortem                # postmortem | runbook
     entity_property: Services       # select, multi-select, status or relation
-    entities:                       # value → graph entity; for a relation, keys are related page ids
-      Checkout: k8s.service=checkout
-      Payments: k8s.service=payments
     summary_properties: [Summary, Root cause, Resolution]   # at most 3: title, rich text, select or status
     authored_property: Incident date                       # optional date; else the page's creation time
     index_properties: [Summary, Signals / Symptoms, Root cause, Resolution]  # sections; no limit; default: summary_properties
@@ -88,14 +85,34 @@ databases:
   - database: 1b2c3d4e5f60718293a4b5c6d7e8f90a
     kind: runbook
     entity_property: Service
-    entities:
-      Checkout: k8s.service=checkout
     summary_properties: [Purpose]
 ```
 
-A page is registered only when its entity property carries at least one value the map names. A value
-the map does not name links nothing and is reported, so an operator can extend the map rather than
-guess why a postmortem is never cited.
+Every page whose entity property carries a value is registered with its values
+(`sre.notion.values`), and the [service catalog](../../specs/009-service-catalog/spec.md) decides
+which service it concerns: a value the catalog has an alias for is attributed to that entry, and a
+value it does not know is proposed as one (`aisre catalog proposals`). Nothing in this file says
+what a value means.
+
+**Deprecated: the `entities` map.** Before the catalog, each binding mapped values to graph entities
+itself:
+
+```yaml
+    entities:                       # deprecated: value → graph entity; for a relation, keys are related page ids
+      Checkout: k8s.service=checkout
+```
+
+A binding that still has one keeps working as it did in 007: a page is registered only when its
+entity property carries a value the map names, and is linked by the map rather than by the catalog.
+Move the map into the catalog once, then delete it from this file:
+
+```sh
+aisre catalog import --from-notion-config notion.yaml --dry-run   # what it would record
+aisre catalog import --from-notion-config notion.yaml
+```
+
+Each line becomes an entry named after the value, with two aliases: `notion.value=<database>/<value>`
+and the entity the line named. The map will be removed in a later version.
 
 ## 4. What is registered
 

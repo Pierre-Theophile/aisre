@@ -132,8 +132,8 @@ interface in `pkg/attribution/`, fixtures in `fixtures/attribution/`.
 
 **Purpose**: 007's and 006's maps become catalog aliases (FR-006, research R11).
 
-- [ ] T030 Add `--from-notion-config` and `--from-slack-flags` to `aisre catalog import`, one alias per line of the old map, with `--dry-run`; fixture: unit against `fixtures/incidents/knowledge-notion-01` and `fixtures/slack-intake-01` configurations
-- [ ] T031 [P] Mark the Notion `entities` map and Slack's `--service` flags deprecated in `docs/connectors/notion.md` and `docs/connectors/slack.md`, with the import command, and make `entities` optional in `internal/feeders/notion/config.go` (FR-006); fixture: notion-knowledge-twin-01, notion-knowledge-twin-02
+- [x] T030 Add `--from-notion-config` and `--from-slack-flags` to `aisre catalog import`, one alias per line of the old map, with `--dry-run`; fixture: unit against `fixtures/incidents/knowledge-notion-01` and `fixtures/slack-intake-01` configurations
+- [x] T031 [P] Mark the Notion `entities` map and Slack's `--service` flags deprecated in `docs/connectors/notion.md` and `docs/connectors/slack.md`, with the import command, and make `entities` optional in `internal/feeders/notion/config.go` (FR-006); fixture: notion-knowledge-twin-01, notion-knowledge-twin-02
 
 **Checkpoint**: PR 2 complete; merge when green.
 

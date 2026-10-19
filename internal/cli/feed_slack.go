@@ -113,8 +113,9 @@ func newFeedSlackCommand(global *globalOptions) *cobra.Command {
 		"a channel first seen later than this after its creation is investigated in review mode")
 	flags.IntVar(&opts.cycles, "cycles", 0, "how many polls to make; 0 polls until interrupted")
 	flags.StringArrayVar(&opts.services, "service", nil,
-		"a slug token and the entity it names, as <token>=<ns>=<value> (e.g. checkout=service.name=checkout); "+
-			"repeatable. A token not mapped is never a target")
+		"deprecated: move the map into the service catalog with `aisre catalog import --from-slack-flags`. "+
+			"A slug token and the entity it names, as <token>=<ns>=<value> (e.g. checkout=service.name=checkout); "+
+			"repeatable")
 	flags.StringArrayVar(&opts.people, "person", nil,
 		"a Slack user id and the deployment's OIDC subject for them, as <user id>=<subject>; repeatable")
 	flags.BoolVar(&opts.includeShared, "include-shared", false,

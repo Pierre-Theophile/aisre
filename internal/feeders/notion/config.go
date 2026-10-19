@@ -49,9 +49,11 @@ type Config struct {
 
 // Binding is one database the operator named.
 type Binding struct {
-	Database          string            `yaml:"database"`
-	Kind              string            `yaml:"kind"`
-	EntityProperty    string            `yaml:"entity_property"`
+	Database       string `yaml:"database"`
+	Kind           string `yaml:"kind"`
+	EntityProperty string `yaml:"entity_property"`
+	// Entities is 007's value-to-entity map. Deprecated (009 FR-006): optional, and without it the
+	// service catalog attributes the pages; `aisre catalog import --from-notion-config` moves it.
 	Entities          map[string]string `yaml:"entities"`
 	SummaryProperties []string          `yaml:"summary_properties"`
 	AuthoredProperty  string            `yaml:"authored_property"`

@@ -11,9 +11,11 @@ import (
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gopkg.in/yaml.v3"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/catalog"
+	notionfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/notion"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 )
 
@@ -540,25 +542,36 @@ func newCatalogAliasCommand(global *globalOptions) *cobra.Command {
 
 func newCatalogImportCommand(global *globalOptions) *cobra.Command {
 	var prune, dryRun bool
-	var reason string
+	var reason, notionConfig string
+	var slackFlags []string
 	cmd := &cobra.Command{
-		Use:   "import <catalog.yaml>",
-		Short: "Bring the catalog in line with a catalog file",
+		Use:   "import [<catalog.yaml>]",
+		Short: "Bring the catalog in line with a catalog file, or with a connector's old service map",
 		Long: "import computes the difference between the file and the catalog as it is now and records\n" +
 			"the decisions that close it, signed by you. An unchanged file records nothing.\n\n" +
 			"It never undoes a person: a name someone has since given to another entry is listed as a\n" +
 			"conflict and left. Aliases the catalog has and the file does not are listed, and retracted\n" +
-			"only with --prune.",
-		Args: cobra.ExactArgs(1),
+			"only with --prune.\n\n" +
+			"Instead of a file, --from-notion-config reads the `entities` maps of a Notion connector\n" +
+			"configuration, and --from-slack-flags takes the Slack connector's `--service` flags. Each\n" +
+			"line of the old map becomes an alias: the connector's name and the entity it was mapped to\n" +
+			"are aliases of one entry, named after the connector's spelling. Run it with --dry-run first.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			raw, err := os.ReadFile(args[0])
-			if err != nil {
-				return exitErrorf(ExitUsage, "catalog import: %v", err)
+			sources := 0
+			for _, given := range []bool{len(args) == 1, notionConfig != "", len(slackFlags) > 0} {
+				if given {
+					sources++
+				}
 			}
-			file, err := catalog.ParseFile(raw)
+			if sources != 1 {
+				return exitErrorf(ExitUsage, "catalog import: give one of a catalog file, --from-notion-config or --from-slack-flags")
+			}
+			file, source, err := importSource(args, notionConfig, slackFlags)
 			if err != nil {
 				return exitErrorf(ExitUsage, "%v", err)
 			}
+			args = []string{source}
 			clients, err := newClients(global)
 			if err != nil {
 				return err
@@ -612,8 +625,66 @@ func newCatalogImportCommand(global *globalOptions) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&notionConfig, "from-notion-config", "",
+		"import the `entities` maps of this Notion connector configuration (007), one alias per line")
+	cmd.Flags().StringArrayVar(&slackFlags, "from-slack-flags", nil,
+		"import a Slack `--service <token>=<ns>=<value>` mapping (006), one alias per flag; repeatable")
 	cmd.Flags().BoolVar(&prune, "prune", false, "retract the aliases of the file's entries the file does not list")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the decisions without recording them")
 	cmd.Flags().StringVar(&reason, "reason", "", "why (default: the command, the file and the instant)")
 	return cmd
+}
+
+// importSource is the catalog file an import applies, from a file or from a connector's old map,
+// and how the decisions name where it came from.
+func importSource(args []string, notionConfig string, slackFlags []string) (catalog.File, string, error) {
+	var lines []catalog.LegacyLine
+	var source string
+	switch {
+	case len(args) == 1:
+		raw, err := os.ReadFile(args[0])
+		if err != nil {
+			return catalog.File{}, "", fmt.Errorf("catalog import: %w", err)
+		}
+		file, err := catalog.ParseFile(raw)
+		return file, args[0], err
+	case notionConfig != "":
+		cfg, err := notionfeeder.LoadConfig(notionConfig)
+		if err != nil {
+			return catalog.File{}, "", err
+		}
+		for _, b := range cfg.Databases {
+			for value, spelled := range b.Entities {
+				target, err := graph.ParseRef(spelled)
+				if err != nil {
+					return catalog.File{}, "", err
+				}
+				lines = append(lines, catalog.NotionLegacyLine(b.Database, value, target))
+			}
+		}
+		source = "--from-notion-config " + notionConfig
+	default:
+		services, err := parseSlackServices(slackFlags)
+		if err != nil {
+			return catalog.File{}, "", err
+		}
+		for token, ref := range services {
+			lines = append(lines, catalog.SlackLegacyLine(token, graph.RefFromProto(ref)))
+		}
+		source = "--from-slack-flags"
+	}
+	if len(lines) == 0 {
+		return catalog.File{}, "", fmt.Errorf("catalog import: %s maps no name to an entity; there is nothing to import", source)
+	}
+	file, err := catalog.FileFromLegacy(lines)
+	if err != nil {
+		return catalog.File{}, "", err
+	}
+	// Through the file's own validation, so an import from a map is held to what a file is.
+	raw, err := yaml.Marshal(file)
+	if err != nil {
+		return catalog.File{}, "", err
+	}
+	file, err = catalog.ParseFile(raw)
+	return file, source, err
 }

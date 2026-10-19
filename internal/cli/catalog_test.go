@@ -130,6 +130,27 @@ entries:
 		t.Errorf("list:\n%s", out)
 	}
 
+	// The old maps (009 T030): 007's Notion `entities` and 006's Slack `--service`, one alias a line.
+	out = cli("catalog", "import", "--from-notion-config", filepath.Join("testdata", "notion-twin-02.yaml"), "--dry-run")
+	for _, want := range []string{
+		"would record: declare entry checkout (Checkout)",
+		"would record: alias notion.value=4e5f6071-8293-44a4-b5c6-d7e8f90a1b2c/Checkout → checkout",
+		"would record: alias otel.service.name=checkout → checkout",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--from-notion-config: no %q in\n%s", want, out)
+		}
+	}
+	out = cli("catalog", "import", "--from-slack-flags", "candidate=datadog.service=production/candidate-api", "--dry-run")
+	if !strings.Contains(out, "conflict, left as it is: datadog.service=production/candidate-api") ||
+		!strings.Contains(out, "would record: alias slack.slug=candidate → candidate") {
+		t.Errorf("--from-slack-flags:\n%s", out)
+	}
+	if _, stderr, code := run(t, context.Background(), "catalog", "import", file, "--from-slack-flags", "a=b=c",
+		"--server", baseURL, "--token", decider); code != ExitUsage || !strings.Contains(stderr, "give one of") {
+		t.Errorf("a file and a map at once: exit %d, %q", code, stderr)
+	}
+
 	// The attributor in serve picks the alias up.
 	waitFor := func(want string) string {
 		t.Helper()
