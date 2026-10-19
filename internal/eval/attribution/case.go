@@ -101,7 +101,7 @@ func Load(dir string) (*Case, error) {
 			Calibration *classify.Calibration `yaml:"calibration"`
 		}
 		if err := yaml.Unmarshal(raw, &spec); err != nil || spec.Calibration == nil || spec.Calibration.Slope <= 0 {
-			return nil, fmt.Errorf("attribution: %s: want a calibration with a positive slope (%v)", filepath.Join(dir, ClassifierFile), err)
+			return nil, fmt.Errorf("attribution: %s: want a calibration with a positive slope: %w", filepath.Join(dir, ClassifierFile), err)
 		}
 		c.Calibration = spec.Calibration
 		vectors := filepath.Join(dir, embedding.VectorsFile)

@@ -30,7 +30,7 @@ func (words) Embed(ctx context.Context, texts []string, _ knowledge.Purpose) ([]
 	for i, text := range texts {
 		v := make([]float32, 64)
 		for _, w := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
-			return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+			return (r < 'a' || r > 'z') && (r < '0' || r > '9')
 		}) {
 			v[sha256.Sum256([]byte(w))[0]%64]++
 		}

@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Pierre-Theophile/aisre/internal/graph"
-	"github.com/Pierre-Theophile/aisre/pkg/attribution"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/Pierre-Theophile/aisre/internal/graph"
+	"github.com/Pierre-Theophile/aisre/pkg/attribution"
 )
 
 // Layer 3 in the attributor (feature 009 T034, research R6, FR-034–FR-036): off unless the model
