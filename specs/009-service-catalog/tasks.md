@@ -161,7 +161,7 @@ interface in `pkg/attribution/`, fixtures in `fixtures/attribution/`.
 
 - [x] T037 [P] Write `docs/catalog/README.md`: the catalog, aliases versus merges, the decision model and its ruleset, corrections, the classifier and how to plug another one, the evaluation; link it from `README.md`; fixture: unit (`scripts/check-specs.sh` link check)
 - [x] T038 [P] Add OpenTelemetry spans and metrics to the attributor (decisions by layer, `unknown` rate, classifier latency and fallbacks) per the constitution's self-observability gate; fixture: unit
-- [ ] T039 Run [quickstart.md](./quickstart.md) steps 1–6 and record the run as `specs/009-service-catalog/quickstart-run-<date>.md`; fixture: attribution/*
+- [x] T039 Run [quickstart.md](./quickstart.md) steps 1–6 and record the run as `specs/009-service-catalog/quickstart-run-<date>.md`; fixture: attribution/*
 
 **Checkpoint**: PR 3 complete; merge when green.
 
