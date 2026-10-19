@@ -495,3 +495,76 @@ func (p propJSON) number(key string) float64 {
 	}
 	return 0
 }
+
+// AliasProposalStatuses are the statuses ListProposals may filter alias proposals by.
+var AliasProposalStatuses = []string{"pending", "accepted", "rejected", "conflict"}
+
+// ListProposals lists what discovery proposed: the entries still `proposed`, and the alias
+// suggestions with their rule, score and evidence (FR-010, FR-011). Alias proposals are a table of
+// decisions, not of versions: they are read as they stand now.
+func (e *Engine) ListProposals(ctx context.Context, req *graphv1.ListProposalsRequest) (*graphv1.ListProposalsResponse, error) {
+	kind := strings.ToLower(strings.TrimSpace(req.GetKind()))
+	if kind != "" && kind != "entry" && kind != "alias" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("query: kind %q: want entry or alias", req.GetKind()))
+	}
+	status := strings.ToLower(strings.TrimSpace(req.GetStatus()))
+	if status == "" {
+		status = "pending"
+	}
+	if status != "all" && !slices.Contains(AliasProposalStatuses, status) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf(
+			"query: status %q: want all or one of %s", req.GetStatus(), strings.Join(AliasProposalStatuses, ", ")))
+	}
+	resp := &graphv1.ListProposalsResponse{}
+	if kind != "alias" {
+		asOf := req.GetAsOf()
+		if asOf.GetValidAt() == nil {
+			asOf = &graphv1.AsOf{ValidAt: timestamppb.Now()}
+		}
+		entries, err := e.ListEntries(ctx, &graphv1.ListEntriesRequest{AsOf: asOf, Status: graph.CatalogStatusProposed})
+		if err != nil {
+			return nil, err
+		}
+		resp.Entries = entries.GetEntries()
+	}
+	if kind == "entry" {
+		return resp, nil
+	}
+	rows, err := e.store.Pool().Query(ctx, `
+		SELECT proposal_key, namespace, value, environment, entry_slug, rule_id, score::float8, rationale,
+		       evidence, status, created_at, proposed_by_event_ids, coalesce(decided_by, ''), decided_at
+		FROM graph.alias_proposals
+		WHERE $1 = 'all' OR status = $1
+		ORDER BY score DESC, proposal_key`, status)
+	if err != nil {
+		return nil, fmt.Errorf("query: read alias proposals: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			p         graphv1.AliasProposal
+			name      graph.Ref
+			evidence  []byte
+			createdAt time.Time
+			decidedAt *time.Time
+		)
+		if err := rows.Scan(&p.ProposalKey, &name.Namespace, &name.Value, &p.Environment, &p.EntrySlug, &p.RuleId,
+			&p.Score, &p.Rationale, &evidence, &p.Status, &createdAt, &p.ProposedByEventIds, &p.DecidedBy,
+			&decidedAt); err != nil {
+			return nil, fmt.Errorf("query: scan alias proposal: %w", err)
+		}
+		p.Name = name.Proto()
+		p.CreatedAt = timestamppb.New(createdAt)
+		if decidedAt != nil {
+			p.DecidedAt = timestamppb.New(*decidedAt)
+		}
+		if len(evidence) > 0 && string(evidence) != "{}" {
+			p.Evidence = &structpb.Struct{}
+			if err := protojson.Unmarshal(evidence, p.Evidence); err != nil {
+				return nil, fmt.Errorf("query: decode evidence of %s: %w", p.ProposalKey, err)
+			}
+		}
+		resp.Aliases = append(resp.Aliases, &p)
+	}
+	return resp, rows.Err()
+}

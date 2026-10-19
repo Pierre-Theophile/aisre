@@ -47,6 +47,8 @@ type Attributor struct {
 	interval  time.Duration
 	batch     int
 	now       func() time.Time
+	// discover runs discovery before every sweep (the default).
+	discover bool
 }
 
 // Option configures an Attributor.
@@ -64,6 +66,10 @@ func WithInterval(d time.Duration) Option { return func(a *Attributor) { a.inter
 // WithClock sets the clock a decision is observed at; the zero time lets the store stamp it.
 func WithClock(now func() time.Time) Option { return func(a *Attributor) { a.now = now } }
 
+// WithDiscovery turns discovery on or off. It is on by default; a test of the decision layers alone
+// turns it off.
+func WithDiscovery(on bool) Option { return func(a *Attributor) { a.discover = on } }
+
 // New builds an attributor over the projector's store.
 func New(p *projector.Projector, opts ...Option) *Attributor {
 	a := &Attributor{
@@ -74,6 +80,7 @@ func New(p *projector.Projector, opts ...Option) *Attributor {
 		interval:  2 * time.Second,
 		batch:     500,
 		now:       func() time.Time { return time.Time{} },
+		discover:  true,
 	}
 	for _, opt := range opts {
 		opt(a)
@@ -125,9 +132,10 @@ func (a *Attributor) Run(ctx context.Context) {
 func (a *Attributor) Follow(ctx context.Context, cursor int64) (int64, error) {
 	for {
 		var (
-			signals = map[string]bool{}
-			sweep   bool
-			read    int
+			signals  = map[string]bool{}
+			sweep    bool
+			discover bool
+			read     int
 		)
 		err := a.projector.Log().Page(ctx, cursor, a.batch, func(r *eventlog.Record) error {
 			read++
@@ -136,6 +144,7 @@ func (a *Attributor) Follow(ctx context.Context, cursor int64) (int64, error) {
 				r.Envelope.GetAttributeSignal() != nil {
 				return nil
 			}
+			discover = discover || discovers(r.Envelope)
 			refs, all := affected(r.Envelope)
 			sweep = sweep || all
 			for _, ref := range refs {
@@ -145,6 +154,14 @@ func (a *Attributor) Follow(ctx context.Context, cursor int64) (int64, error) {
 		})
 		if err != nil {
 			return cursor, err
+		}
+		if discover && !sweep && a.discover {
+			n, err := a.Discover(ctx)
+			if err != nil {
+				return cursor, err
+			}
+			// A new entry may be what a signal in this batch is about.
+			sweep = n > 0
 		}
 		if sweep {
 			if _, err := a.Sweep(ctx); err != nil {
@@ -202,9 +219,32 @@ func affected(env *graphv1.EventEnvelope) (refs []graph.Ref, all bool) {
 	return nil, false
 }
 
-// Sweep re-attributes every current signal and returns how many decisions it appended. A change
-// is an instant, never valid now, so every change the graph still believes in is current.
+// discovers says an event may bring a service or a Notion value discovery has not seen.
+func discovers(env *graphv1.EventEnvelope) bool {
+	switch body := env.GetBody().(type) {
+	case *graphv1.EventEnvelope_UpsertNode:
+		t := body.UpsertNode.GetType()
+		return t == graphv1.NodeType_SERVICE || t == graphv1.NodeType_KNOWLEDGE_DOC
+	case *graphv1.EventEnvelope_IdentityClaim, *graphv1.EventEnvelope_CorrelateEntity,
+		*graphv1.EventEnvelope_RejectAlias:
+		return true
+	}
+	return false
+}
+
+// Sweep runs discovery, re-attributes every current signal, and returns how many events it
+// appended. A change is an instant, never valid now, so every change the graph still believes in
+// is current.
 func (a *Attributor) Sweep(ctx context.Context) (int, error) {
+	// Discovery first, so a signal is attributed to an entry proposed in the same pass.
+	appended := 0
+	if a.discover {
+		n, err := a.Discover(ctx)
+		if err != nil {
+			return n, err
+		}
+		appended = n
+	}
 	rows, err := a.projector.Store().Pool().Query(ctx, `
 		SELECT e.entity_id FROM graph.entities e
 		WHERE e.merged_into IS NULL AND e.type = ANY($1)
@@ -221,7 +261,6 @@ func (a *Attributor) Sweep(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("catalog: list current signals: %w", err)
 	}
-	appended := 0
 	for _, id := range ids {
 		ok, err := a.Attribute(ctx, id)
 		if err != nil && !errors.Is(err, ErrNotSignal) {
@@ -266,7 +305,7 @@ func (a *Attributor) Decide(ctx context.Context, entityID string) (*graphv1.Even
 	if signal.Ref.IsZero() {
 		return nil, fmt.Errorf("catalog: %s has no ref to name it by: %w", entityID, ErrNotSignal)
 	}
-	facts, err := a.facts(ctx, signal.EntityID)
+	facts, err := a.facts(ctx, signal)
 	if err != nil {
 		return nil, err
 	}
@@ -365,9 +404,10 @@ func (a *Attributor) current(ctx context.Context, signalID string) (currentDecis
 }
 
 // facts reads the part of the catalog a decision needs.
-func (a *Attributor) facts(ctx context.Context, signalID string) (Facts, error) {
+func (a *Attributor) facts(ctx context.Context, signal Signal) (Facts, error) {
 	pool := a.projector.Store().Pool()
 	facts := Facts{Hidden: map[string]bool{}}
+	signalID := signal.EntityID
 
 	var entries []byte
 	err := pool.QueryRow(ctx, `
@@ -396,16 +436,17 @@ func (a *Attributor) facts(ctx context.Context, signalID string) (Facts, error) 
 	rows, err := pool.Query(ctx, `
 		SELECT a.namespace, a.value, a.environment, a.entry_slug,
 		       EXISTS (SELECT 1 FROM graph.attribution_decisions d
-		               WHERE d.event_id = a.decided_by_event_id AND d.kind = 'correct')
+		               WHERE d.event_id = a.decided_by_event_id AND d.kind = 'correct'),
+		       coalesce(a.rule_id, '') = $1
 		FROM graph.catalog_alias_versions a WHERE upper_inf(a.observed)
-		ORDER BY 1, 2, 3`)
+		ORDER BY 1, 2, 3`, RuleEntityClaim)
 	if err != nil {
 		return facts, fmt.Errorf("catalog: read aliases: %w", err)
 	}
 	for rows.Next() {
 		var alias Alias
 		if err := rows.Scan(&alias.Name.Ref.Namespace, &alias.Name.Ref.Value, &alias.Name.Environment,
-			&alias.Slug, &alias.ByCorrection); err != nil {
+			&alias.Slug, &alias.ByCorrection, &alias.Discovered); err != nil {
 			rows.Close()
 			return facts, fmt.Errorf("catalog: scan alias: %w", err)
 		}
@@ -432,7 +473,55 @@ func (a *Attributor) facts(ctx context.Context, signalID string) (Facts, error) 
 	for _, slug := range hidden {
 		facts.Hidden[slug] = true
 	}
+
+	known, err := a.entries(ctx)
+	if err != nil {
+		return facts, err
+	}
+	facts.Entries = make(map[string]Entry, len(known))
+	for slug, e := range known {
+		facts.Entries[slug] = Entry{Display: e.display, Status: e.status}
+	}
+	if len(signal.Owners) > 0 {
+		if facts.EntryOwners, err = a.entryOwners(ctx); err != nil {
+			return facts, err
+		}
+	}
 	return facts, nil
+}
+
+// entryOwners reads, per entry, the owners of the entities its aliases name (rule P4).
+func (a *Attributor) entryOwners(ctx context.Context) (map[string][]string, error) {
+	rows, err := a.projector.Store().Pool().Query(ctx, `
+		WITH named AS (
+			SELECT a.entry_slug, c.entity_id FROM graph.catalog_alias_versions a
+			JOIN graph.identity_claims c ON c.namespace = a.namespace AND c.value = a.value
+			WHERE upper_inf(a.observed) AND a.entry_slug <> $2
+			UNION
+			SELECT a.entry_slug, k.entity_id FROM graph.catalog_alias_versions a
+			JOIN graph.correlation_keys k ON k.namespace = a.namespace AND k.value = a.value
+			WHERE upper_inf(a.observed) AND a.entry_slug <> $2
+		)
+		SELECT DISTINCT named.entry_slug, coalesce(t.merged_into, o.dst_id)
+		FROM named
+		JOIN graph.entities m ON m.entity_id = named.entity_id
+		JOIN graph.edge_versions o ON o.src_id = coalesce(m.merged_into, m.entity_id)
+		LEFT JOIN graph.entities t ON t.entity_id = o.dst_id
+		WHERE o.type = $1 AND upper_inf(o.observed) AND upper_inf(o.valid)
+		ORDER BY 1, 2`, string(graph.EdgeTypeOwnedBy), graph.HiddenEntrySlug)
+	if err != nil {
+		return nil, fmt.Errorf("catalog: read entry owners: %w", err)
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var slug, owner string
+		if err := rows.Scan(&slug, &owner); err != nil {
+			return nil, fmt.Errorf("catalog: scan entry owner: %w", err)
+		}
+		out[slug] = append(out[slug], owner)
+	}
+	return out, rows.Err()
 }
 
 // lookup resolves a ref to its canonical entity, without creating anything.

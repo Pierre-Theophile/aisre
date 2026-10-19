@@ -15,14 +15,12 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"gopkg.in/yaml.v3"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/catalog"
+	"github.com/Pierre-Theophile/aisre/internal/eval/attribution"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
-	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
 )
@@ -38,13 +36,6 @@ import (
 // With SRE_AGENT_GEN_FIXTURES=1 it rewrites the decisions in events.jsonl instead.
 
 const casesDir = "../../fixtures/attribution"
-
-type labelsFile struct {
-	Labels []struct {
-		Signal string   `yaml:"signal"`
-		Expect []string `yaml:"expect"`
-	} `yaml:"labels"`
-}
 
 func TestAttributionCases(t *testing.T) {
 	dirs, err := filepath.Glob(filepath.Join(casesDir, "*", "manifest.yaml"))
@@ -62,81 +53,18 @@ func TestAttributionCases(t *testing.T) {
 
 func runCase(t *testing.T, dir string) {
 	ctx := context.Background()
-	m, err := fixture.LoadManifest(dir)
+	c, err := attribution.Load(dir)
 	if err != nil {
-		t.Fatalf("manifest: %v", err)
+		t.Fatalf("case: %v", err)
 	}
-	recorded, err := fixture.ReadEvents(m.EventsPath())
+	m, decisions := c.Manifest, c.Recorded
+	p, decided, err := attribution.Replay(ctx, pgtest.Open(t), c)
 	if err != nil {
-		t.Fatalf("events: %v", err)
-	}
-	var feed, decisions []fixture.Event
-	for _, e := range recorded {
-		if e.Envelope.GetSourceId() == graph.AttributorSourceID {
-			decisions = append(decisions, e)
-		} else {
-			feed = append(feed, e)
-		}
-	}
-	stream, err := fixture.WithHumanDecisions(m, feed)
-	if err != nil {
-		t.Fatalf("human decisions: %v", err)
-	}
-
-	p := projector.New(pgtest.Open(t))
-	sources := []eventlog.Source{{SourceID: fixture.HumanSourceID, Kind: "human", Ordering: "none", SchemaVersion: m.SchemaVersion}}
-	for _, src := range m.Sources {
-		if src.SourceID == graph.AttributorSourceID || src.SourceID == fixture.HumanSourceID {
-			continue
-		}
-		sources = append(sources, eventlog.Source{SourceID: src.SourceID, Kind: src.Kind, Ordering: src.Ordering,
-			ReorderingWindow: src.ReorderingWindow, SchemaVersion: m.SchemaVersion})
-	}
-	for _, src := range sources {
-		if err := p.RegisterSource(ctx, src); err != nil {
-			t.Fatalf("register %s: %v", src.SourceID, err)
-		}
-	}
-
-	// The attributor follows the log as serve runs it, after every event. Its decisions are stamped
-	// one reordering window after the event, the widest any source declares: a replay may deliver
-	// any feeder event up to its window late (fixture verify's shuffles do), and a decision must
-	// never arrive before the signal it is about.
-	settle := time.Second
-	for _, src := range m.Sources {
-		settle = max(settle, src.ReorderingWindow+time.Second)
-	}
-	var clock time.Time
-	a := catalog.New(p, catalog.WithClock(func() time.Time {
-		clock = clock.Add(time.Millisecond)
-		return clock
-	}))
-	if err := a.Register(ctx); err != nil {
-		t.Fatalf("register the attributor: %v", err)
-	}
-	for _, e := range stream {
-		r, err := p.ApplyWithOptions(ctx, e.Envelope, projector.ApplyOptions{ObservedAt: e.ObservedAt, Principal: e.Principal})
-		if err != nil || r.GetStatus() == graphv1.IngestResult_REJECTED {
-			t.Fatalf("apply %s: %v %s %s", e.Envelope.GetEventId(), err, r.GetReasonCode(), r.GetReasonDetail())
-		}
-		if at := e.ObservedAt.Add(settle); at.After(clock) {
-			clock = at
-		}
-		if _, err := a.Sweep(ctx); err != nil {
-			t.Fatalf("sweep after %s: %v", e.Envelope.GetEventId(), err)
-		}
-	}
-
-	var decided []fixture.Event
-	if err := p.Log().BySource(ctx, graph.AttributorSourceID, 0, func(r *eventlog.Record) error {
-		decided = append(decided, fixture.Event{Envelope: r.Envelope, ObservedAt: r.ObservedAt.UTC()})
-		return nil
-	}); err != nil {
-		t.Fatalf("read decisions: %v", err)
+		t.Fatal(err)
 	}
 
 	if os.Getenv("SRE_AGENT_GEN_FIXTURES") == "1" {
-		writeEvents(t, m.EventsPath(), feed, decided)
+		writeEvents(t, m.EventsPath(), c.Feed, decided)
 	} else {
 		if len(decided) != len(decisions) {
 			t.Errorf("the attributor took %d decisions, the recording holds %d; regenerate with SRE_AGENT_GEN_FIXTURES=1",
@@ -153,15 +81,7 @@ func runCase(t *testing.T, dir string) {
 
 	engine := query.NewEngine(p.Store())
 	now := &graphv1.AsOf{ValidAt: timestamppb.New(m.Clock.End)}
-	var labels labelsFile
-	raw, err := os.ReadFile(filepath.Join(dir, "labels.yaml"))
-	if err != nil {
-		t.Fatalf("labels: %v", err)
-	}
-	if err := yaml.Unmarshal(raw, &labels); err != nil || len(labels.Labels) == 0 {
-		t.Fatalf("labels: %v", err)
-	}
-	for _, label := range labels.Labels {
+	for _, label := range c.Labels {
 		ref, err := graph.ParseRef(label.Signal)
 		if err != nil {
 			t.Fatalf("label %q: %v", label.Signal, err)

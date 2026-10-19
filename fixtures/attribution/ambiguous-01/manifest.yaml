@@ -1,0 +1,93 @@
+# Hand-authored fixture: the agent says unknown rather than guess (feature 009 T026, FR-030–FR-032).
+id: ambiguous-01
+family: conformance
+description: >-
+  009 US4: five monitors, and only one of them has evidence enough.
+
+  The catalog has *Search*, *Search Web* and *Billing*, and says the Cloud SQL instance
+  `billing-db` is Billing's. Nothing in it names the workloads the monitors watch, so layer 1 has
+  nothing to say and every decision is layer 2's.
+
+  - 301 watches an uptime target, `10.0.3.7`: no rule fires. `unknown`, nothing suggested.
+  - 302 watches `search-api`, which is *Search* and *Search Web* alike by name (`P1`, 0.85 each:
+    `web` is a deployment suffix). The lead is 0, under δ: `unknown`, both suggested.
+  - 303 watches `ledger-sync`, which depends on `billing-db` (`P3`, 0.55). Under τ: `unknown`,
+    *Billing* suggested. Topology alone is a hint, never a decision.
+  - 304 watches `billing-invoice-api`: its name shares a token with *Billing* (`P2`, J = 0.5,
+    0.65), it depends on `billing-db` (`P3`, 0.55) and has its owner (`P4`, 0.50). By noisy-OR,
+    1 − 0.35 × 0.45 × 0.50 = 0.92125 (recorded to four places, 0.9213), over τ with nothing else
+    scoring: *Billing*, at layer 2.
+  - 305 watches `billing-reports`, the data team's report job, which only reads Billing's exports.
+    Its name shares a token with *Billing* (`P2`, 0.65), and nothing else says so: `unknown`,
+    *Billing* suggested. It is the signal a lowered τ gets wrong (009 T028's planted regression).
+
+  None of the watched entities is a SERVICE, so discovery proposes nothing.
+
+  At 10:45 Pierre says 303 is *Billing* (`H`). The label is his: the attributor's `unknown` is
+  scored as a miss in coverage, not as a mistake (FR-046).
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: k8s:shop
+    kind: kubernetes
+    ordering: none
+    reordering_window: 0s
+  - source_id: datadog:demo
+    kind: datadog
+    ordering: none
+    reordering_window: 30s
+  - source_id: sre.attributor
+    kind: attributor
+    ordering: none
+    reordering_window: 0s
+
+clock:
+  start: 2026-10-05T08:50:00Z
+  end:   2026-10-05T11:00:00Z
+
+human_decisions:
+  - catalog_entry: {slug: search, name: Search, kind: service}
+    at: 2026-10-05T08:55:00Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written
+  - catalog_entry: {slug: search-web, name: Search Web, kind: service}
+    at: 2026-10-05T08:55:01Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written
+  - catalog_entry: {slug: billing, name: Billing, kind: service}
+    at: 2026-10-05T08:55:02Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written
+  - alias: {name: gcp.cloudsql.instance=prod/billing-db, entry: billing}
+    at: 2026-10-05T08:55:03Z
+    principal: sre-agent-dev|operator
+    reason: billing-db is Billing's database
+  - correct: {signal: datadog.monitor=303, entries: [billing]}
+    at: 2026-10-05T10:45:00Z
+    principal: sre-agent-dev|pierre
+    reason: ledger-sync is Billing's, which topology alone could not decide
+
+queries:
+  - name: uptime-1030
+    kind: attribution
+    focus: datadog.monitor=301
+    valid_at: 2026-10-05T10:30:00Z
+  - name: name-tie-1030
+    kind: attribution
+    focus: datadog.monitor=302
+    valid_at: 2026-10-05T10:30:00Z
+  - name: topology-only-1030
+    kind: attribution
+    focus: datadog.monitor=303
+    valid_at: 2026-10-05T10:30:00Z
+  - name: three-signs-1030
+    kind: attribution
+    focus: datadog.monitor=304
+    valid_at: 2026-10-05T10:30:00Z
+  - name: shared-word-1030
+    kind: attribution
+    focus: datadog.monitor=305
+    valid_at: 2026-10-05T10:30:00Z

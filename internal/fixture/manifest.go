@@ -171,6 +171,7 @@ type HumanDecision struct {
 	CatalogEntry *CatalogEntryDecision `yaml:"catalog_entry"`
 	Alias        *AliasDecision        `yaml:"alias"`
 	RetractAlias *AliasDecision        `yaml:"retract_alias"`
+	RejectAlias  *AliasDecision        `yaml:"reject_alias"`
 	Correct      *CorrectionDecision   `yaml:"correct"`
 	Revert       string                `yaml:"revert"`
 }
@@ -200,7 +201,7 @@ func (d HumanDecision) Kind() (kind string, refs []string, err error) {
 	switch {
 	case set == 0:
 		return "", nil, fmt.Errorf("a human_decisions entry names no decision; want one of confirm, reject, merge, split, " +
-			"catalog_entry, alias, retract_alias, correct, revert")
+			"catalog_entry, alias, retract_alias, reject_alias, correct, revert")
 	case set > 1:
 		return "", nil, fmt.Errorf("a human_decisions entry names more than one decision; write them as separate entries")
 	case kind != "split" && len(refs) != 2:

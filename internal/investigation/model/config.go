@@ -113,6 +113,9 @@ type Config struct {
 	// Embedding is the embedding model knowledge retrieval places sections and queries with
 	// (feature 008 FR-026, contracts §3). Optional: without it retrieval is lexical only.
 	Embedding *EmbeddingConfig `yaml:"embedding,omitempty"`
+	// Attribution is the service catalog's decision model (feature 009, contracts §6). Optional:
+	// without it the published ruleset runs with its published threshold and margin.
+	Attribution *AttributionConfig `yaml:"attribution,omitempty"`
 }
 
 // Validate refuses a configuration that would fail somewhere less convenient — mid-run, or
@@ -155,6 +158,11 @@ func (c Config) Validate() error {
 	}
 	if c.Embedding != nil {
 		if err := c.Embedding.Validate(); err != nil {
+			return fmt.Errorf("model config %s: %w", c.Version, err)
+		}
+	}
+	if c.Attribution != nil {
+		if err := c.Attribution.Validate(); err != nil {
 			return fmt.Errorf("model config %s: %w", c.Version, err)
 		}
 	}

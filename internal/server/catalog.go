@@ -72,3 +72,8 @@ func (s *CatalogService) WhyAttributed(ctx context.Context, req *connect.Request
 func (s *CatalogService) AttributedSignals(ctx context.Context, req *connect.Request[graphv1.AttributedSignalsRequest]) (*connect.Response[graphv1.AttributedSignalsResponse], error) {
 	return catalogRead(ctx, s, "AttributedSignals", req.Msg, s.engine.AttributedSignals)
 }
+
+// ListProposals lists what discovery proposed and waits on a person (FR-010, FR-011).
+func (s *CatalogService) ListProposals(ctx context.Context, req *connect.Request[graphv1.ListProposalsRequest]) (*connect.Response[graphv1.ListProposalsResponse], error) {
+	return catalogRead(ctx, s, "ListProposals", req.Msg, s.engine.ListProposals)
+}

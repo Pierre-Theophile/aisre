@@ -130,6 +130,27 @@ entries:
 		t.Errorf("list:\n%s", out)
 	}
 
+	// The old maps (009 T030): 007's Notion `entities` and 006's Slack `--service`, one alias a line.
+	out = cli("catalog", "import", "--from-notion-config", filepath.Join("testdata", "notion-twin-02.yaml"), "--dry-run")
+	for _, want := range []string{
+		"would record: declare entry checkout (Checkout)",
+		"would record: alias notion.value=4e5f6071-8293-44a4-b5c6-d7e8f90a1b2c/Checkout → checkout",
+		"would record: alias otel.service.name=checkout → checkout",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--from-notion-config: no %q in\n%s", want, out)
+		}
+	}
+	out = cli("catalog", "import", "--from-slack-flags", "candidate=datadog.service=production/candidate-api", "--dry-run")
+	if !strings.Contains(out, "conflict, left as it is: datadog.service=production/candidate-api") ||
+		!strings.Contains(out, "would record: alias slack.slug=candidate → candidate") {
+		t.Errorf("--from-slack-flags:\n%s", out)
+	}
+	if _, stderr, code := run(t, context.Background(), "catalog", "import", file, "--from-slack-flags", "a=b=c",
+		"--server", baseURL, "--token", decider); code != ExitUsage || !strings.Contains(stderr, "give one of") {
+		t.Errorf("a file and a map at once: exit %d, %q", code, stderr)
+	}
+
 	// The attributor in serve picks the alias up.
 	waitFor := func(want string) string {
 		t.Helper()
@@ -161,5 +182,36 @@ entries:
 	}
 	if out := cli("catalog", "show", "infra"); !strings.Contains(out, "infra — Platform (platform, confirmed)") {
 		t.Errorf("show:\n%s", out)
+	}
+
+	// Discovery proposes an entry for a service nobody catalogued, and its staging twin as an alias.
+	ingestJSON(t, baseURL, feeder, "/sreagent.graph.v1.IngestService/IngestBatch", `{"events":[
+		{"eventId":"dd:svc2","idempotencyKey":"dd:svc2","sourceId":"datadog:demo","schemaVersion":"1.0.0",
+		 "upsertNode":{"ref":{"namespace":"datadog.service","value":"production/checkout-api"},"type":"SERVICE",
+		   "displayName":"checkout-api","validAt":"2026-10-19T09:00:00Z"}},
+		{"eventId":"dd:svc3","idempotencyKey":"dd:svc3","sourceId":"datadog:demo","schemaVersion":"1.0.0",
+		 "upsertNode":{"ref":{"namespace":"datadog.service","value":"staging/checkout-api"},"type":"SERVICE",
+		   "displayName":"checkout-api","validAt":"2026-10-19T09:00:00Z"}}]}`)
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		out = cli("catalog", "proposals")
+		if strings.Contains(out, "alias  checkout-api") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("discovery proposed nothing:\n%s", out)
+		}
+	}
+	// Discovery reads services in entity order: the staging one named the entry.
+	if !strings.Contains(out, "P1") || !strings.Contains(out, "0.85") || !strings.Contains(out, "datadog.service=production/checkout-api") {
+		t.Errorf("proposals:\n%s", out)
+	}
+	if out := cli("catalog", "alias", "accept", "datadog.service=production/checkout-api", "checkout-api"); !strings.Contains(out, "alias datadog.service=production/checkout-api → checkout-api recorded as") {
+		t.Errorf("accept:\n%s", out)
+	}
+	if out := cli("catalog", "proposals", "--kind", "alias", "--status", "accepted"); !strings.Contains(out, "datadog.service=production/checkout-api") {
+		t.Errorf("the accepted proposal:\n%s", out)
+	}
+	if out := cli("catalog", "alias", "reject", "datadog.service=staging/checkout-api", "infra"); !strings.Contains(out, "rejection of alias datadog.service=staging/checkout-api → infra recorded as") {
+		t.Errorf("reject:\n%s", out)
 	}
 }

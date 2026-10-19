@@ -77,6 +77,23 @@ Layers in order, the first that decides wins: 0 correction (`H`, 1.0), 1 exact a
 otherwise `unknown` with the top three suggestions. A change to any rule score, τ or δ is a new
 ruleset version, and every attribution records the version it ran under.
 
+Published scores (feature 009 PR 2, `internal/catalog/rules.go`):
+
+| rule | fires when | score |
+|---|---|---|
+| `P1` | a signal's name equals an entry's display name or an alias's name once normalised (lower case, separators, and deployment suffixes such as `api`, `svc`, `web` dropped) | 0.85 |
+| `P2` | their token sets overlap with Jaccard J ≥ 0.5 | 0.45 + 0.4 J |
+| `P3` | the signal's entity `runs_on`, `depends_on` or `calls` an entity aliased to the entry | 0.55 |
+| `P4` | the signal's entity has the entry's owner | 0.50 |
+
+Two entries reaching τ through the same name give `unknown`. An alias stated for one
+environment is not a `P1`/`P2` target for a name in another. Discovery (research R9) proposes an
+entry for a `SERVICE` entity no alias names and carries its identity claims as aliases with rule
+`D1`; an alias a person declared outranks a discovered one, and a decision taken on discovered
+aliases says so in its evidence (`alias_discovered`). The starting scores were confirmed, not moved,
+on the labelled set: every attribution the probable layer took there is right, and every weaker
+score stays a suggestion (Item 10).
+
 ### Item 6 — `graph.v1.CatalogService`
 
 `ListEntries`, `GetEntry`, `WhyAttributed` and `AttributedSignals` (feature 009 PR 1), and
@@ -99,6 +116,19 @@ still proceeds to `unknown` with "name the affected service(s)".
 
 `ruleset`, `threshold`, `margin`, and an optional `classifier` (feature 009 PR 3). Absent, the
 defaults of Item 5 apply and no classifier runs.
+
+### Item 10 — the attribution gate
+
+`aisre eval attribution <dir>...` replays each labelled case in `fixtures/attribution`, runs the
+attributor, and scores its own decisions against `labels.yaml`: precision, coverage and ten-bin
+calibration per layer and in aggregate. A signal a person corrected is scored on the decision the
+correction overruled, so corrections are part of the set (FR-046). CI's test job fails when
+aggregate precision is below 0.95 (SC-002) or a populated bin is more than 10 points from its
+observed accuracy (SC-003); a planted regression that lowers τ to 0.5 must fail it.
+
+The aggregate is the attributor's own inference: discovered aliases, the probable layer and the
+classifier. An attribution that follows an alias a person declared is reported and not gated: its
+1.0 is a person's word, and when it is wrong the catalog is wrong, which a correction fixes (US3).
 
 ## Alternatives rejected
 

@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# What each signal is about, on the evidence there is (research R13): `unknown` is the right answer
+# when the evidence does not decide.
+labels:
+  - signal: datadog.monitor=301
+    expect: []
+  - signal: datadog.monitor=302
+    expect: []
+  - signal: datadog.monitor=303
+    expect: [billing]
+  - signal: datadog.monitor=304
+    expect: [billing]
+  - signal: datadog.monitor=305
+    expect: []

@@ -58,6 +58,11 @@ type Signal struct {
 	Names []Name
 	// Text is the signal's title, for the optional classifier (PR 3) and nothing else.
 	Text string
+	// Related are the names of the entities a watched or target entity runs on, depends on or
+	// calls (rule P3), sorted and deduplicated.
+	Related []Name
+	// Owners are the entity ids a watched or target entity is owned by (rule P4), sorted.
+	Owners []string
 }
 
 // signalKinds are the node types a signal is.
@@ -140,6 +145,9 @@ func (n *Names) Signal(ctx context.Context, entityID string) (Signal, error) {
 			return Signal{}, err
 		}
 		names = append(names, watched...)
+		if signal.Related, signal.Owners, err = n.neighbourhood(ctx, canonical, graph.EdgeTypeWatches, false); err != nil {
+			return Signal{}, err
+		}
 		for _, spelled := range stringList(values[projector.AlertUnattachedWatchesProp]) {
 			if ref, err := graph.ParseRef(spelled); err == nil {
 				names = append(names, Name{Ref: ref})
@@ -164,6 +172,9 @@ func (n *Names) Signal(ctx context.Context, entityID string) (Signal, error) {
 			return Signal{}, err
 		}
 		names = append(names, targets...)
+		if signal.Related, signal.Owners, err = n.neighbourhood(ctx, canonical, graph.EdgeTypeChangedBy, true); err != nil {
+			return Signal{}, err
+		}
 	}
 	signal.Names = sortNames(names)
 	return signal, nil
@@ -224,6 +235,63 @@ func (n *Names) targets(ctx context.Context, signalID string, typ graph.EdgeType
 		out = append(out, name)
 	}
 	return out, rows.Err()
+}
+
+// neighbourhood reads what the probable rules P3 and P4 look at around a signal's watched or target
+// entities: the names of the entities they run on, depend on or call, and the owners they are owned
+// by, both through edges valid and believed now.
+func (n *Names) neighbourhood(ctx context.Context, signalID string, typ graph.EdgeType, inbound bool) ([]Name, []string, error) {
+	near, far := "src_id", "dst_id"
+	if inbound {
+		near, far = "dst_id", "src_id"
+	}
+	rows, err := n.store.Pool().Query(ctx, fmt.Sprintf(`
+		WITH ends AS (
+			SELECT DISTINCT coalesce(t.merged_into, e.%[2]s) AS id
+			FROM graph.edge_versions e
+			LEFT JOIN graph.entities t ON t.entity_id = e.%[2]s
+			WHERE e.%[1]s = $1 AND e.type = $2 AND upper_inf(e.observed) AND (upper_inf(e.valid) OR $5)
+		), next AS (
+			SELECT DISTINCT o.type, coalesce(t.merged_into, o.dst_id) AS id
+			FROM ends JOIN graph.edge_versions o ON o.src_id = ends.id
+			LEFT JOIN graph.entities t ON t.entity_id = o.dst_id
+			WHERE o.type = ANY($3) AND upper_inf(o.observed) AND upper_inf(o.valid)
+		)
+		SELECT 'owner', '', next.id, '' FROM next WHERE next.type = $4
+		UNION
+		SELECT 'name', c.namespace, c.value, coalesce(c.attributes->>$6, '')
+		FROM next JOIN graph.entities m ON m.entity_id = next.id OR m.merged_into = next.id
+		JOIN graph.identity_claims c ON c.entity_id = m.entity_id
+		WHERE next.type <> $4
+		UNION
+		SELECT 'name', k.namespace, k.value, coalesce(k.attributes->>$6, '')
+		FROM next JOIN graph.entities m ON m.entity_id = next.id OR m.merged_into = next.id
+		JOIN graph.correlation_keys k ON k.entity_id = m.entity_id
+		WHERE next.type <> $4
+		ORDER BY 1, 2, 3, 4`, near, far), signalID, string(typ),
+		[]string{string(graph.EdgeTypeRunsOn), string(graph.EdgeTypeDependsOn), string(graph.EdgeTypeCalls), string(graph.EdgeTypeOwnedBy)},
+		string(graph.EdgeTypeOwnedBy), inbound, AttrEnvironment)
+	if err != nil {
+		return nil, nil, fmt.Errorf("catalog: read the neighbourhood of %s: %w", signalID, err)
+	}
+	defer rows.Close()
+	var (
+		related []Name
+		owners  []string
+	)
+	for rows.Next() {
+		var kind string
+		var name Name
+		if err := rows.Scan(&kind, &name.Ref.Namespace, &name.Ref.Value, &name.Environment); err != nil {
+			return nil, nil, fmt.Errorf("catalog: scan neighbour: %w", err)
+		}
+		if kind == "owner" {
+			owners = append(owners, name.Ref.Value)
+		} else {
+			related = append(related, name)
+		}
+	}
+	return sortNames(related), sortedUnique(owners), rows.Err()
 }
 
 func sortNames(names []Name) []Name {

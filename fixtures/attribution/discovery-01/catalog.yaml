@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# The catalog discovery-01's stream ends on, once a person went through the proposals.
+version: 1
+entries:
+  - slug: candidate-view
+    name: Candidate View
+    aliases:
+      - "notion.value=0a1b2c3d-4e5f-4071-8293-a4b5c6d7e8f9/Candidate View"
+      - gcp.cloudrun.service=twin-production/europe-west1/candidate-api
+      - datadog.service=production/candidate-api

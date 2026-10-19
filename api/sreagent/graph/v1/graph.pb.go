@@ -7487,6 +7487,263 @@ func (x *GetEntryResponse) GetHistory() []*NodeVersion {
 	return nil
 }
 
+// A probable rule's suggestion that a name belongs to an entry (research R9). `status` is pending,
+// accepted (a person declared the alias), rejected (a person said no, durably) or conflict (a rule
+// proposed it again after a rejection).
+type AliasProposal struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ProposalKey        string                 `protobuf:"bytes,1,opt,name=proposal_key,json=proposalKey,proto3" json:"proposal_key,omitempty"`
+	Name               *Ref                   `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Environment        string                 `protobuf:"bytes,3,opt,name=environment,proto3" json:"environment,omitempty"`
+	EntrySlug          string                 `protobuf:"bytes,4,opt,name=entry_slug,json=entrySlug,proto3" json:"entry_slug,omitempty"`
+	RuleId             string                 `protobuf:"bytes,5,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	Score              float64                `protobuf:"fixed64,6,opt,name=score,proto3" json:"score,omitempty"`
+	Rationale          string                 `protobuf:"bytes,7,opt,name=rationale,proto3" json:"rationale,omitempty"`
+	Evidence           *structpb.Struct       `protobuf:"bytes,8,opt,name=evidence,proto3" json:"evidence,omitempty"`
+	Status             string                 `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
+	CreatedAt          *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	ProposedByEventIds []string               `protobuf:"bytes,11,rep,name=proposed_by_event_ids,json=proposedByEventIds,proto3" json:"proposed_by_event_ids,omitempty"`
+	DecidedBy          string                 `protobuf:"bytes,12,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"`
+	DecidedAt          *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=decided_at,json=decidedAt,proto3" json:"decided_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *AliasProposal) Reset() {
+	*x = AliasProposal{}
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[81]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AliasProposal) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AliasProposal) ProtoMessage() {}
+
+func (x *AliasProposal) ProtoReflect() protoreflect.Message {
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[81]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AliasProposal.ProtoReflect.Descriptor instead.
+func (*AliasProposal) Descriptor() ([]byte, []int) {
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{81}
+}
+
+func (x *AliasProposal) GetProposalKey() string {
+	if x != nil {
+		return x.ProposalKey
+	}
+	return ""
+}
+
+func (x *AliasProposal) GetName() *Ref {
+	if x != nil {
+		return x.Name
+	}
+	return nil
+}
+
+func (x *AliasProposal) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *AliasProposal) GetEntrySlug() string {
+	if x != nil {
+		return x.EntrySlug
+	}
+	return ""
+}
+
+func (x *AliasProposal) GetRuleId() string {
+	if x != nil {
+		return x.RuleId
+	}
+	return ""
+}
+
+func (x *AliasProposal) GetScore() float64 {
+	if x != nil {
+		return x.Score
+	}
+	return 0
+}
+
+func (x *AliasProposal) GetRationale() string {
+	if x != nil {
+		return x.Rationale
+	}
+	return ""
+}
+
+func (x *AliasProposal) GetEvidence() *structpb.Struct {
+	if x != nil {
+		return x.Evidence
+	}
+	return nil
+}
+
+func (x *AliasProposal) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AliasProposal) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *AliasProposal) GetProposedByEventIds() []string {
+	if x != nil {
+		return x.ProposedByEventIds
+	}
+	return nil
+}
+
+func (x *AliasProposal) GetDecidedBy() string {
+	if x != nil {
+		return x.DecidedBy
+	}
+	return ""
+}
+
+func (x *AliasProposal) GetDecidedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DecidedAt
+	}
+	return nil
+}
+
+// kind: entry | alias | empty for both. status filters alias proposals: empty means pending, `all`
+// means every status. Entries are the proposed ones as of as_of.
+type ListProposalsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	AsOf          *AsOf                  `protobuf:"bytes,3,opt,name=as_of,json=asOf,proto3" json:"as_of,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListProposalsRequest) Reset() {
+	*x = ListProposalsRequest{}
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[82]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProposalsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProposalsRequest) ProtoMessage() {}
+
+func (x *ListProposalsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[82]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProposalsRequest.ProtoReflect.Descriptor instead.
+func (*ListProposalsRequest) Descriptor() ([]byte, []int) {
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{82}
+}
+
+func (x *ListProposalsRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ListProposalsRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ListProposalsRequest) GetAsOf() *AsOf {
+	if x != nil {
+		return x.AsOf
+	}
+	return nil
+}
+
+type ListProposalsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*CatalogEntry        `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	Aliases       []*AliasProposal       `protobuf:"bytes,2,rep,name=aliases,proto3" json:"aliases,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListProposalsResponse) Reset() {
+	*x = ListProposalsResponse{}
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[83]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProposalsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProposalsResponse) ProtoMessage() {}
+
+func (x *ListProposalsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[83]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProposalsResponse.ProtoReflect.Descriptor instead.
+func (*ListProposalsResponse) Descriptor() ([]byte, []int) {
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{83}
+}
+
+func (x *ListProposalsResponse) GetEntries() []*CatalogEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *ListProposalsResponse) GetAliases() []*AliasProposal {
+	if x != nil {
+		return x.Aliases
+	}
+	return nil
+}
+
 // One attribution decision as the audit reads it back.
 type AttributionDecision struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
@@ -7505,7 +7762,7 @@ type AttributionDecision struct {
 
 func (x *AttributionDecision) Reset() {
 	*x = AttributionDecision{}
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[81]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7517,7 +7774,7 @@ func (x *AttributionDecision) String() string {
 func (*AttributionDecision) ProtoMessage() {}
 
 func (x *AttributionDecision) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[81]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7530,7 +7787,7 @@ func (x *AttributionDecision) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttributionDecision.ProtoReflect.Descriptor instead.
 func (*AttributionDecision) Descriptor() ([]byte, []int) {
-	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{81}
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *AttributionDecision) GetEventId() string {
@@ -7606,7 +7863,7 @@ type WhyAttributedRequest struct {
 
 func (x *WhyAttributedRequest) Reset() {
 	*x = WhyAttributedRequest{}
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[82]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7618,7 +7875,7 @@ func (x *WhyAttributedRequest) String() string {
 func (*WhyAttributedRequest) ProtoMessage() {}
 
 func (x *WhyAttributedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[82]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7631,7 +7888,7 @@ func (x *WhyAttributedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhyAttributedRequest.ProtoReflect.Descriptor instead.
 func (*WhyAttributedRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{82}
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *WhyAttributedRequest) GetSignal() *Ref {
@@ -7659,7 +7916,7 @@ type WhyAttributedResponse struct {
 
 func (x *WhyAttributedResponse) Reset() {
 	*x = WhyAttributedResponse{}
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[83]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7671,7 +7928,7 @@ func (x *WhyAttributedResponse) String() string {
 func (*WhyAttributedResponse) ProtoMessage() {}
 
 func (x *WhyAttributedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[83]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7684,7 +7941,7 @@ func (x *WhyAttributedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhyAttributedResponse.ProtoReflect.Descriptor instead.
 func (*WhyAttributedResponse) Descriptor() ([]byte, []int) {
-	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{83}
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *WhyAttributedResponse) GetSignal() *NodeVersion {
@@ -7720,7 +7977,7 @@ type AttributedSignalsRequest struct {
 
 func (x *AttributedSignalsRequest) Reset() {
 	*x = AttributedSignalsRequest{}
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[84]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7732,7 +7989,7 @@ func (x *AttributedSignalsRequest) String() string {
 func (*AttributedSignalsRequest) ProtoMessage() {}
 
 func (x *AttributedSignalsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[84]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7745,7 +8002,7 @@ func (x *AttributedSignalsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttributedSignalsRequest.ProtoReflect.Descriptor instead.
 func (*AttributedSignalsRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{84}
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *AttributedSignalsRequest) GetSlug() string {
@@ -7787,7 +8044,7 @@ type AttributedSignal struct {
 
 func (x *AttributedSignal) Reset() {
 	*x = AttributedSignal{}
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[85]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7799,7 +8056,7 @@ func (x *AttributedSignal) String() string {
 func (*AttributedSignal) ProtoMessage() {}
 
 func (x *AttributedSignal) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[85]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7812,7 +8069,7 @@ func (x *AttributedSignal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttributedSignal.ProtoReflect.Descriptor instead.
 func (*AttributedSignal) Descriptor() ([]byte, []int) {
-	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{85}
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *AttributedSignal) GetSignal() *NodeVersion {
@@ -7846,7 +8103,7 @@ type AttributedSignalsResponse struct {
 
 func (x *AttributedSignalsResponse) Reset() {
 	*x = AttributedSignalsResponse{}
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[86]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7858,7 +8115,7 @@ func (x *AttributedSignalsResponse) String() string {
 func (*AttributedSignalsResponse) ProtoMessage() {}
 
 func (x *AttributedSignalsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[86]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7871,7 +8128,7 @@ func (x *AttributedSignalsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttributedSignalsResponse.ProtoReflect.Descriptor instead.
 func (*AttributedSignalsResponse) Descriptor() ([]byte, []int) {
-	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{86}
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *AttributedSignalsResponse) GetSignals() []*AttributedSignal {
@@ -7896,7 +8153,7 @@ type ExtentRequest struct {
 
 func (x *ExtentRequest) Reset() {
 	*x = ExtentRequest{}
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[87]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7908,7 +8165,7 @@ func (x *ExtentRequest) String() string {
 func (*ExtentRequest) ProtoMessage() {}
 
 func (x *ExtentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[87]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7921,7 +8178,7 @@ func (x *ExtentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExtentRequest.ProtoReflect.Descriptor instead.
 func (*ExtentRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{87}
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{90}
 }
 
 type Extent struct {
@@ -7935,7 +8192,7 @@ type Extent struct {
 
 func (x *Extent) Reset() {
 	*x = Extent{}
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[88]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7947,7 +8204,7 @@ func (x *Extent) String() string {
 func (*Extent) ProtoMessage() {}
 
 func (x *Extent) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[88]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7960,7 +8217,7 @@ func (x *Extent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Extent.ProtoReflect.Descriptor instead.
 func (*Extent) Descriptor() ([]byte, []int) {
-	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{88}
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *Extent) GetEarliestObserved() *timestamppb.Timestamp {
@@ -7995,7 +8252,7 @@ type SourceExtent struct {
 
 func (x *SourceExtent) Reset() {
 	*x = SourceExtent{}
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[89]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8007,7 +8264,7 @@ func (x *SourceExtent) String() string {
 func (*SourceExtent) ProtoMessage() {}
 
 func (x *SourceExtent) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[89]
+	mi := &file_sreagent_graph_v1_graph_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8020,7 +8277,7 @@ func (x *SourceExtent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceExtent.ProtoReflect.Descriptor instead.
 func (*SourceExtent) Descriptor() ([]byte, []int) {
-	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{89}
+	return file_sreagent_graph_v1_graph_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *SourceExtent) GetSourceId() string {
@@ -8677,7 +8934,33 @@ const file_sreagent_graph_v1_graph_proto_rawDesc = "" +
 	"\x05as_of\x18\x02 \x01(\v2\x17.sreagent.graph.v1.AsOfR\x04asOf\"\x83\x01\n" +
 	"\x10GetEntryResponse\x125\n" +
 	"\x05entry\x18\x01 \x01(\v2\x1f.sreagent.graph.v1.CatalogEntryR\x05entry\x128\n" +
-	"\ahistory\x18\x02 \x03(\v2\x1e.sreagent.graph.v1.NodeVersionR\ahistory\"\x9b\x03\n" +
+	"\ahistory\x18\x02 \x03(\v2\x1e.sreagent.graph.v1.NodeVersionR\ahistory\"\x81\x04\n" +
+	"\rAliasProposal\x12!\n" +
+	"\fproposal_key\x18\x01 \x01(\tR\vproposalKey\x12*\n" +
+	"\x04name\x18\x02 \x01(\v2\x16.sreagent.graph.v1.RefR\x04name\x12 \n" +
+	"\venvironment\x18\x03 \x01(\tR\venvironment\x12\x1d\n" +
+	"\n" +
+	"entry_slug\x18\x04 \x01(\tR\tentrySlug\x12\x17\n" +
+	"\arule_id\x18\x05 \x01(\tR\x06ruleId\x12\x14\n" +
+	"\x05score\x18\x06 \x01(\x01R\x05score\x12\x1c\n" +
+	"\trationale\x18\a \x01(\tR\trationale\x123\n" +
+	"\bevidence\x18\b \x01(\v2\x17.google.protobuf.StructR\bevidence\x12\x16\n" +
+	"\x06status\x18\t \x01(\tR\x06status\x129\n" +
+	"\n" +
+	"created_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x121\n" +
+	"\x15proposed_by_event_ids\x18\v \x03(\tR\x12proposedByEventIds\x12\x1d\n" +
+	"\n" +
+	"decided_by\x18\f \x01(\tR\tdecidedBy\x129\n" +
+	"\n" +
+	"decided_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tdecidedAt\"p\n" +
+	"\x14ListProposalsRequest\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12,\n" +
+	"\x05as_of\x18\x03 \x01(\v2\x17.sreagent.graph.v1.AsOfR\x04asOf\"\x8e\x01\n" +
+	"\x15ListProposalsResponse\x129\n" +
+	"\aentries\x18\x01 \x03(\v2\x1f.sreagent.graph.v1.CatalogEntryR\aentries\x12:\n" +
+	"\aaliases\x18\x02 \x03(\v2 .sreagent.graph.v1.AliasProposalR\aaliases\"\x9b\x03\n" +
 	"\x13AttributionDecision\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x127\n" +
@@ -8832,10 +9115,11 @@ const file_sreagent_graph_v1_graph_proto_rawDesc = "" +
 	"\fRetractAlias\x12\x1f.sreagent.graph.v1.RetractAlias\x1a\x1f.sreagent.graph.v1.IngestResult\x12N\n" +
 	"\vRejectAlias\x12\x1e.sreagent.graph.v1.RejectAlias\x1a\x1f.sreagent.graph.v1.IngestResult\x12\\\n" +
 	"\x12CorrectAttribution\x12%.sreagent.graph.v1.CorrectAttribution\x1a\x1f.sreagent.graph.v1.IngestResult\x12X\n" +
-	"\x10RevertCorrection\x12#.sreagent.graph.v1.RevertCorrection\x1a\x1f.sreagent.graph.v1.IngestResult2\x97\x03\n" +
+	"\x10RevertCorrection\x12#.sreagent.graph.v1.RevertCorrection\x1a\x1f.sreagent.graph.v1.IngestResult2\xfb\x03\n" +
 	"\x0eCatalogService\x12\\\n" +
 	"\vListEntries\x12%.sreagent.graph.v1.ListEntriesRequest\x1a&.sreagent.graph.v1.ListEntriesResponse\x12S\n" +
 	"\bGetEntry\x12\".sreagent.graph.v1.GetEntryRequest\x1a#.sreagent.graph.v1.GetEntryResponse\x12b\n" +
+	"\rListProposals\x12'.sreagent.graph.v1.ListProposalsRequest\x1a(.sreagent.graph.v1.ListProposalsResponse\x12b\n" +
 	"\rWhyAttributed\x12'.sreagent.graph.v1.WhyAttributedRequest\x1a(.sreagent.graph.v1.WhyAttributedResponse\x12n\n" +
 	"\x11AttributedSignals\x12+.sreagent.graph.v1.AttributedSignalsRequest\x1a,.sreagent.graph.v1.AttributedSignalsResponseBAZ?github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1;graphv1b\x06proto3"
 
@@ -8852,7 +9136,7 @@ func file_sreagent_graph_v1_graph_proto_rawDescGZIP() []byte {
 }
 
 var file_sreagent_graph_v1_graph_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_sreagent_graph_v1_graph_proto_msgTypes = make([]protoimpl.MessageInfo, 93)
+var file_sreagent_graph_v1_graph_proto_msgTypes = make([]protoimpl.MessageInfo, 96)
 var file_sreagent_graph_v1_graph_proto_goTypes = []any{
 	(NodeType)(0),                        // 0: sreagent.graph.v1.NodeType
 	(EdgeType)(0),                        // 1: sreagent.graph.v1.EdgeType
@@ -8944,28 +9228,31 @@ var file_sreagent_graph_v1_graph_proto_goTypes = []any{
 	(*ListEntriesResponse)(nil),          // 87: sreagent.graph.v1.ListEntriesResponse
 	(*GetEntryRequest)(nil),              // 88: sreagent.graph.v1.GetEntryRequest
 	(*GetEntryResponse)(nil),             // 89: sreagent.graph.v1.GetEntryResponse
-	(*AttributionDecision)(nil),          // 90: sreagent.graph.v1.AttributionDecision
-	(*WhyAttributedRequest)(nil),         // 91: sreagent.graph.v1.WhyAttributedRequest
-	(*WhyAttributedResponse)(nil),        // 92: sreagent.graph.v1.WhyAttributedResponse
-	(*AttributedSignalsRequest)(nil),     // 93: sreagent.graph.v1.AttributedSignalsRequest
-	(*AttributedSignal)(nil),             // 94: sreagent.graph.v1.AttributedSignal
-	(*AttributedSignalsResponse)(nil),    // 95: sreagent.graph.v1.AttributedSignalsResponse
-	(*ExtentRequest)(nil),                // 96: sreagent.graph.v1.ExtentRequest
-	(*Extent)(nil),                       // 97: sreagent.graph.v1.Extent
-	(*SourceExtent)(nil),                 // 98: sreagent.graph.v1.SourceExtent
-	nil,                                  // 99: sreagent.graph.v1.Pointer.AttributesEntry
-	nil,                                  // 100: sreagent.graph.v1.Pointer.JoinKeysEntry
-	nil,                                  // 101: sreagent.graph.v1.PointersResponse.ByKindEntry
-	(*timestamppb.Timestamp)(nil),        // 102: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),              // 103: google.protobuf.Struct
-	(*structpb.Value)(nil),               // 104: google.protobuf.Value
+	(*AliasProposal)(nil),                // 90: sreagent.graph.v1.AliasProposal
+	(*ListProposalsRequest)(nil),         // 91: sreagent.graph.v1.ListProposalsRequest
+	(*ListProposalsResponse)(nil),        // 92: sreagent.graph.v1.ListProposalsResponse
+	(*AttributionDecision)(nil),          // 93: sreagent.graph.v1.AttributionDecision
+	(*WhyAttributedRequest)(nil),         // 94: sreagent.graph.v1.WhyAttributedRequest
+	(*WhyAttributedResponse)(nil),        // 95: sreagent.graph.v1.WhyAttributedResponse
+	(*AttributedSignalsRequest)(nil),     // 96: sreagent.graph.v1.AttributedSignalsRequest
+	(*AttributedSignal)(nil),             // 97: sreagent.graph.v1.AttributedSignal
+	(*AttributedSignalsResponse)(nil),    // 98: sreagent.graph.v1.AttributedSignalsResponse
+	(*ExtentRequest)(nil),                // 99: sreagent.graph.v1.ExtentRequest
+	(*Extent)(nil),                       // 100: sreagent.graph.v1.Extent
+	(*SourceExtent)(nil),                 // 101: sreagent.graph.v1.SourceExtent
+	nil,                                  // 102: sreagent.graph.v1.Pointer.AttributesEntry
+	nil,                                  // 103: sreagent.graph.v1.Pointer.JoinKeysEntry
+	nil,                                  // 104: sreagent.graph.v1.PointersResponse.ByKindEntry
+	(*timestamppb.Timestamp)(nil),        // 105: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),              // 106: google.protobuf.Struct
+	(*structpb.Value)(nil),               // 107: google.protobuf.Value
 }
 var file_sreagent_graph_v1_graph_proto_depIdxs = []int32{
-	102, // 0: sreagent.graph.v1.Interval.start:type_name -> google.protobuf.Timestamp
-	102, // 1: sreagent.graph.v1.Interval.end:type_name -> google.protobuf.Timestamp
+	105, // 0: sreagent.graph.v1.Interval.start:type_name -> google.protobuf.Timestamp
+	105, // 1: sreagent.graph.v1.Interval.end:type_name -> google.protobuf.Timestamp
 	4,   // 2: sreagent.graph.v1.Pointer.kind:type_name -> sreagent.graph.v1.PointerKind
-	99,  // 3: sreagent.graph.v1.Pointer.attributes:type_name -> sreagent.graph.v1.Pointer.AttributesEntry
-	100, // 4: sreagent.graph.v1.Pointer.join_keys:type_name -> sreagent.graph.v1.Pointer.JoinKeysEntry
+	102, // 3: sreagent.graph.v1.Pointer.attributes:type_name -> sreagent.graph.v1.Pointer.AttributesEntry
+	103, // 4: sreagent.graph.v1.Pointer.join_keys:type_name -> sreagent.graph.v1.Pointer.JoinKeysEntry
 	2,   // 5: sreagent.graph.v1.Change.kind:type_name -> sreagent.graph.v1.ChangeKind
 	3,   // 6: sreagent.graph.v1.Change.actor_kind:type_name -> sreagent.graph.v1.ActorKind
 	5,   // 7: sreagent.graph.v1.Change.announcement_state:type_name -> sreagent.graph.v1.AnnouncementState
@@ -8973,20 +9260,20 @@ var file_sreagent_graph_v1_graph_proto_depIdxs = []int32{
 	10,  // 9: sreagent.graph.v1.NodeVersion.aliases:type_name -> sreagent.graph.v1.Ref
 	9,   // 10: sreagent.graph.v1.NodeVersion.valid:type_name -> sreagent.graph.v1.Interval
 	9,   // 11: sreagent.graph.v1.NodeVersion.observed:type_name -> sreagent.graph.v1.Interval
-	103, // 12: sreagent.graph.v1.NodeVersion.props:type_name -> google.protobuf.Struct
+	106, // 12: sreagent.graph.v1.NodeVersion.props:type_name -> google.protobuf.Struct
 	11,  // 13: sreagent.graph.v1.NodeVersion.pointers:type_name -> sreagent.graph.v1.Pointer
 	12,  // 14: sreagent.graph.v1.NodeVersion.change:type_name -> sreagent.graph.v1.Change
 	13,  // 15: sreagent.graph.v1.NodeVersion.provenance:type_name -> sreagent.graph.v1.Provenance
 	15,  // 16: sreagent.graph.v1.NodeVersion.conflicts:type_name -> sreagent.graph.v1.PropConflict
 	0,   // 17: sreagent.graph.v1.NodeVersion.facets:type_name -> sreagent.graph.v1.NodeType
 	16,  // 18: sreagent.graph.v1.PropConflict.values:type_name -> sreagent.graph.v1.AssertedValue
-	104, // 19: sreagent.graph.v1.AssertedValue.value:type_name -> google.protobuf.Value
+	107, // 19: sreagent.graph.v1.AssertedValue.value:type_name -> google.protobuf.Value
 	1,   // 20: sreagent.graph.v1.EdgeVersion.type:type_name -> sreagent.graph.v1.EdgeType
 	9,   // 21: sreagent.graph.v1.EdgeVersion.valid:type_name -> sreagent.graph.v1.Interval
 	9,   // 22: sreagent.graph.v1.EdgeVersion.observed:type_name -> sreagent.graph.v1.Interval
-	103, // 23: sreagent.graph.v1.EdgeVersion.props:type_name -> google.protobuf.Struct
+	106, // 23: sreagent.graph.v1.EdgeVersion.props:type_name -> google.protobuf.Struct
 	13,  // 24: sreagent.graph.v1.EdgeVersion.provenance:type_name -> sreagent.graph.v1.Provenance
-	102, // 25: sreagent.graph.v1.EventEnvelope.source_observed_at:type_name -> google.protobuf.Timestamp
+	105, // 25: sreagent.graph.v1.EventEnvelope.source_observed_at:type_name -> google.protobuf.Timestamp
 	19,  // 26: sreagent.graph.v1.EventEnvelope.upsert_node:type_name -> sreagent.graph.v1.UpsertNode
 	20,  // 27: sreagent.graph.v1.EventEnvelope.upsert_edge:type_name -> sreagent.graph.v1.UpsertEdge
 	21,  // 28: sreagent.graph.v1.EventEnvelope.retract_node:type_name -> sreagent.graph.v1.RetractNode
@@ -9018,44 +9305,44 @@ var file_sreagent_graph_v1_graph_proto_depIdxs = []int32{
 	43,  // 54: sreagent.graph.v1.EventEnvelope.revert_correction:type_name -> sreagent.graph.v1.RevertCorrection
 	10,  // 55: sreagent.graph.v1.UpsertNode.ref:type_name -> sreagent.graph.v1.Ref
 	0,   // 56: sreagent.graph.v1.UpsertNode.type:type_name -> sreagent.graph.v1.NodeType
-	103, // 57: sreagent.graph.v1.UpsertNode.props:type_name -> google.protobuf.Struct
+	106, // 57: sreagent.graph.v1.UpsertNode.props:type_name -> google.protobuf.Struct
 	11,  // 58: sreagent.graph.v1.UpsertNode.pointers:type_name -> sreagent.graph.v1.Pointer
-	102, // 59: sreagent.graph.v1.UpsertNode.valid_at:type_name -> google.protobuf.Timestamp
+	105, // 59: sreagent.graph.v1.UpsertNode.valid_at:type_name -> google.protobuf.Timestamp
 	10,  // 60: sreagent.graph.v1.UpsertEdge.src:type_name -> sreagent.graph.v1.Ref
 	10,  // 61: sreagent.graph.v1.UpsertEdge.dst:type_name -> sreagent.graph.v1.Ref
 	1,   // 62: sreagent.graph.v1.UpsertEdge.type:type_name -> sreagent.graph.v1.EdgeType
-	103, // 63: sreagent.graph.v1.UpsertEdge.props:type_name -> google.protobuf.Struct
-	102, // 64: sreagent.graph.v1.UpsertEdge.valid_at:type_name -> google.protobuf.Timestamp
+	106, // 63: sreagent.graph.v1.UpsertEdge.props:type_name -> google.protobuf.Struct
+	105, // 64: sreagent.graph.v1.UpsertEdge.valid_at:type_name -> google.protobuf.Timestamp
 	10,  // 65: sreagent.graph.v1.RetractNode.ref:type_name -> sreagent.graph.v1.Ref
-	102, // 66: sreagent.graph.v1.RetractNode.valid_end:type_name -> google.protobuf.Timestamp
+	105, // 66: sreagent.graph.v1.RetractNode.valid_end:type_name -> google.protobuf.Timestamp
 	10,  // 67: sreagent.graph.v1.RetractEdge.src:type_name -> sreagent.graph.v1.Ref
 	10,  // 68: sreagent.graph.v1.RetractEdge.dst:type_name -> sreagent.graph.v1.Ref
 	1,   // 69: sreagent.graph.v1.RetractEdge.type:type_name -> sreagent.graph.v1.EdgeType
-	102, // 70: sreagent.graph.v1.RetractEdge.valid_end:type_name -> google.protobuf.Timestamp
+	105, // 70: sreagent.graph.v1.RetractEdge.valid_end:type_name -> google.protobuf.Timestamp
 	10,  // 71: sreagent.graph.v1.ObserveChange.ref:type_name -> sreagent.graph.v1.Ref
 	12,  // 72: sreagent.graph.v1.ObserveChange.change:type_name -> sreagent.graph.v1.Change
 	10,  // 73: sreagent.graph.v1.ObserveChange.targets:type_name -> sreagent.graph.v1.Ref
-	102, // 74: sreagent.graph.v1.ObserveChange.valid_at:type_name -> google.protobuf.Timestamp
-	102, // 75: sreagent.graph.v1.ObserveChange.valid_end:type_name -> google.protobuf.Timestamp
-	103, // 76: sreagent.graph.v1.ObserveChange.props:type_name -> google.protobuf.Struct
+	105, // 74: sreagent.graph.v1.ObserveChange.valid_at:type_name -> google.protobuf.Timestamp
+	105, // 75: sreagent.graph.v1.ObserveChange.valid_end:type_name -> google.protobuf.Timestamp
+	106, // 76: sreagent.graph.v1.ObserveChange.props:type_name -> google.protobuf.Struct
 	11,  // 77: sreagent.graph.v1.ObserveChange.pointers:type_name -> sreagent.graph.v1.Pointer
 	10,  // 78: sreagent.graph.v1.IdentityClaim.subject:type_name -> sreagent.graph.v1.Ref
 	10,  // 79: sreagent.graph.v1.IdentityClaim.claim:type_name -> sreagent.graph.v1.Ref
-	103, // 80: sreagent.graph.v1.IdentityClaim.attributes:type_name -> google.protobuf.Struct
+	106, // 80: sreagent.graph.v1.IdentityClaim.attributes:type_name -> google.protobuf.Struct
 	10,  // 81: sreagent.graph.v1.CorrelateEntity.subject:type_name -> sreagent.graph.v1.Ref
 	10,  // 82: sreagent.graph.v1.CorrelateEntity.key:type_name -> sreagent.graph.v1.Ref
-	103, // 83: sreagent.graph.v1.CorrelateEntity.attributes:type_name -> google.protobuf.Struct
+	106, // 83: sreagent.graph.v1.CorrelateEntity.attributes:type_name -> google.protobuf.Struct
 	10,  // 84: sreagent.graph.v1.SplitEntity.detach_claims:type_name -> sreagent.graph.v1.Ref
-	102, // 85: sreagent.graph.v1.SourceCheckpoint.extent_from:type_name -> google.protobuf.Timestamp
-	102, // 86: sreagent.graph.v1.SourceCheckpoint.extent_to:type_name -> google.protobuf.Timestamp
+	105, // 85: sreagent.graph.v1.SourceCheckpoint.extent_from:type_name -> google.protobuf.Timestamp
+	105, // 86: sreagent.graph.v1.SourceCheckpoint.extent_to:type_name -> google.protobuf.Timestamp
 	10,  // 87: sreagent.graph.v1.ProposeDependency.src:type_name -> sreagent.graph.v1.Ref
 	10,  // 88: sreagent.graph.v1.ProposeDependency.dst:type_name -> sreagent.graph.v1.Ref
 	1,   // 89: sreagent.graph.v1.ProposeDependency.type:type_name -> sreagent.graph.v1.EdgeType
-	103, // 90: sreagent.graph.v1.ProposeDependency.evidence:type_name -> google.protobuf.Struct
+	106, // 90: sreagent.graph.v1.ProposeDependency.evidence:type_name -> google.protobuf.Struct
 	10,  // 91: sreagent.graph.v1.ConfirmDependency.src:type_name -> sreagent.graph.v1.Ref
 	10,  // 92: sreagent.graph.v1.ConfirmDependency.dst:type_name -> sreagent.graph.v1.Ref
 	1,   // 93: sreagent.graph.v1.ConfirmDependency.type:type_name -> sreagent.graph.v1.EdgeType
-	102, // 94: sreagent.graph.v1.ConfirmDependency.valid_at:type_name -> google.protobuf.Timestamp
+	105, // 94: sreagent.graph.v1.ConfirmDependency.valid_at:type_name -> google.protobuf.Timestamp
 	10,  // 95: sreagent.graph.v1.RejectDependency.src:type_name -> sreagent.graph.v1.Ref
 	10,  // 96: sreagent.graph.v1.RejectDependency.dst:type_name -> sreagent.graph.v1.Ref
 	1,   // 97: sreagent.graph.v1.RejectDependency.type:type_name -> sreagent.graph.v1.EdgeType
@@ -9064,36 +9351,36 @@ var file_sreagent_graph_v1_graph_proto_depIdxs = []int32{
 	10,  // 100: sreagent.graph.v1.DeclareAlias.name:type_name -> sreagent.graph.v1.Ref
 	10,  // 101: sreagent.graph.v1.RetractAlias.name:type_name -> sreagent.graph.v1.Ref
 	10,  // 102: sreagent.graph.v1.ProposeAlias.name:type_name -> sreagent.graph.v1.Ref
-	103, // 103: sreagent.graph.v1.ProposeAlias.evidence:type_name -> google.protobuf.Struct
+	106, // 103: sreagent.graph.v1.ProposeAlias.evidence:type_name -> google.protobuf.Struct
 	10,  // 104: sreagent.graph.v1.RejectAlias.name:type_name -> sreagent.graph.v1.Ref
 	10,  // 105: sreagent.graph.v1.AttributeSignal.signal:type_name -> sreagent.graph.v1.Ref
 	40,  // 106: sreagent.graph.v1.AttributeSignal.entries:type_name -> sreagent.graph.v1.Attributed
 	40,  // 107: sreagent.graph.v1.AttributeSignal.suggestions:type_name -> sreagent.graph.v1.Attributed
-	103, // 108: sreagent.graph.v1.AttributeSignal.evidence:type_name -> google.protobuf.Struct
+	106, // 108: sreagent.graph.v1.AttributeSignal.evidence:type_name -> google.protobuf.Struct
 	10,  // 109: sreagent.graph.v1.CorrectAttribution.signal:type_name -> sreagent.graph.v1.Ref
 	10,  // 110: sreagent.graph.v1.CorrectAttribution.name:type_name -> sreagent.graph.v1.Ref
 	10,  // 111: sreagent.graph.v1.RecordInvestigation.subjects:type_name -> sreagent.graph.v1.Ref
 	10,  // 112: sreagent.graph.v1.RecordInvestigation.target_entities:type_name -> sreagent.graph.v1.Ref
-	102, // 113: sreagent.graph.v1.RecordInvestigation.started_at:type_name -> google.protobuf.Timestamp
-	102, // 114: sreagent.graph.v1.RecordInvestigation.ended_at:type_name -> google.protobuf.Timestamp
-	103, // 115: sreagent.graph.v1.RecordInvestigation.hypotheses:type_name -> google.protobuf.Struct
-	103, // 116: sreagent.graph.v1.RecordInvestigation.spend:type_name -> google.protobuf.Struct
-	103, // 117: sreagent.graph.v1.RecordInvestigation.model_config:type_name -> google.protobuf.Struct
+	105, // 113: sreagent.graph.v1.RecordInvestigation.started_at:type_name -> google.protobuf.Timestamp
+	105, // 114: sreagent.graph.v1.RecordInvestigation.ended_at:type_name -> google.protobuf.Timestamp
+	106, // 115: sreagent.graph.v1.RecordInvestigation.hypotheses:type_name -> google.protobuf.Struct
+	106, // 116: sreagent.graph.v1.RecordInvestigation.spend:type_name -> google.protobuf.Struct
+	106, // 117: sreagent.graph.v1.RecordInvestigation.model_config:type_name -> google.protobuf.Struct
 	10,  // 118: sreagent.graph.v1.SubmitHumanFact.entities:type_name -> sreagent.graph.v1.Ref
-	102, // 119: sreagent.graph.v1.SubmitHumanFact.concerns_from:type_name -> google.protobuf.Timestamp
-	102, // 120: sreagent.graph.v1.SubmitHumanFact.concerns_to:type_name -> google.protobuf.Timestamp
-	102, // 121: sreagent.graph.v1.SubmitHumanFact.submitted_at:type_name -> google.protobuf.Timestamp
-	102, // 122: sreagent.graph.v1.LabelInvestigation.labelled_at:type_name -> google.protobuf.Timestamp
+	105, // 119: sreagent.graph.v1.SubmitHumanFact.concerns_from:type_name -> google.protobuf.Timestamp
+	105, // 120: sreagent.graph.v1.SubmitHumanFact.concerns_to:type_name -> google.protobuf.Timestamp
+	105, // 121: sreagent.graph.v1.SubmitHumanFact.submitted_at:type_name -> google.protobuf.Timestamp
+	105, // 122: sreagent.graph.v1.LabelInvestigation.labelled_at:type_name -> google.protobuf.Timestamp
 	10,  // 123: sreagent.graph.v1.AlertTransition.monitor:type_name -> sreagent.graph.v1.Ref
-	102, // 124: sreagent.graph.v1.AlertTransition.transition_at:type_name -> google.protobuf.Timestamp
+	105, // 124: sreagent.graph.v1.AlertTransition.transition_at:type_name -> google.protobuf.Timestamp
 	10,  // 125: sreagent.graph.v1.AlertTransition.watches:type_name -> sreagent.graph.v1.Ref
 	3,   // 126: sreagent.graph.v1.AlertTransition.actor_kind:type_name -> sreagent.graph.v1.ActorKind
 	8,   // 127: sreagent.graph.v1.IngestResult.status:type_name -> sreagent.graph.v1.IngestResult.Status
-	102, // 128: sreagent.graph.v1.IngestResult.observed_at:type_name -> google.protobuf.Timestamp
+	105, // 128: sreagent.graph.v1.IngestResult.observed_at:type_name -> google.protobuf.Timestamp
 	18,  // 129: sreagent.graph.v1.IngestBatchRequest.events:type_name -> sreagent.graph.v1.EventEnvelope
 	49,  // 130: sreagent.graph.v1.IngestBatchResponse.results:type_name -> sreagent.graph.v1.IngestResult
-	102, // 131: sreagent.graph.v1.AsOf.valid_at:type_name -> google.protobuf.Timestamp
-	102, // 132: sreagent.graph.v1.AsOf.observed_at:type_name -> google.protobuf.Timestamp
+	105, // 131: sreagent.graph.v1.AsOf.valid_at:type_name -> google.protobuf.Timestamp
+	105, // 132: sreagent.graph.v1.AsOf.observed_at:type_name -> google.protobuf.Timestamp
 	10,  // 133: sreagent.graph.v1.SubgraphRequest.focus:type_name -> sreagent.graph.v1.Ref
 	54,  // 134: sreagent.graph.v1.SubgraphRequest.as_of:type_name -> sreagent.graph.v1.AsOf
 	6,   // 135: sreagent.graph.v1.SubgraphRequest.direction:type_name -> sreagent.graph.v1.Direction
@@ -9102,9 +9389,9 @@ var file_sreagent_graph_v1_graph_proto_depIdxs = []int32{
 	14,  // 138: sreagent.graph.v1.SubgraphResponse.nodes:type_name -> sreagent.graph.v1.NodeVersion
 	17,  // 139: sreagent.graph.v1.SubgraphResponse.edges:type_name -> sreagent.graph.v1.EdgeVersion
 	55,  // 140: sreagent.graph.v1.SubgraphResponse.truncation:type_name -> sreagent.graph.v1.Truncation
-	97,  // 141: sreagent.graph.v1.SubgraphResponse.extent:type_name -> sreagent.graph.v1.Extent
-	104, // 142: sreagent.graph.v1.PropertyDelta.old:type_name -> google.protobuf.Value
-	104, // 143: sreagent.graph.v1.PropertyDelta.new:type_name -> google.protobuf.Value
+	100, // 141: sreagent.graph.v1.SubgraphResponse.extent:type_name -> sreagent.graph.v1.Extent
+	107, // 142: sreagent.graph.v1.PropertyDelta.old:type_name -> google.protobuf.Value
+	107, // 143: sreagent.graph.v1.PropertyDelta.new:type_name -> google.protobuf.Value
 	14,  // 144: sreagent.graph.v1.NodeDelta.before:type_name -> sreagent.graph.v1.NodeVersion
 	14,  // 145: sreagent.graph.v1.NodeDelta.after:type_name -> sreagent.graph.v1.NodeVersion
 	58,  // 146: sreagent.graph.v1.NodeDelta.deltas:type_name -> sreagent.graph.v1.PropertyDelta
@@ -9115,10 +9402,10 @@ var file_sreagent_graph_v1_graph_proto_depIdxs = []int32{
 	3,   // 151: sreagent.graph.v1.RankedChange.actor_kind:type_name -> sreagent.graph.v1.ActorKind
 	10,  // 152: sreagent.graph.v1.RankedChange.correlation_keys:type_name -> sreagent.graph.v1.Ref
 	56,  // 153: sreagent.graph.v1.DiffRequest.subgraph:type_name -> sreagent.graph.v1.SubgraphRequest
-	102, // 154: sreagent.graph.v1.DiffRequest.t1:type_name -> google.protobuf.Timestamp
-	102, // 155: sreagent.graph.v1.DiffRequest.t2:type_name -> google.protobuf.Timestamp
-	102, // 156: sreagent.graph.v1.DiffRequest.observed_at:type_name -> google.protobuf.Timestamp
-	102, // 157: sreagent.graph.v1.DiffRequest.reference_at:type_name -> google.protobuf.Timestamp
+	105, // 154: sreagent.graph.v1.DiffRequest.t1:type_name -> google.protobuf.Timestamp
+	105, // 155: sreagent.graph.v1.DiffRequest.t2:type_name -> google.protobuf.Timestamp
+	105, // 156: sreagent.graph.v1.DiffRequest.observed_at:type_name -> google.protobuf.Timestamp
+	105, // 157: sreagent.graph.v1.DiffRequest.reference_at:type_name -> google.protobuf.Timestamp
 	14,  // 158: sreagent.graph.v1.ExcludedChange.change:type_name -> sreagent.graph.v1.NodeVersion
 	7,   // 159: sreagent.graph.v1.ExcludedChange.reason:type_name -> sreagent.graph.v1.ExclusionReason
 	14,  // 160: sreagent.graph.v1.DiffResponse.nodes_added:type_name -> sreagent.graph.v1.NodeVersion
@@ -9140,39 +9427,39 @@ var file_sreagent_graph_v1_graph_proto_depIdxs = []int32{
 	10,  // 176: sreagent.graph.v1.PointersRequest.focus:type_name -> sreagent.graph.v1.Ref
 	54,  // 177: sreagent.graph.v1.PointersRequest.as_of:type_name -> sreagent.graph.v1.AsOf
 	14,  // 178: sreagent.graph.v1.PointersResponse.node:type_name -> sreagent.graph.v1.NodeVersion
-	101, // 179: sreagent.graph.v1.PointersResponse.by_kind:type_name -> sreagent.graph.v1.PointersResponse.ByKindEntry
+	104, // 179: sreagent.graph.v1.PointersResponse.by_kind:type_name -> sreagent.graph.v1.PointersResponse.ByKindEntry
 	11,  // 180: sreagent.graph.v1.PointerList.pointers:type_name -> sreagent.graph.v1.Pointer
 	10,  // 181: sreagent.graph.v1.ResolutionAuditRequest.a:type_name -> sreagent.graph.v1.Ref
 	10,  // 182: sreagent.graph.v1.ResolutionAuditRequest.b:type_name -> sreagent.graph.v1.Ref
-	102, // 183: sreagent.graph.v1.ResolutionAuditRequest.observed_at:type_name -> google.protobuf.Timestamp
-	102, // 184: sreagent.graph.v1.ResolutionDecision.decided_at:type_name -> google.protobuf.Timestamp
+	105, // 183: sreagent.graph.v1.ResolutionAuditRequest.observed_at:type_name -> google.protobuf.Timestamp
+	105, // 184: sreagent.graph.v1.ResolutionDecision.decided_at:type_name -> google.protobuf.Timestamp
 	74,  // 185: sreagent.graph.v1.ResolutionAuditResponse.claims:type_name -> sreagent.graph.v1.IdentityClaimRecord
 	72,  // 186: sreagent.graph.v1.ResolutionAuditResponse.decisions:type_name -> sreagent.graph.v1.ResolutionDecision
 	75,  // 187: sreagent.graph.v1.ResolutionAuditResponse.correlations:type_name -> sreagent.graph.v1.CorrelationKeyRecord
 	10,  // 188: sreagent.graph.v1.IdentityClaimRecord.claim:type_name -> sreagent.graph.v1.Ref
-	103, // 189: sreagent.graph.v1.IdentityClaimRecord.attributes:type_name -> google.protobuf.Struct
-	102, // 190: sreagent.graph.v1.IdentityClaimRecord.observed_at:type_name -> google.protobuf.Timestamp
+	106, // 189: sreagent.graph.v1.IdentityClaimRecord.attributes:type_name -> google.protobuf.Struct
+	105, // 190: sreagent.graph.v1.IdentityClaimRecord.observed_at:type_name -> google.protobuf.Timestamp
 	10,  // 191: sreagent.graph.v1.CorrelationKeyRecord.key:type_name -> sreagent.graph.v1.Ref
-	103, // 192: sreagent.graph.v1.CorrelationKeyRecord.attributes:type_name -> google.protobuf.Struct
-	102, // 193: sreagent.graph.v1.CorrelationKeyRecord.observed_at:type_name -> google.protobuf.Timestamp
+	106, // 192: sreagent.graph.v1.CorrelationKeyRecord.attributes:type_name -> google.protobuf.Struct
+	105, // 193: sreagent.graph.v1.CorrelationKeyRecord.observed_at:type_name -> google.protobuf.Timestamp
 	10,  // 194: sreagent.graph.v1.NodeHistoryRequest.focus:type_name -> sreagent.graph.v1.Ref
 	14,  // 195: sreagent.graph.v1.NodeHistoryResponse.versions:type_name -> sreagent.graph.v1.NodeVersion
 	72,  // 196: sreagent.graph.v1.NodeHistoryResponse.decisions:type_name -> sreagent.graph.v1.ResolutionDecision
 	10,  // 197: sreagent.graph.v1.SuggestionsRequest.focus:type_name -> sreagent.graph.v1.Ref
 	14,  // 198: sreagent.graph.v1.Suggestion.a:type_name -> sreagent.graph.v1.NodeVersion
 	14,  // 199: sreagent.graph.v1.Suggestion.b:type_name -> sreagent.graph.v1.NodeVersion
-	102, // 200: sreagent.graph.v1.Suggestion.created_at:type_name -> google.protobuf.Timestamp
+	105, // 200: sreagent.graph.v1.Suggestion.created_at:type_name -> google.protobuf.Timestamp
 	79,  // 201: sreagent.graph.v1.SuggestionsResponse.suggestions:type_name -> sreagent.graph.v1.Suggestion
 	10,  // 202: sreagent.graph.v1.ProposedDependenciesRequest.focus:type_name -> sreagent.graph.v1.Ref
 	14,  // 203: sreagent.graph.v1.ProposedDependency.src:type_name -> sreagent.graph.v1.NodeVersion
 	14,  // 204: sreagent.graph.v1.ProposedDependency.dst:type_name -> sreagent.graph.v1.NodeVersion
 	1,   // 205: sreagent.graph.v1.ProposedDependency.type:type_name -> sreagent.graph.v1.EdgeType
-	102, // 206: sreagent.graph.v1.ProposedDependency.created_at:type_name -> google.protobuf.Timestamp
-	103, // 207: sreagent.graph.v1.ProposedDependency.evidence:type_name -> google.protobuf.Struct
-	102, // 208: sreagent.graph.v1.ProposedDependency.decided_at:type_name -> google.protobuf.Timestamp
+	105, // 206: sreagent.graph.v1.ProposedDependency.created_at:type_name -> google.protobuf.Timestamp
+	106, // 207: sreagent.graph.v1.ProposedDependency.evidence:type_name -> google.protobuf.Struct
+	105, // 208: sreagent.graph.v1.ProposedDependency.decided_at:type_name -> google.protobuf.Timestamp
 	82,  // 209: sreagent.graph.v1.ProposedDependenciesResponse.proposals:type_name -> sreagent.graph.v1.ProposedDependency
 	10,  // 210: sreagent.graph.v1.CatalogAlias.name:type_name -> sreagent.graph.v1.Ref
-	102, // 211: sreagent.graph.v1.CatalogAlias.observed_from:type_name -> google.protobuf.Timestamp
+	105, // 211: sreagent.graph.v1.CatalogAlias.observed_from:type_name -> google.protobuf.Timestamp
 	14,  // 212: sreagent.graph.v1.CatalogEntry.node:type_name -> sreagent.graph.v1.NodeVersion
 	84,  // 213: sreagent.graph.v1.CatalogEntry.aliases:type_name -> sreagent.graph.v1.CatalogAlias
 	54,  // 214: sreagent.graph.v1.ListEntriesRequest.as_of:type_name -> sreagent.graph.v1.AsOf
@@ -9181,86 +9468,95 @@ var file_sreagent_graph_v1_graph_proto_depIdxs = []int32{
 	54,  // 217: sreagent.graph.v1.GetEntryRequest.as_of:type_name -> sreagent.graph.v1.AsOf
 	85,  // 218: sreagent.graph.v1.GetEntryResponse.entry:type_name -> sreagent.graph.v1.CatalogEntry
 	14,  // 219: sreagent.graph.v1.GetEntryResponse.history:type_name -> sreagent.graph.v1.NodeVersion
-	40,  // 220: sreagent.graph.v1.AttributionDecision.entries:type_name -> sreagent.graph.v1.Attributed
-	40,  // 221: sreagent.graph.v1.AttributionDecision.suggestions:type_name -> sreagent.graph.v1.Attributed
-	103, // 222: sreagent.graph.v1.AttributionDecision.evidence:type_name -> google.protobuf.Struct
-	102, // 223: sreagent.graph.v1.AttributionDecision.decided_at:type_name -> google.protobuf.Timestamp
-	10,  // 224: sreagent.graph.v1.WhyAttributedRequest.signal:type_name -> sreagent.graph.v1.Ref
-	54,  // 225: sreagent.graph.v1.WhyAttributedRequest.as_of:type_name -> sreagent.graph.v1.AsOf
-	14,  // 226: sreagent.graph.v1.WhyAttributedResponse.signal:type_name -> sreagent.graph.v1.NodeVersion
-	90,  // 227: sreagent.graph.v1.WhyAttributedResponse.current:type_name -> sreagent.graph.v1.AttributionDecision
-	90,  // 228: sreagent.graph.v1.WhyAttributedResponse.history:type_name -> sreagent.graph.v1.AttributionDecision
-	54,  // 229: sreagent.graph.v1.AttributedSignalsRequest.as_of:type_name -> sreagent.graph.v1.AsOf
-	14,  // 230: sreagent.graph.v1.AttributedSignal.signal:type_name -> sreagent.graph.v1.NodeVersion
-	40,  // 231: sreagent.graph.v1.AttributedSignal.how:type_name -> sreagent.graph.v1.Attributed
-	94,  // 232: sreagent.graph.v1.AttributedSignalsResponse.signals:type_name -> sreagent.graph.v1.AttributedSignal
-	102, // 233: sreagent.graph.v1.Extent.earliest_observed:type_name -> google.protobuf.Timestamp
-	102, // 234: sreagent.graph.v1.Extent.latest_observed:type_name -> google.protobuf.Timestamp
-	98,  // 235: sreagent.graph.v1.Extent.sources:type_name -> sreagent.graph.v1.SourceExtent
-	102, // 236: sreagent.graph.v1.SourceExtent.last_checkpoint:type_name -> google.protobuf.Timestamp
-	9,   // 237: sreagent.graph.v1.SourceExtent.gaps:type_name -> sreagent.graph.v1.Interval
-	70,  // 238: sreagent.graph.v1.PointersResponse.ByKindEntry.value:type_name -> sreagent.graph.v1.PointerList
-	18,  // 239: sreagent.graph.v1.IngestService.Ingest:input_type -> sreagent.graph.v1.EventEnvelope
-	50,  // 240: sreagent.graph.v1.IngestService.IngestBatch:input_type -> sreagent.graph.v1.IngestBatchRequest
-	52,  // 241: sreagent.graph.v1.IngestService.RegisterSource:input_type -> sreagent.graph.v1.RegisterSourceRequest
-	56,  // 242: sreagent.graph.v1.QueryService.Subgraph:input_type -> sreagent.graph.v1.SubgraphRequest
-	62,  // 243: sreagent.graph.v1.QueryService.Diff:input_type -> sreagent.graph.v1.DiffRequest
-	65,  // 244: sreagent.graph.v1.QueryService.Impact:input_type -> sreagent.graph.v1.ImpactRequest
-	68,  // 245: sreagent.graph.v1.QueryService.Pointers:input_type -> sreagent.graph.v1.PointersRequest
-	71,  // 246: sreagent.graph.v1.QueryService.ResolutionAudit:input_type -> sreagent.graph.v1.ResolutionAuditRequest
-	76,  // 247: sreagent.graph.v1.QueryService.NodeHistory:input_type -> sreagent.graph.v1.NodeHistoryRequest
-	78,  // 248: sreagent.graph.v1.QueryService.Suggestions:input_type -> sreagent.graph.v1.SuggestionsRequest
-	81,  // 249: sreagent.graph.v1.QueryService.ProposedDependencies:input_type -> sreagent.graph.v1.ProposedDependenciesRequest
-	96,  // 250: sreagent.graph.v1.QueryService.Extent:input_type -> sreagent.graph.v1.ExtentRequest
-	26,  // 251: sreagent.graph.v1.ResolutionService.Confirm:input_type -> sreagent.graph.v1.ConfirmMerge
-	27,  // 252: sreagent.graph.v1.ResolutionService.Reject:input_type -> sreagent.graph.v1.RejectMerge
-	29,  // 253: sreagent.graph.v1.ResolutionService.Split:input_type -> sreagent.graph.v1.SplitEntity
-	28,  // 254: sreagent.graph.v1.ResolutionService.Merge:input_type -> sreagent.graph.v1.ManualMerge
-	32,  // 255: sreagent.graph.v1.ResolutionService.ConfirmDependency:input_type -> sreagent.graph.v1.ConfirmDependency
-	33,  // 256: sreagent.graph.v1.ResolutionService.RejectDependency:input_type -> sreagent.graph.v1.RejectDependency
-	35,  // 257: sreagent.graph.v1.ResolutionService.DeclareCatalogEntry:input_type -> sreagent.graph.v1.DeclareCatalogEntry
-	36,  // 258: sreagent.graph.v1.ResolutionService.DeclareAlias:input_type -> sreagent.graph.v1.DeclareAlias
-	37,  // 259: sreagent.graph.v1.ResolutionService.RetractAlias:input_type -> sreagent.graph.v1.RetractAlias
-	39,  // 260: sreagent.graph.v1.ResolutionService.RejectAlias:input_type -> sreagent.graph.v1.RejectAlias
-	42,  // 261: sreagent.graph.v1.ResolutionService.CorrectAttribution:input_type -> sreagent.graph.v1.CorrectAttribution
-	43,  // 262: sreagent.graph.v1.ResolutionService.RevertCorrection:input_type -> sreagent.graph.v1.RevertCorrection
-	86,  // 263: sreagent.graph.v1.CatalogService.ListEntries:input_type -> sreagent.graph.v1.ListEntriesRequest
-	88,  // 264: sreagent.graph.v1.CatalogService.GetEntry:input_type -> sreagent.graph.v1.GetEntryRequest
-	91,  // 265: sreagent.graph.v1.CatalogService.WhyAttributed:input_type -> sreagent.graph.v1.WhyAttributedRequest
-	93,  // 266: sreagent.graph.v1.CatalogService.AttributedSignals:input_type -> sreagent.graph.v1.AttributedSignalsRequest
-	49,  // 267: sreagent.graph.v1.IngestService.Ingest:output_type -> sreagent.graph.v1.IngestResult
-	51,  // 268: sreagent.graph.v1.IngestService.IngestBatch:output_type -> sreagent.graph.v1.IngestBatchResponse
-	53,  // 269: sreagent.graph.v1.IngestService.RegisterSource:output_type -> sreagent.graph.v1.RegisterSourceResponse
-	57,  // 270: sreagent.graph.v1.QueryService.Subgraph:output_type -> sreagent.graph.v1.SubgraphResponse
-	64,  // 271: sreagent.graph.v1.QueryService.Diff:output_type -> sreagent.graph.v1.DiffResponse
-	67,  // 272: sreagent.graph.v1.QueryService.Impact:output_type -> sreagent.graph.v1.ImpactResponse
-	69,  // 273: sreagent.graph.v1.QueryService.Pointers:output_type -> sreagent.graph.v1.PointersResponse
-	73,  // 274: sreagent.graph.v1.QueryService.ResolutionAudit:output_type -> sreagent.graph.v1.ResolutionAuditResponse
-	77,  // 275: sreagent.graph.v1.QueryService.NodeHistory:output_type -> sreagent.graph.v1.NodeHistoryResponse
-	80,  // 276: sreagent.graph.v1.QueryService.Suggestions:output_type -> sreagent.graph.v1.SuggestionsResponse
-	83,  // 277: sreagent.graph.v1.QueryService.ProposedDependencies:output_type -> sreagent.graph.v1.ProposedDependenciesResponse
-	97,  // 278: sreagent.graph.v1.QueryService.Extent:output_type -> sreagent.graph.v1.Extent
-	49,  // 279: sreagent.graph.v1.ResolutionService.Confirm:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 280: sreagent.graph.v1.ResolutionService.Reject:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 281: sreagent.graph.v1.ResolutionService.Split:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 282: sreagent.graph.v1.ResolutionService.Merge:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 283: sreagent.graph.v1.ResolutionService.ConfirmDependency:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 284: sreagent.graph.v1.ResolutionService.RejectDependency:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 285: sreagent.graph.v1.ResolutionService.DeclareCatalogEntry:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 286: sreagent.graph.v1.ResolutionService.DeclareAlias:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 287: sreagent.graph.v1.ResolutionService.RetractAlias:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 288: sreagent.graph.v1.ResolutionService.RejectAlias:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 289: sreagent.graph.v1.ResolutionService.CorrectAttribution:output_type -> sreagent.graph.v1.IngestResult
-	49,  // 290: sreagent.graph.v1.ResolutionService.RevertCorrection:output_type -> sreagent.graph.v1.IngestResult
-	87,  // 291: sreagent.graph.v1.CatalogService.ListEntries:output_type -> sreagent.graph.v1.ListEntriesResponse
-	89,  // 292: sreagent.graph.v1.CatalogService.GetEntry:output_type -> sreagent.graph.v1.GetEntryResponse
-	92,  // 293: sreagent.graph.v1.CatalogService.WhyAttributed:output_type -> sreagent.graph.v1.WhyAttributedResponse
-	95,  // 294: sreagent.graph.v1.CatalogService.AttributedSignals:output_type -> sreagent.graph.v1.AttributedSignalsResponse
-	267, // [267:295] is the sub-list for method output_type
-	239, // [239:267] is the sub-list for method input_type
-	239, // [239:239] is the sub-list for extension type_name
-	239, // [239:239] is the sub-list for extension extendee
-	0,   // [0:239] is the sub-list for field type_name
+	10,  // 220: sreagent.graph.v1.AliasProposal.name:type_name -> sreagent.graph.v1.Ref
+	106, // 221: sreagent.graph.v1.AliasProposal.evidence:type_name -> google.protobuf.Struct
+	105, // 222: sreagent.graph.v1.AliasProposal.created_at:type_name -> google.protobuf.Timestamp
+	105, // 223: sreagent.graph.v1.AliasProposal.decided_at:type_name -> google.protobuf.Timestamp
+	54,  // 224: sreagent.graph.v1.ListProposalsRequest.as_of:type_name -> sreagent.graph.v1.AsOf
+	85,  // 225: sreagent.graph.v1.ListProposalsResponse.entries:type_name -> sreagent.graph.v1.CatalogEntry
+	90,  // 226: sreagent.graph.v1.ListProposalsResponse.aliases:type_name -> sreagent.graph.v1.AliasProposal
+	40,  // 227: sreagent.graph.v1.AttributionDecision.entries:type_name -> sreagent.graph.v1.Attributed
+	40,  // 228: sreagent.graph.v1.AttributionDecision.suggestions:type_name -> sreagent.graph.v1.Attributed
+	106, // 229: sreagent.graph.v1.AttributionDecision.evidence:type_name -> google.protobuf.Struct
+	105, // 230: sreagent.graph.v1.AttributionDecision.decided_at:type_name -> google.protobuf.Timestamp
+	10,  // 231: sreagent.graph.v1.WhyAttributedRequest.signal:type_name -> sreagent.graph.v1.Ref
+	54,  // 232: sreagent.graph.v1.WhyAttributedRequest.as_of:type_name -> sreagent.graph.v1.AsOf
+	14,  // 233: sreagent.graph.v1.WhyAttributedResponse.signal:type_name -> sreagent.graph.v1.NodeVersion
+	93,  // 234: sreagent.graph.v1.WhyAttributedResponse.current:type_name -> sreagent.graph.v1.AttributionDecision
+	93,  // 235: sreagent.graph.v1.WhyAttributedResponse.history:type_name -> sreagent.graph.v1.AttributionDecision
+	54,  // 236: sreagent.graph.v1.AttributedSignalsRequest.as_of:type_name -> sreagent.graph.v1.AsOf
+	14,  // 237: sreagent.graph.v1.AttributedSignal.signal:type_name -> sreagent.graph.v1.NodeVersion
+	40,  // 238: sreagent.graph.v1.AttributedSignal.how:type_name -> sreagent.graph.v1.Attributed
+	97,  // 239: sreagent.graph.v1.AttributedSignalsResponse.signals:type_name -> sreagent.graph.v1.AttributedSignal
+	105, // 240: sreagent.graph.v1.Extent.earliest_observed:type_name -> google.protobuf.Timestamp
+	105, // 241: sreagent.graph.v1.Extent.latest_observed:type_name -> google.protobuf.Timestamp
+	101, // 242: sreagent.graph.v1.Extent.sources:type_name -> sreagent.graph.v1.SourceExtent
+	105, // 243: sreagent.graph.v1.SourceExtent.last_checkpoint:type_name -> google.protobuf.Timestamp
+	9,   // 244: sreagent.graph.v1.SourceExtent.gaps:type_name -> sreagent.graph.v1.Interval
+	70,  // 245: sreagent.graph.v1.PointersResponse.ByKindEntry.value:type_name -> sreagent.graph.v1.PointerList
+	18,  // 246: sreagent.graph.v1.IngestService.Ingest:input_type -> sreagent.graph.v1.EventEnvelope
+	50,  // 247: sreagent.graph.v1.IngestService.IngestBatch:input_type -> sreagent.graph.v1.IngestBatchRequest
+	52,  // 248: sreagent.graph.v1.IngestService.RegisterSource:input_type -> sreagent.graph.v1.RegisterSourceRequest
+	56,  // 249: sreagent.graph.v1.QueryService.Subgraph:input_type -> sreagent.graph.v1.SubgraphRequest
+	62,  // 250: sreagent.graph.v1.QueryService.Diff:input_type -> sreagent.graph.v1.DiffRequest
+	65,  // 251: sreagent.graph.v1.QueryService.Impact:input_type -> sreagent.graph.v1.ImpactRequest
+	68,  // 252: sreagent.graph.v1.QueryService.Pointers:input_type -> sreagent.graph.v1.PointersRequest
+	71,  // 253: sreagent.graph.v1.QueryService.ResolutionAudit:input_type -> sreagent.graph.v1.ResolutionAuditRequest
+	76,  // 254: sreagent.graph.v1.QueryService.NodeHistory:input_type -> sreagent.graph.v1.NodeHistoryRequest
+	78,  // 255: sreagent.graph.v1.QueryService.Suggestions:input_type -> sreagent.graph.v1.SuggestionsRequest
+	81,  // 256: sreagent.graph.v1.QueryService.ProposedDependencies:input_type -> sreagent.graph.v1.ProposedDependenciesRequest
+	99,  // 257: sreagent.graph.v1.QueryService.Extent:input_type -> sreagent.graph.v1.ExtentRequest
+	26,  // 258: sreagent.graph.v1.ResolutionService.Confirm:input_type -> sreagent.graph.v1.ConfirmMerge
+	27,  // 259: sreagent.graph.v1.ResolutionService.Reject:input_type -> sreagent.graph.v1.RejectMerge
+	29,  // 260: sreagent.graph.v1.ResolutionService.Split:input_type -> sreagent.graph.v1.SplitEntity
+	28,  // 261: sreagent.graph.v1.ResolutionService.Merge:input_type -> sreagent.graph.v1.ManualMerge
+	32,  // 262: sreagent.graph.v1.ResolutionService.ConfirmDependency:input_type -> sreagent.graph.v1.ConfirmDependency
+	33,  // 263: sreagent.graph.v1.ResolutionService.RejectDependency:input_type -> sreagent.graph.v1.RejectDependency
+	35,  // 264: sreagent.graph.v1.ResolutionService.DeclareCatalogEntry:input_type -> sreagent.graph.v1.DeclareCatalogEntry
+	36,  // 265: sreagent.graph.v1.ResolutionService.DeclareAlias:input_type -> sreagent.graph.v1.DeclareAlias
+	37,  // 266: sreagent.graph.v1.ResolutionService.RetractAlias:input_type -> sreagent.graph.v1.RetractAlias
+	39,  // 267: sreagent.graph.v1.ResolutionService.RejectAlias:input_type -> sreagent.graph.v1.RejectAlias
+	42,  // 268: sreagent.graph.v1.ResolutionService.CorrectAttribution:input_type -> sreagent.graph.v1.CorrectAttribution
+	43,  // 269: sreagent.graph.v1.ResolutionService.RevertCorrection:input_type -> sreagent.graph.v1.RevertCorrection
+	86,  // 270: sreagent.graph.v1.CatalogService.ListEntries:input_type -> sreagent.graph.v1.ListEntriesRequest
+	88,  // 271: sreagent.graph.v1.CatalogService.GetEntry:input_type -> sreagent.graph.v1.GetEntryRequest
+	91,  // 272: sreagent.graph.v1.CatalogService.ListProposals:input_type -> sreagent.graph.v1.ListProposalsRequest
+	94,  // 273: sreagent.graph.v1.CatalogService.WhyAttributed:input_type -> sreagent.graph.v1.WhyAttributedRequest
+	96,  // 274: sreagent.graph.v1.CatalogService.AttributedSignals:input_type -> sreagent.graph.v1.AttributedSignalsRequest
+	49,  // 275: sreagent.graph.v1.IngestService.Ingest:output_type -> sreagent.graph.v1.IngestResult
+	51,  // 276: sreagent.graph.v1.IngestService.IngestBatch:output_type -> sreagent.graph.v1.IngestBatchResponse
+	53,  // 277: sreagent.graph.v1.IngestService.RegisterSource:output_type -> sreagent.graph.v1.RegisterSourceResponse
+	57,  // 278: sreagent.graph.v1.QueryService.Subgraph:output_type -> sreagent.graph.v1.SubgraphResponse
+	64,  // 279: sreagent.graph.v1.QueryService.Diff:output_type -> sreagent.graph.v1.DiffResponse
+	67,  // 280: sreagent.graph.v1.QueryService.Impact:output_type -> sreagent.graph.v1.ImpactResponse
+	69,  // 281: sreagent.graph.v1.QueryService.Pointers:output_type -> sreagent.graph.v1.PointersResponse
+	73,  // 282: sreagent.graph.v1.QueryService.ResolutionAudit:output_type -> sreagent.graph.v1.ResolutionAuditResponse
+	77,  // 283: sreagent.graph.v1.QueryService.NodeHistory:output_type -> sreagent.graph.v1.NodeHistoryResponse
+	80,  // 284: sreagent.graph.v1.QueryService.Suggestions:output_type -> sreagent.graph.v1.SuggestionsResponse
+	83,  // 285: sreagent.graph.v1.QueryService.ProposedDependencies:output_type -> sreagent.graph.v1.ProposedDependenciesResponse
+	100, // 286: sreagent.graph.v1.QueryService.Extent:output_type -> sreagent.graph.v1.Extent
+	49,  // 287: sreagent.graph.v1.ResolutionService.Confirm:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 288: sreagent.graph.v1.ResolutionService.Reject:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 289: sreagent.graph.v1.ResolutionService.Split:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 290: sreagent.graph.v1.ResolutionService.Merge:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 291: sreagent.graph.v1.ResolutionService.ConfirmDependency:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 292: sreagent.graph.v1.ResolutionService.RejectDependency:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 293: sreagent.graph.v1.ResolutionService.DeclareCatalogEntry:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 294: sreagent.graph.v1.ResolutionService.DeclareAlias:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 295: sreagent.graph.v1.ResolutionService.RetractAlias:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 296: sreagent.graph.v1.ResolutionService.RejectAlias:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 297: sreagent.graph.v1.ResolutionService.CorrectAttribution:output_type -> sreagent.graph.v1.IngestResult
+	49,  // 298: sreagent.graph.v1.ResolutionService.RevertCorrection:output_type -> sreagent.graph.v1.IngestResult
+	87,  // 299: sreagent.graph.v1.CatalogService.ListEntries:output_type -> sreagent.graph.v1.ListEntriesResponse
+	89,  // 300: sreagent.graph.v1.CatalogService.GetEntry:output_type -> sreagent.graph.v1.GetEntryResponse
+	92,  // 301: sreagent.graph.v1.CatalogService.ListProposals:output_type -> sreagent.graph.v1.ListProposalsResponse
+	95,  // 302: sreagent.graph.v1.CatalogService.WhyAttributed:output_type -> sreagent.graph.v1.WhyAttributedResponse
+	98,  // 303: sreagent.graph.v1.CatalogService.AttributedSignals:output_type -> sreagent.graph.v1.AttributedSignalsResponse
+	275, // [275:304] is the sub-list for method output_type
+	246, // [246:275] is the sub-list for method input_type
+	246, // [246:246] is the sub-list for extension type_name
+	246, // [246:246] is the sub-list for extension extendee
+	0,   // [0:246] is the sub-list for field type_name
 }
 
 func init() { file_sreagent_graph_v1_graph_proto_init() }
@@ -9310,7 +9606,7 @@ func file_sreagent_graph_v1_graph_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sreagent_graph_v1_graph_proto_rawDesc), len(file_sreagent_graph_v1_graph_proto_rawDesc)),
 			NumEnums:      9,
-			NumMessages:   93,
+			NumMessages:   96,
 			NumExtensions: 0,
 			NumServices:   4,
 		},

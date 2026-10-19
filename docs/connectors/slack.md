@@ -114,7 +114,7 @@ sev<N>-<YYYY>-<MM>-<DD>[-<slug>]      e.g. sev2-2026-10-14-checkout-latency
 | severity | `sev<N>` |
 | title | the channel name at first sight |
 | declarer | the operator's OIDC subject for the creator (`--person U0123=<subject>`), else `slack:<team>/u_<HMAC(team, user)>` under `SRE_AGENT_SLACK_IDENTITY_KEY` |
-| targets | slug tokens the operator mapped (`--service checkout=service.name=checkout`); an unmapped token stays in the title |
+| targets | none: the [service catalog](../../specs/009-service-catalog/spec.md) attributes the incident from its slug tokens (`slack.slug=<token>`); with the deprecated `--service` flags, the tokens they map |
 
 Not declared, each with its reason in the per-poll report: a name the rule does not match; an
 exclusion marker (`test`, `drill`, `gameday`); an impossible date; a channel older than `--horizon`
@@ -134,8 +134,21 @@ export SRE_AGENT_REPORT_TOKEN=xoxb-…            # reporter app
 export SRE_AGENT_SLACK_IDENTITY_KEY=$(openssl rand -hex 32)   # store it; pseudonyms change with it
 export SRE_AGENT_SLACK_APP_TOKEN=xapp-…         # optional: the reader app's app-level token
 aisre feed slack --check                        # every credential, and what the rule matches
-aisre feed slack --deliver --doorbell --service checkout=service.name=checkout
+aisre feed slack --deliver --doorbell
 ```
+
+**Deprecated: `--service <token>=<ns>=<value>`.** Before the catalog, the operator mapped slug
+tokens to graph entities on the command line. The flags keep working as they did in 006, and the
+declaration targets the entities they map. Move them into the catalog once, then drop them:
+
+```sh
+aisre catalog import --from-slack-flags checkout=service.name=checkout --dry-run
+aisre catalog import --from-slack-flags checkout=service.name=checkout
+```
+
+Each flag becomes an entry named after the token, with the aliases `slack.slug=<token>` and the
+entity it named; a declared incident whose channel carries the token is then attributed to it. The
+flags will be removed in a later version.
 
 `--check` verifies each credential it is given, prints the rule and its version, reads the channel
 list once, and lists the channels created inside the horizon that the rule matched and those it

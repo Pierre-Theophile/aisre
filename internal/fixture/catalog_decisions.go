@@ -21,6 +21,7 @@ import (
 //	  - catalog_entry: {slug: candidate-view, name: Candidate View, kind: service}
 //	  - alias: {name: datadog.log_service=candidate-api, entry: candidate-view}
 //	  - retract_alias: {name: ..., environment: production, entry: candidate-view}
+//	  - reject_alias: {name: ..., entry: candidate-view}   # a proposal a person said no to
 //	  - correct: {signal: datadog.monitor=1, entries: [infra]}
 //	  - correct: {signal: datadog.monitor=1, entries: [infra], name: datadog.log_service=candidate-api}
 //	  - revert: "#3"            # the correction at human_decisions[3], or its event id
@@ -64,6 +65,9 @@ func (d HumanDecision) catalogKind() (kind string, subject []string, set int) {
 	}
 	if a := d.RetractAlias; a != nil {
 		kind, subject, set = "retract_alias", []string{a.Name, a.Environment, a.Entry}, set+1
+	}
+	if a := d.RejectAlias; a != nil {
+		kind, subject, set = "reject_alias", []string{a.Name, a.Environment, a.Entry}, set+1
 	}
 	if c := d.Correct; c != nil {
 		scope := "signal"
@@ -125,21 +129,29 @@ func (d HumanDecision) setCatalogBody(env *graphv1.EventEnvelope, kind string, s
 			Slug: e.Slug, DisplayName: e.Name, Kind: e.kind(), Status: e.status(), Owner: e.Owner,
 			Description: e.Description, Rationale: d.Reason,
 		}}
-	case "declare_alias", "retract_alias":
+	case "declare_alias", "retract_alias", "reject_alias":
 		a := d.Alias
-		if kind == "retract_alias" {
+		switch kind {
+		case "retract_alias":
 			a = d.RetractAlias
+		case "reject_alias":
+			a = d.RejectAlias
 		}
 		name, err := parse(a.Name)
 		if err != nil {
 			return err
 		}
-		if kind == "declare_alias" {
+		switch kind {
+		case "declare_alias":
 			env.Body = &graphv1.EventEnvelope_DeclareAlias{DeclareAlias: &graphv1.DeclareAlias{
 				Name: name, Environment: a.Environment, EntrySlug: a.Entry, Rationale: d.Reason,
 			}}
-		} else {
+		case "retract_alias":
 			env.Body = &graphv1.EventEnvelope_RetractAlias{RetractAlias: &graphv1.RetractAlias{
+				Name: name, Environment: a.Environment, EntrySlug: a.Entry, Rationale: d.Reason,
+			}}
+		default:
+			env.Body = &graphv1.EventEnvelope_RejectAlias{RejectAlias: &graphv1.RejectAlias{
 				Name: name, Environment: a.Environment, EntrySlug: a.Entry, Rationale: d.Reason,
 			}}
 		}

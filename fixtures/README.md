@@ -62,8 +62,11 @@ The attributor's decisions are in `events.jsonl` as the log recorded them, since
 runs it; `TestAttributionCases` (`internal/catalog/fixtures_test.go`) runs the attributor from the
 same stream and checks that it takes exactly those decisions, that it ends on the labels, and that
 `catalog.yaml` is the declared catalog. `SRE_AGENT_GEN_FIXTURES=1` rewrites the decisions instead.
-The catalog's human decisions (`catalog_entry`, `alias`, `retract_alias`, `correct`, `revert`) are
-replayed from `human_decisions`, as merges are (`internal/fixture/catalog_decisions.go`).
+The catalog's human decisions (`catalog_entry`, `alias`, `retract_alias`, `reject_alias`,
+`correct`, `revert`) are replayed from `human_decisions`, as merges are
+(`internal/fixture/catalog_decisions.go`). `aisre eval attribution fixtures/attribution/` scores
+the attributor against the labels, and gates on it in CI (ADR-0015 Item 10); every case carries at
+least one correction, which is scored as a label.
 
 ### baseline-topology-01
 

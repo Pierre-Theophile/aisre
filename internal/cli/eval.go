@@ -53,7 +53,7 @@ func newEvalCommand(global *globalOptions) *cobra.Command {
 			return exitWith(ExitUsage, cmd.Help())
 		},
 	}
-	cmd.AddCommand(newEvalRunCommand(global), newEvalPowerCommand(global), newEvalRetrievalCommand(global))
+	cmd.AddCommand(newEvalRunCommand(global), newEvalPowerCommand(global), newEvalRetrievalCommand(global), newEvalAttributionCommand(global))
 	return cmd
 }
 

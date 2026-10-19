@@ -824,6 +824,29 @@ message ListEntriesResponse { repeated CatalogEntry entries = 1; repeated Catalo
 message GetEntryRequest { string slug = 1; AsOf as_of = 2; }
 message GetEntryResponse { CatalogEntry entry = 1; repeated NodeVersion history = 2; }
 
+// A probable rule's suggestion that a name belongs to an entry (research R9). `status` is pending,
+// accepted (a person declared the alias), rejected (a person said no, durably) or conflict (a rule
+// proposed it again after a rejection).
+message AliasProposal {
+  string proposal_key = 1;
+  Ref name = 2;
+  string environment = 3;
+  string entry_slug = 4;
+  string rule_id = 5;
+  double score = 6;
+  string rationale = 7;
+  google.protobuf.Struct evidence = 8;
+  string status = 9;
+  google.protobuf.Timestamp created_at = 10;
+  repeated string proposed_by_event_ids = 11;
+  string decided_by = 12;
+  google.protobuf.Timestamp decided_at = 13;
+}
+// kind: entry | alias | empty for both. status filters alias proposals: empty means pending, `all`
+// means every status. Entries are the proposed ones as of as_of.
+message ListProposalsRequest { string kind = 1; string status = 2; AsOf as_of = 3; }
+message ListProposalsResponse { repeated CatalogEntry entries = 1; repeated AliasProposal aliases = 2; }
+
 // One attribution decision as the audit reads it back.
 message AttributionDecision {
   string event_id = 1;
@@ -895,6 +918,7 @@ service ResolutionService {
 service CatalogService {
   rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
   rpc GetEntry(GetEntryRequest) returns (GetEntryResponse);
+  rpc ListProposals(ListProposalsRequest) returns (ListProposalsResponse);
   rpc WhyAttributed(WhyAttributedRequest) returns (WhyAttributedResponse);
   rpc AttributedSignals(AttributedSignalsRequest) returns (AttributedSignalsResponse);
 }

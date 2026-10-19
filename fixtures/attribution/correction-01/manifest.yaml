@@ -16,6 +16,10 @@ description: >-
   and still do after everything that followed, because each correction is a new decision in
   the log and changes nothing observed before it (FR-044, SC-004). The `-1130` queries show
   each correction with its principal, and the revert, in the history (FR-045).
+
+  Discovery proposed an entry `candidate-api` for the service at 08:00, before anyone wrote the
+  catalog. From 09:00 the person's alias outranks the discovered one (`outranked_discovered` in
+  the evidence).
 schema_version: 1.0.0
 sdk_version: 0.1.0
 hand_authored: true
