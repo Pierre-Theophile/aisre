@@ -15,15 +15,23 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/catalog"
+	"github.com/Pierre-Theophile/aisre/internal/catalog/classify"
+	"github.com/Pierre-Theophile/aisre/internal/embedding"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
+	"github.com/Pierre-Theophile/aisre/pkg/knowledge"
 )
 
 // LabelsFile is the file in a case directory that says what each signal is about.
 const LabelsFile = "labels.yaml"
+
+// ClassifierFile turns layer 3 on for a case: the embedding classifier with the calibration it
+// names, over the vectors recorded beside it (embedding.VectorsFile), so a replay needs no
+// provider (FR-036).
+const ClassifierFile = "classifier.yaml"
 
 // Case is one labelled attribution case (research R13): a recorded stream, and what each of its
 // signals is about.
@@ -37,6 +45,11 @@ type Case struct {
 	// Recorded is the attributor's decisions as events.jsonl holds them.
 	Recorded []fixture.Event
 	Labels   []Label
+	// Calibration is the case's classifier calibration, nil when the case runs without layer 3.
+	Calibration *classify.Calibration
+	// Embedder is what the classifier embeds through: the case's recorded vectors, unless a
+	// recording run replaces it with a live model.
+	Embedder knowledge.Embedder
 }
 
 // Label is one signal and the entries it is about; none is `unknown`, the right answer when the
@@ -83,6 +96,23 @@ func Load(dir string) (*Case, error) {
 		}
 	}
 	c.Labels = labels.Labels
+	if raw, err := os.ReadFile(filepath.Join(dir, ClassifierFile)); err == nil {
+		var spec struct {
+			Calibration *classify.Calibration `yaml:"calibration"`
+		}
+		if err := yaml.Unmarshal(raw, &spec); err != nil || spec.Calibration == nil || spec.Calibration.Slope <= 0 {
+			return nil, fmt.Errorf("attribution: %s: want a calibration with a positive slope: %w", filepath.Join(dir, ClassifierFile), err)
+		}
+		c.Calibration = spec.Calibration
+		vectors := filepath.Join(dir, embedding.VectorsFile)
+		if _, err := os.Stat(vectors); err == nil {
+			if c.Embedder, err = embedding.LoadRecorded(vectors); err != nil {
+				return nil, err
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -150,6 +180,13 @@ func Replay(ctx context.Context, store *postgres.Store, c *Case, opts ...catalog
 		settle = max(settle, src.ReorderingWindow+time.Second)
 	}
 	var clock time.Time
+	if c.Calibration != nil {
+		if c.Embedder == nil {
+			return nil, nil, fmt.Errorf("attribution: %s has a classifier and no recorded %s; record them with `aisre eval attribution --record-vectors`",
+				c.ID, embedding.VectorsFile)
+		}
+		opts = append(opts, catalog.WithClassifier(classify.NewEmbedding(c.Embedder, *c.Calibration), time.Minute))
+	}
 	opts = append([]catalog.Option{catalog.WithClock(func() time.Time {
 		clock = clock.Add(time.Millisecond)
 		return clock

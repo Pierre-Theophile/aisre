@@ -17,8 +17,10 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
+	"github.com/Pierre-Theophile/aisre/internal/catalog"
 	"github.com/Pierre-Theophile/aisre/internal/feeders/deployrecord"
 	slackfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/slack"
+	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render/slacksink"
@@ -195,7 +197,7 @@ func runFeedSlack(ctx context.Context, global *globalOptions, opts *feedSlackOpt
 			"and a recording carries it pseudonymised")
 	}
 	if opts.check {
-		return runSlackCheck(ctx, cmd, opts, client, team, rule, services, people)
+		return runSlackCheck(ctx, cmd, global, opts, client, team, rule, services, people)
 	}
 
 	var identityKey []byte
@@ -362,7 +364,7 @@ func startSlackDoorbell(ctx context.Context, cmd *cobra.Command, baseURL string,
 // channel list — matched, and skipped with the clause that excluded each — from one read of the
 // list, or from a recording's polls with --replay. Nothing is emitted and no message is read.
 func runSlackCheck(
-	ctx context.Context, cmd *cobra.Command, opts *feedSlackOptions, client *slackx.Client, team string,
+	ctx context.Context, cmd *cobra.Command, global *globalOptions, opts *feedSlackOptions, client *slackx.Client, team string,
 	rule slackfeeder.Rule, services map[string]*graphv1.Ref, people map[string]string,
 ) error {
 	out := cmd.OutOrStdout()
@@ -433,6 +435,13 @@ func runSlackCheck(
 	if n := report.Skipped[slackfeeder.SkipPrivate]; n > 0 {
 		fmt.Fprintf(out, "  skipped: %d channel(s) — %s (not named)\n", n, slackfeeder.SkipPrivate)
 	}
+	var names []graph.Ref
+	for _, name := range report.Declared {
+		for _, token := range catalog.SlugTokens(name) {
+			names = append(names, graph.Ref{Namespace: graph.SlackSlugNamespace, Value: token})
+		}
+	}
+	renderCatalogNames(cmd, global, names)
 	fmt.Fprintf(out, "no message was read and no event was emitted\n")
 	if len(refused) > 0 {
 		return exitErrorf(ExitUsage, "feed slack --check: %s refused", strings.Join(refused, " and "))

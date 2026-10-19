@@ -14,8 +14,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
+	"github.com/Pierre-Theophile/aisre/internal/catalog"
 	"github.com/Pierre-Theophile/aisre/internal/feeders/deployrecord"
 	notionfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/notion"
+	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/internal/notionx"
 	"github.com/Pierre-Theophile/aisre/internal/sanitise"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
@@ -178,10 +181,12 @@ func runFeedNotion(ctx context.Context, global *globalOptions, opts *feedNotionO
 
 	if opts.check {
 		// Everything is read and nothing leaves the process: the events go to memory and are dropped.
-		if err := f.Run(ctx, src, emit.NewMemoryEmitter(f.Describe())); err != nil {
+		memory := emit.NewMemoryEmitter(f.Describe())
+		if err := f.Run(ctx, src, memory); err != nil {
 			return exitErrorf(ExitTransport, "feed notion --check: %v", err)
 		}
 		renderNotionCheck(cmd, cfg, opts.config, integrationWorkspace, f.Report(), budget)
+		renderCatalogNames(cmd, global, notionNames(memory.Events()))
 		return nil
 	}
 
@@ -345,4 +350,24 @@ func renderNotionCheck(cmd *cobra.Command, cfg *notionfeeder.Config, configPath,
 	if budget != nil {
 		fmt.Fprintf(out, "notion budget: %s\n", budget.Report())
 	}
+}
+
+// notionNames are the catalog names of the pages a run registered: `notion.value=<database>/<value>`
+// for every value of their entity property.
+func notionNames(events []*graphv1.EventEnvelope) []graph.Ref {
+	var out []graph.Ref
+	for _, ev := range events {
+		node := ev.GetUpsertNode()
+		if node == nil || node.GetType() != graphv1.NodeType_KNOWLEDGE_DOC {
+			continue
+		}
+		fields := node.GetProps().GetFields()
+		database := fields[graph.NotionDatabaseProp].GetStringValue()
+		for _, v := range fields[graph.NotionValuesProp].GetListValue().GetValues() {
+			if value := v.GetStringValue(); database != "" && value != "" {
+				out = append(out, catalog.NotionValueRef(database, value))
+			}
+		}
+	}
+	return out
 }

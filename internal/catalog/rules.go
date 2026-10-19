@@ -4,6 +4,7 @@ package catalog
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -34,6 +35,8 @@ import (
 const (
 	RuleCorrection = "H"
 	RuleAlias      = "A1"
+	// RuleClassifier is layer 3: the configured classifier's calibrated score (research R6).
+	RuleClassifier = "M"
 )
 
 // Default threshold and margin (ADR-0015 item 5). A change to either is a new ruleset version.
@@ -108,8 +111,9 @@ type Facts struct {
 
 // Entry is an entry as the probable rules read it.
 type Entry struct {
-	Display string
-	Status  string
+	Display     string
+	Status      string
+	Description string
 }
 
 // Attributed is one entry of a decision.
@@ -316,6 +320,12 @@ func (r Rules) probable(s Signal, f Facts, hiddenNames map[string]bool) []scored
 			Rationale: "probable: " + strings.Join(why, "; "),
 		}, via: via})
 	}
+	sortScored(out)
+	return out
+}
+
+// sortScored orders candidates best first, ties by slug.
+func sortScored(out []scored) {
 	slices.SortFunc(out, func(a, b scored) int {
 		if a.Score != b.Score {
 			if a.Score > b.Score {
@@ -325,7 +335,6 @@ func (r Rules) probable(s Signal, f Facts, hiddenNames map[string]bool) []scored
 		}
 		return strings.Compare(a.Slug, b.Slug)
 	})
-	return out
 }
 
 // decideProbable applies τ and δ: every entry at or above τ is attributed when it leads the best
@@ -518,4 +527,72 @@ func jaccard(a, b []string) float64 {
 		return 0
 	}
 	return float64(both) / float64(len(set))
+}
+
+// Layer 3 (research R6, FR-034, FR-035). The classifier is asked only when layers 0–2 left a
+// signal `unknown` and no name of it is hidden; its scores are decided on with the same τ and δ
+// as the probable layer.
+
+// Evidence keys of layer 3.
+const (
+	EvidenceClassifier      = "classifier"
+	EvidenceClassifierID    = "classifier_id"
+	EvidenceClassifierError = "classifier_fallback"
+)
+
+// AsksClassifier reports whether a decision is one layer 3 may change.
+func AsksClassifier(d Decision) bool {
+	_, hidden := d.Evidence["hidden_names"]
+	return len(d.Entries) == 0 && d.Evidence["decided_by"] == "unknown" && !hidden
+}
+
+// WithClassifier is the decision once the classifier id answered with scores: attributed when one
+// entry clears τ by δ, else still `unknown`, suggesting the probable layer's candidates or, when it
+// had none, the classifier's. Scores for entries not in known, or hidden, are dropped.
+func (r Rules) WithClassifier(d Decision, id string, scores []Classified, known map[string]Entry, hidden map[string]bool) Decision {
+	evidence := maps.Clone(d.Evidence)
+	evidence[EvidenceClassifierID] = id
+	byScore := map[string]any{}
+	var candidates []scored
+	for _, s := range scores {
+		if _, ok := known[s.Slug]; !ok || hidden[s.Slug] || s.Score < 0 || s.Score > 1 {
+			continue
+		}
+		score := math.Round(s.Score*1e4) / 1e4
+		byScore[s.Slug] = score
+		candidates = append(candidates, scored{
+			Attributed: Attributed{Slug: s.Slug, Layer: graph.AttributionLayerClassifier, RuleID: RuleClassifier,
+				Score: score, Rationale: s.Rationale},
+			// Every score reads the same text, so two entries over τ are one signal read two ways:
+			// `unknown`, as two entries reaching τ through one name are.
+			via: "classifier",
+		})
+	}
+	evidence[EvidenceClassifier] = byScore
+	sortScored(candidates)
+	if entries := r.decideProbable(candidates); len(entries) > 0 {
+		evidence["decided_by"] = graph.AttributionLayerClassifier
+		return Decision{Entries: entries, Evidence: evidence}
+	}
+	out := Decision{Suggestions: d.Suggestions, Evidence: evidence}
+	if len(out.Suggestions) == 0 {
+		out.Suggestions = suggestions(candidates)
+	}
+	return out
+}
+
+// WithClassifierFailure is the decision when the classifier errored, timed out or lacked a
+// credential: layers 0–2 decide, and the evidence says why layer 3 did not (FR-035).
+func WithClassifierFailure(d Decision, id string, err error) Decision {
+	evidence := maps.Clone(d.Evidence)
+	evidence[EvidenceClassifierID] = id
+	evidence[EvidenceClassifierError] = err.Error()
+	return Decision{Entries: d.Entries, Suggestions: d.Suggestions, Evidence: evidence}
+}
+
+// Classified is one classifier score, as layer 3 reads it.
+type Classified struct {
+	Slug      string
+	Score     float64
+	Rationale string
 }

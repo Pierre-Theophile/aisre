@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Layer 3 for this case: the embedding classifier over vectors.jsonl (mistral-embed, 1024).
+#
+# The calibration is a logistic regression of "this entry is the label" on the cosine, over the
+# 50 (monitor, entry) pairs of this case, with an L2 penalty of 0.001 on the slope: the pairs
+# separate, and without the penalty the slope would grow without bound. Fitted 2026-10-19 (009
+# T035). mistral-embed's cosines between short texts sit between 0.65 and 0.80, so the slope is
+# steep; another model needs its own fit.
+calibration:
+  slope: 72.4
+  intercept: -53.6

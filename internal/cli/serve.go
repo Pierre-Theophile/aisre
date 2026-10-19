@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Pierre-Theophile/aisre/internal/catalog"
+	"github.com/Pierre-Theophile/aisre/internal/catalog/classify"
 	"github.com/Pierre-Theophile/aisre/internal/embedding"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/budget"
@@ -297,7 +298,16 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 		if err != nil {
 			return err
 		}
-		attributor := catalog.New(cfg.Projector, catalog.WithLogger(logger), catalog.WithRules(rules))
+		attributorOpts := []catalog.Option{catalog.WithLogger(logger), catalog.WithRules(rules)}
+		if classifier, err := attributionClassifier(opts.modelConfig, logger); err != nil {
+			return err
+		} else if classifier != nil {
+			attributorOpts = append(attributorOpts, classifier)
+		} else {
+			// FR-034: with no classifier block, attribution needs no network and no model.
+			logger.Info("attribution: no classifier; layers 0-2 decide", "ruleset", rules.Ruleset, "classifier", "none")
+		}
+		attributor := catalog.New(cfg.Projector, attributorOpts...)
 		go attributor.Run(ctx)
 	}
 	srv, err := server.New(cfg)
@@ -755,3 +765,33 @@ func providerNames(config model.Config) string {
 // so the CLI's published spelling does not move; the Mistral one beside it is
 // model.EnvMistralAPIKey.
 const EnvAnthropicAPIKey = model.EnvAnthropicAPIKey
+
+// attributionClassifier is layer 3 as the model configuration's `attribution.classifier` block
+// names it, or nil when there is none (009 research R6, FR-034). A configured classifier whose
+// embedding model cannot run (no `embedding:` block, or its key unset) still takes part, failing
+// every call, so each decision records that layers 0–2 decided without it (FR-035).
+func attributionClassifier(configPath string, logger *slog.Logger) (catalog.Option, error) {
+	if strings.TrimSpace(configPath) == "" {
+		return nil, nil
+	}
+	config, err := model.LoadConfig(configPath)
+	if err != nil {
+		return nil, exitWith(ExitUsage, err)
+	}
+	if config.Attribution == nil || config.Attribution.Classifier == nil {
+		return nil, nil
+	}
+	c := config.Attribution.Classifier
+	calibration := classify.Calibration{Slope: c.Calibration.Slope, Intercept: c.Calibration.Intercept}
+	embedder, reason, err := embedding.FromConfig(config.Embedding)
+	if err != nil {
+		return nil, exitWith(ExitUsage, err)
+	}
+	if embedder == nil {
+		logger.Warn("attribution: the classifier is configured but cannot run; layers 0-2 decide: " + reason)
+		return catalog.WithClassifier(classify.NewUnavailable(classify.EmbeddingRule, reason), c.Timeout), nil
+	}
+	classifier := classify.NewEmbedding(embedder, calibration)
+	logger.Info("attribution: classifier enabled", "classifier", classifier.ID())
+	return catalog.WithClassifier(classifier, c.Timeout), nil
+}

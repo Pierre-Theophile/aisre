@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+version: 1
+entries:
+  - slug: checkout
+    name: Checkout
+    description: The cart, the payment page and order placement.
+  - slug: search
+    name: Search
+    description: Product search, filters and autocomplete.
+  - slug: notifications
+    name: Notifications
+    description: Emails, SMS and push messages sent to customers.
+  - slug: billing
+    name: Billing
+    description: Invoices, subscriptions, refunds and payment reconciliation.
+  - slug: identity
+    name: Identity
+    description: Login, sign-up, passwords and sessions.

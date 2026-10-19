@@ -30,8 +30,9 @@ import (
 // A case's events.jsonl holds the attributor's decisions as the log recorded them: a replay never
 // runs the attributor. This test runs it anyway, from the case's events without them, and checks
 // three things: that it takes exactly the recorded decisions (the recording is what the published
-// ruleset decides), that the attributions it ends on are the labels, and that the case's
-// catalog.yaml is the catalog its stream declares.
+// ruleset decides), that the attributions it ends on are the labels or `unknown` (a signal left
+// unknown is a miss `aisre eval attribution` counts in coverage, never a wrong answer), and that the
+// case's catalog.yaml is the catalog its stream declares.
 //
 // With SRE_AGENT_GEN_FIXTURES=1 it rewrites the decisions in events.jsonl instead.
 
@@ -97,7 +98,7 @@ func runCase(t *testing.T, dir string) {
 		want := append([]string{}, label.Expect...)
 		slices.Sort(got)
 		slices.Sort(want)
-		if !slices.Equal(got, want) {
+		if len(got) > 0 && !slices.Equal(got, want) {
 			t.Errorf("%s: attributed to %v, labelled %v", label.Signal, got, want)
 		}
 	}

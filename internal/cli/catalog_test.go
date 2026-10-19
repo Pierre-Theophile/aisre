@@ -146,6 +146,19 @@ entries:
 		!strings.Contains(out, "would record: alias slack.slug=candidate → candidate") {
 		t.Errorf("--from-slack-flags:\n%s", out)
 	}
+	cli("catalog", "import", "--from-notion-config", filepath.Join("testdata", "notion-twin-02.yaml"))
+	cli("catalog", "hide", "reporting")
+	out = cli("feed", "notion", "--config", filepath.Join("testdata", "notion-twin-02.yaml"), "--check",
+		"--replay", "../../fixtures/notion-knowledge-twin-02")
+	for _, want := range []string{
+		"catalog: 3 name(s) observed",
+		"notion.value=4e5f6071-8293-44a4-b5c6-d7e8f90a1b2c/Checkout: entry checkout\n",
+		"notion.value=4e5f6071-8293-44a4-b5c6-d7e8f90a1b2c/Reporting: hidden (entry reporting is hidden)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("feed notion --check: no %q in\n%s", want, out)
+		}
+	}
 	if _, stderr, code := run(t, context.Background(), "catalog", "import", file, "--from-slack-flags", "a=b=c",
 		"--server", baseURL, "--token", decider); code != ExitUsage || !strings.Contains(stderr, "give one of") {
 		t.Errorf("a file and a map at once: exit %d, %q", code, stderr)

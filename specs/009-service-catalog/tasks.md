@@ -147,11 +147,11 @@ interface in `pkg/attribution/`, fixtures in `fixtures/attribution/`.
 
 **Independent Test**: the Notion twin with one page under *Other*: with recorded classifier outputs, the expected entry and score; without a classifier, `unknown` and the `--check` report (spec US5).
 
-- [ ] T032 [US5] Write `pkg/attribution/classifier.go` (contracts §7) and `pkg/attribution/classifiertest/` (determinism on recorded input, scores in [0, 1], no entry outside the profiles, deadline honoured) (FR-034); fixture: unit
-- [ ] T033 [US5] Write `internal/catalog/classify/embedding.go`: the classifier of research R6 over any `pkg/knowledge.Embedder`, entry profiles from the catalog and attributed document titles, logistic calibration from configuration; passes `classifiertest` (FR-034, FR-037); fixture: unit
-- [ ] T034 [US5] Wire layer 3 into the attributor: the `attribution.classifier` block of the model configuration, the 2-second timeout, fallback to layers 0–2 recorded in the evidence on error, timeout or missing credential, and recorded outputs by input digest for fixtures (FR-035, FR-036, SC-007); fixture: unit
-- [ ] T035 [US5] Write `fixtures/attribution/classifier-01/` with recorded classifier outputs, fit the calibration parameters on it and the other labelled cases, and add layer 3 to the CI gate (FR-033); fixture: classifier-01
-- [ ] T036 [US5] Report each observed name with its entry, or `unmapped` or `hidden`, in `aisre feed notion --check` and `aisre feed slack --check`, without printing signal text (FR-060); fixture: unit (`internal/cli/testdata`)
+- [x] T032 [US5] Write `pkg/attribution/classifier.go` (contracts §7) and `pkg/attribution/classifiertest/` (determinism on recorded input, scores in [0, 1], no entry outside the profiles, deadline honoured) (FR-034); fixture: unit
+- [x] T033 [US5] Write `internal/catalog/classify/embedding.go`: the classifier of research R6 over any `pkg/knowledge.Embedder`, entry profiles from the catalog and attributed document titles, logistic calibration from configuration; passes `classifiertest` (FR-034, FR-037); fixture: unit
+- [x] T034 [US5] Wire layer 3 into the attributor: the `attribution.classifier` block of the model configuration, the 2-second timeout, fallback to layers 0–2 recorded in the evidence on error, timeout or missing credential, and recorded outputs by input digest for fixtures (FR-035, FR-036, SC-007); fixture: unit
+- [x] T035 [US5] Write `fixtures/attribution/classifier-01/` with recorded classifier outputs, fit the calibration parameters on it and the other labelled cases, and add layer 3 to the CI gate (FR-033); fixture: classifier-01
+- [x] T036 [US5] Report each observed name with its entry, or `unmapped` or `hidden`, in `aisre feed notion --check` and `aisre feed slack --check`, without printing signal text (FR-060); fixture: unit (`internal/cli/testdata`)
 
 **Checkpoint**: PR 3 code complete.
 
@@ -159,9 +159,9 @@ interface in `pkg/attribution/`, fixtures in `fixtures/attribution/`.
 
 ## Phase 9: Polish
 
-- [ ] T037 [P] Write `docs/catalog/README.md`: the catalog, aliases versus merges, the decision model and its ruleset, corrections, the classifier and how to plug another one, the evaluation; link it from `README.md`; fixture: unit (`scripts/check-specs.sh` link check)
-- [ ] T038 [P] Add OpenTelemetry spans and metrics to the attributor (decisions by layer, `unknown` rate, classifier latency and fallbacks) per the constitution's self-observability gate; fixture: unit
-- [ ] T039 Run [quickstart.md](./quickstart.md) steps 1–6 and record the run as `specs/009-service-catalog/quickstart-run-<date>.md`; fixture: attribution/*
+- [x] T037 [P] Write `docs/catalog/README.md`: the catalog, aliases versus merges, the decision model and its ruleset, corrections, the classifier and how to plug another one, the evaluation; link it from `README.md`; fixture: unit (`scripts/check-specs.sh` link check)
+- [x] T038 [P] Add OpenTelemetry spans and metrics to the attributor (decisions by layer, `unknown` rate, classifier latency and fallbacks) per the constitution's self-observability gate; fixture: unit
+- [x] T039 Run [quickstart.md](./quickstart.md) steps 1–6 and record the run as `specs/009-service-catalog/quickstart-run-<date>.md`; fixture: attribution/*
 
 **Checkpoint**: PR 3 complete; merge when green.
 

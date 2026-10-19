@@ -1,0 +1,73 @@
+# Hand-authored fixture: the classifier reads what the rules cannot (feature 009 T035, research R6).
+id: classifier-01
+family: conformance
+description: >-
+  009 US5: ten monitors on workloads whose names say nothing (`svc-a1` to `svc-j0`), and a catalog
+  of five entries described in words. No alias, no shared word, no topology and no owner: layers
+  0 to 2 leave every monitor `unknown`, and layer 3 reads the alert titles against the entries'
+  descriptions through the embedding classifier, replayed from vectors.jsonl. Eight titles are
+  about one entry; two (disk pressure, an ingress certificate) are about none, and must stay
+  `unknown`.
+
+  The calibration in classifier.yaml was fitted on this case. With it the classifier attributes
+  the five clearest titles at 0.90 to 0.95 and leaves three it reads correctly but less surely
+  (0.51 to 0.69) as suggestions; the two about nothing score under 0.04. At 10:45 Pierre says
+  503 (SMS delivery) is *Notifications*.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: k8s:shop
+    kind: kubernetes
+    ordering: none
+    reordering_window: 0s
+  - source_id: datadog:demo
+    kind: datadog
+    ordering: none
+    reordering_window: 30s
+  - source_id: sre.attributor
+    kind: attributor
+    ordering: none
+    reordering_window: 0s
+
+clock:
+  start: 2026-10-05T08:50:00Z
+  end:   2026-10-05T11:00:00Z
+
+human_decisions:
+  - catalog_entry: {slug: checkout, name: Checkout, kind: service, description: "The cart, the payment page and order placement."}
+    at: 2026-10-05T08:55:00Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written
+  - catalog_entry: {slug: search, name: Search, kind: service, description: "Product search, filters and autocomplete."}
+    at: 2026-10-05T08:55:01Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written
+  - catalog_entry: {slug: notifications, name: Notifications, kind: service, description: "Emails, SMS and push messages sent to customers."}
+    at: 2026-10-05T08:55:02Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written
+  - catalog_entry: {slug: billing, name: Billing, kind: service, description: "Invoices, subscriptions, refunds and payment reconciliation."}
+    at: 2026-10-05T08:55:03Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written
+  - catalog_entry: {slug: identity, name: Identity, kind: service, description: "Login, sign-up, passwords and sessions."}
+    at: 2026-10-05T08:55:04Z
+    principal: sre-agent-dev|operator
+    reason: the catalog as first written
+  - correct: {signal: datadog.monitor=503, entries: [notifications]}
+    at: 2026-10-05T10:45:00Z
+    principal: sre-agent-dev|pierre
+    reason: SMS delivery is Notifications
+
+queries:
+  - name: order-placement-1030
+    kind: attribution
+    focus: datadog.monitor=501
+    valid_at: 2026-10-05T10:30:00Z
+  - name: disk-pressure-1030
+    kind: attribution
+    focus: datadog.monitor=509
+    valid_at: 2026-10-05T10:30:00Z
