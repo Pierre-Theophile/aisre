@@ -83,6 +83,12 @@ func (r *Runner) Run(ctx context.Context, q fixture.Query) (proto.Message, error
 		return r.engine.log.Extent(ctx)
 	case "catalog":
 		return r.engine.ListEntries(ctx, &graphv1.ListEntriesRequest{AsOf: catalogQueryAsOf(q), Status: q.Status})
+	case "proposals":
+		status := q.Status
+		if status == "" {
+			status = "all"
+		}
+		return r.engine.ListProposals(ctx, &graphv1.ListProposalsRequest{Status: status, AsOf: catalogQueryAsOf(q)})
 	case "attribution":
 		ref, err := q.FocusRef()
 		if err != nil {

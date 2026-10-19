@@ -43,6 +43,7 @@ func newCatalogCommand(global *globalOptions) *cobra.Command {
 	cmd.AddCommand(
 		newCatalogListCommand(global),
 		newCatalogShowCommand(global),
+		newCatalogProposalsCommand(global),
 		newCatalogDeclareCommand(global),
 		newCatalogConfirmCommand(global),
 		newCatalogRenameCommand(global),
@@ -144,6 +145,52 @@ func newCatalogListCommand(global *globalOptions) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&status, "status", "", "only entries with this status: proposed, confirmed or hidden")
 	cmd.Flags().StringVar(&asOf, "as-of", "", "the catalog as it was then (RFC 3339, -30m or now)")
+	return cmd
+}
+
+func newCatalogProposalsCommand(global *globalOptions) *cobra.Command {
+	var kind, status string
+	cmd := &cobra.Command{
+		Use:   "proposals",
+		Short: "List the entries and aliases discovery proposed, waiting on a person",
+		Long: "proposals lists the entries discovery proposed and the aliases it suggests, with the rule,\n" +
+			"the score and why. Accept an alias with `catalog alias accept`, reject it with\n" +
+			"`catalog alias reject`; confirm or hide an entry with `catalog confirm` or `catalog hide`.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			clients, err := newClients(global)
+			if err != nil {
+				return err
+			}
+			resp, err := clients.catalog.ListProposals(cmd.Context(), connect.NewRequest(&graphv1.ListProposalsRequest{
+				Kind: kind, Status: status,
+			}))
+			if err != nil {
+				return remoteError("catalog proposals", err)
+			}
+			p := newPrinter(cmd.OutOrStdout(), global.Output)
+			if p.json() {
+				return p.writeJSON(resp.Msg)
+			}
+			rows := make([][]string, 0, len(resp.Msg.GetEntries())+len(resp.Msg.GetAliases()))
+			for _, e := range resp.Msg.GetEntries() {
+				names := make([]string, 0, len(e.GetAliases()))
+				for _, a := range e.GetAliases() {
+					names = append(names, aliasLabel(a))
+				}
+				rows = append(rows, []string{"entry", e.GetSlug(), strings.Join(names, ", "), "D1", "", "proposed",
+					e.GetNode().GetDisplayName()})
+			}
+			for _, a := range resp.Msg.GetAliases() {
+				name := graph.RefFromProto(a.GetName())
+				rows = append(rows, []string{"alias", a.GetEntrySlug(), catalog.AliasKeyOf(name, a.GetEnvironment()),
+					a.GetRuleId(), fmt.Sprintf("%.2f", a.GetScore()), a.GetStatus(), a.GetRationale()})
+			}
+			return p.writeTable([]string{"KIND", "ENTRY", "NAMES", "RULE", "SCORE", "STATUS", "WHY"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&kind, "kind", "", "only entry or alias proposals")
+	cmd.Flags().StringVar(&status, "status", "", "alias proposals with this status: pending (default), accepted, rejected, conflict or all")
 	return cmd
 }
 
@@ -434,12 +481,14 @@ func newCatalogAliasCommand(global *globalOptions) *cobra.Command {
 			return exitWith(ExitUsage, cmd.Help())
 		},
 	}
-	for _, add := range []bool{true, false} {
+	for _, use := range []string{"add", "remove", "accept", "reject"} {
 		var env, reason string
-		use, short := "add", "Say a name denotes an entry, in every environment or one"
-		if !add {
-			use, short = "remove", "End an alias from now on; its history stays"
-		}
+		short := map[string]string{
+			"add":    "Say a name denotes an entry, in every environment or one",
+			"remove": "End an alias from now on; its history stays",
+			"accept": "Accept a proposed alias (catalog proposals lists them)",
+			"reject": "Say a name is not this entry; it is never proposed again",
+		}[use]
 		sub := &cobra.Command{
 			Use:   use + " <ns>=<value> <slug>",
 			Short: short,
@@ -458,19 +507,28 @@ func newCatalogAliasCommand(global *globalOptions) *cobra.Command {
 				}
 				rationale := decisionReason(reason, "catalog alias "+use+" "+ref.String()+" "+args[1])
 				var resp *connect.Response[graphv1.IngestResult]
-				if add {
+				what := "alias " + catalog.AliasKeyOf(ref, env) + " → " + args[1]
+				switch use {
+				case "add", "accept":
+					// Accepting a proposal is declaring the alias it proposed; the projector marks the
+					// proposal accepted.
 					resp, err = clients.resolution.DeclareAlias(cmd.Context(), connect.NewRequest(&graphv1.DeclareAlias{
 						Name: ref.Proto(), Environment: env, EntrySlug: args[1], Rationale: rationale,
 					}))
-				} else {
+				case "remove":
 					resp, err = clients.resolution.RetractAlias(cmd.Context(), connect.NewRequest(&graphv1.RetractAlias{
+						Name: ref.Proto(), Environment: env, EntrySlug: args[1], Rationale: rationale,
+					}))
+				case "reject":
+					what = "rejection of " + what
+					resp, err = clients.resolution.RejectAlias(cmd.Context(), connect.NewRequest(&graphv1.RejectAlias{
 						Name: ref.Proto(), Environment: env, EntrySlug: args[1], Rationale: rationale,
 					}))
 				}
 				if err != nil {
 					return remoteError("catalog alias "+use, err)
 				}
-				return renderDecision(cmd, global, "alias "+catalog.AliasKeyOf(ref, env)+" → "+args[1], resp.Msg)
+				return renderDecision(cmd, global, what, resp.Msg)
 			},
 		}
 		sub.Flags().StringVar(&env, "env", "", "only in this environment (default: every environment)")

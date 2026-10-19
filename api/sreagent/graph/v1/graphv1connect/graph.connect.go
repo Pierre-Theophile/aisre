@@ -114,6 +114,9 @@ const (
 	CatalogServiceListEntriesProcedure = "/sreagent.graph.v1.CatalogService/ListEntries"
 	// CatalogServiceGetEntryProcedure is the fully-qualified name of the CatalogService's GetEntry RPC.
 	CatalogServiceGetEntryProcedure = "/sreagent.graph.v1.CatalogService/GetEntry"
+	// CatalogServiceListProposalsProcedure is the fully-qualified name of the CatalogService's
+	// ListProposals RPC.
+	CatalogServiceListProposalsProcedure = "/sreagent.graph.v1.CatalogService/ListProposals"
 	// CatalogServiceWhyAttributedProcedure is the fully-qualified name of the CatalogService's
 	// WhyAttributed RPC.
 	CatalogServiceWhyAttributedProcedure = "/sreagent.graph.v1.CatalogService/WhyAttributed"
@@ -906,6 +909,7 @@ func (UnimplementedResolutionServiceHandler) RevertCorrection(context.Context, *
 type CatalogServiceClient interface {
 	ListEntries(context.Context, *connect.Request[v1.ListEntriesRequest]) (*connect.Response[v1.ListEntriesResponse], error)
 	GetEntry(context.Context, *connect.Request[v1.GetEntryRequest]) (*connect.Response[v1.GetEntryResponse], error)
+	ListProposals(context.Context, *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error)
 	WhyAttributed(context.Context, *connect.Request[v1.WhyAttributedRequest]) (*connect.Response[v1.WhyAttributedResponse], error)
 	AttributedSignals(context.Context, *connect.Request[v1.AttributedSignalsRequest]) (*connect.Response[v1.AttributedSignalsResponse], error)
 }
@@ -933,6 +937,12 @@ func NewCatalogServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(catalogServiceMethods.ByName("GetEntry")),
 			connect.WithClientOptions(opts...),
 		),
+		listProposals: connect.NewClient[v1.ListProposalsRequest, v1.ListProposalsResponse](
+			httpClient,
+			baseURL+CatalogServiceListProposalsProcedure,
+			connect.WithSchema(catalogServiceMethods.ByName("ListProposals")),
+			connect.WithClientOptions(opts...),
+		),
 		whyAttributed: connect.NewClient[v1.WhyAttributedRequest, v1.WhyAttributedResponse](
 			httpClient,
 			baseURL+CatalogServiceWhyAttributedProcedure,
@@ -952,6 +962,7 @@ func NewCatalogServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type catalogServiceClient struct {
 	listEntries       *connect.Client[v1.ListEntriesRequest, v1.ListEntriesResponse]
 	getEntry          *connect.Client[v1.GetEntryRequest, v1.GetEntryResponse]
+	listProposals     *connect.Client[v1.ListProposalsRequest, v1.ListProposalsResponse]
 	whyAttributed     *connect.Client[v1.WhyAttributedRequest, v1.WhyAttributedResponse]
 	attributedSignals *connect.Client[v1.AttributedSignalsRequest, v1.AttributedSignalsResponse]
 }
@@ -964,6 +975,11 @@ func (c *catalogServiceClient) ListEntries(ctx context.Context, req *connect.Req
 // GetEntry calls sreagent.graph.v1.CatalogService.GetEntry.
 func (c *catalogServiceClient) GetEntry(ctx context.Context, req *connect.Request[v1.GetEntryRequest]) (*connect.Response[v1.GetEntryResponse], error) {
 	return c.getEntry.CallUnary(ctx, req)
+}
+
+// ListProposals calls sreagent.graph.v1.CatalogService.ListProposals.
+func (c *catalogServiceClient) ListProposals(ctx context.Context, req *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error) {
+	return c.listProposals.CallUnary(ctx, req)
 }
 
 // WhyAttributed calls sreagent.graph.v1.CatalogService.WhyAttributed.
@@ -980,6 +996,7 @@ func (c *catalogServiceClient) AttributedSignals(ctx context.Context, req *conne
 type CatalogServiceHandler interface {
 	ListEntries(context.Context, *connect.Request[v1.ListEntriesRequest]) (*connect.Response[v1.ListEntriesResponse], error)
 	GetEntry(context.Context, *connect.Request[v1.GetEntryRequest]) (*connect.Response[v1.GetEntryResponse], error)
+	ListProposals(context.Context, *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error)
 	WhyAttributed(context.Context, *connect.Request[v1.WhyAttributedRequest]) (*connect.Response[v1.WhyAttributedResponse], error)
 	AttributedSignals(context.Context, *connect.Request[v1.AttributedSignalsRequest]) (*connect.Response[v1.AttributedSignalsResponse], error)
 }
@@ -1003,6 +1020,12 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 		connect.WithSchema(catalogServiceMethods.ByName("GetEntry")),
 		connect.WithHandlerOptions(opts...),
 	)
+	catalogServiceListProposalsHandler := connect.NewUnaryHandler(
+		CatalogServiceListProposalsProcedure,
+		svc.ListProposals,
+		connect.WithSchema(catalogServiceMethods.ByName("ListProposals")),
+		connect.WithHandlerOptions(opts...),
+	)
 	catalogServiceWhyAttributedHandler := connect.NewUnaryHandler(
 		CatalogServiceWhyAttributedProcedure,
 		svc.WhyAttributed,
@@ -1021,6 +1044,8 @@ func NewCatalogServiceHandler(svc CatalogServiceHandler, opts ...connect.Handler
 			catalogServiceListEntriesHandler.ServeHTTP(w, r)
 		case CatalogServiceGetEntryProcedure:
 			catalogServiceGetEntryHandler.ServeHTTP(w, r)
+		case CatalogServiceListProposalsProcedure:
+			catalogServiceListProposalsHandler.ServeHTTP(w, r)
 		case CatalogServiceWhyAttributedProcedure:
 			catalogServiceWhyAttributedHandler.ServeHTTP(w, r)
 		case CatalogServiceAttributedSignalsProcedure:
@@ -1040,6 +1065,10 @@ func (UnimplementedCatalogServiceHandler) ListEntries(context.Context, *connect.
 
 func (UnimplementedCatalogServiceHandler) GetEntry(context.Context, *connect.Request[v1.GetEntryRequest]) (*connect.Response[v1.GetEntryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.CatalogService.GetEntry is not implemented"))
+}
+
+func (UnimplementedCatalogServiceHandler) ListProposals(context.Context, *connect.Request[v1.ListProposalsRequest]) (*connect.Response[v1.ListProposalsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.CatalogService.ListProposals is not implemented"))
 }
 
 func (UnimplementedCatalogServiceHandler) WhyAttributed(context.Context, *connect.Request[v1.WhyAttributedRequest]) (*connect.Response[v1.WhyAttributedResponse], error) {

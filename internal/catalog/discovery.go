@@ -255,8 +255,7 @@ func (a *Attributor) proposeAlias(ctx context.Context, name Name, slug, rule str
 	return a.append(ctx, "propose_alias", []string{graph.AliasKey(name.Ref, name.Environment, slug), rule},
 		&graphv1.EventEnvelope{Body: &graphv1.EventEnvelope_ProposeAlias{ProposeAlias: &graphv1.ProposeAlias{
 			Name: name.Ref.Proto(), Environment: name.Environment, EntrySlug: slug, RuleId: rule, Score: score,
-			Rationale: fmt.Sprintf("%s and %s are the same service by name (%s)",
-				NameText(name.Ref), slug, rule),
+			Rationale: fmt.Sprintf("%s is named like the entry %s (%s)", name, slug, rule),
 			Evidence: ev,
 		}}})
 }

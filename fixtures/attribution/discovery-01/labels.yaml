@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# What each signal is about once a person has gone through discovery's proposals (research R13).
+labels:
+  - signal: datadog.monitor=101
+    expect: [candidate-view]
+  - signal: gcp.monitoring.alert_policy=projects/twin-production/alertPolicies/5566778899
+    expect: [candidate-view]
+  - signal: notion.page=d4000000-0000-4000-8000-000000000021
+    expect: [candidate-view]
+  - signal: notion.page=d4000000-0000-4000-8000-000000000022
+    expect: []

@@ -1,0 +1,94 @@
+# Hand-authored fixture: discovery on an empty catalog (feature 009 T024, FR-010–FR-015, SC-008).
+id: discovery-01
+family: conformance
+description: >-
+  009 US2: nobody wrote a catalog, and the agent proposes one.
+
+  The production `candidate-api` is seen by Datadog at 14:00:20 and by Cloud Run at 14:00; 001
+  keeps them two entities, since nothing certain says they are one. Two postmortems from the
+  Notion twin are filed under "Candidate View" and "Other". Discovery proposes one entry per
+  service entity and per Notion value, never a merge: the Cloud Run service names the entry
+  `candidate-api`, the Datadog one shares its name and is proposed as its alias (`P1`), and
+  `candidate-api`'s names are proposed as *Candidate View*'s (`P2`, 0.65, by the shared token).
+  Until a person decides, signals are attributed to the proposed entries.
+
+  At 14:20 a person hides *Other* ("not a service"); at 14:40 they confirm *Candidate View*,
+  accept the `P2` suggestion, reject the `P1` one and give *Candidate View* the Datadog service
+  instead. The monitor, the alert policy and the Candidate View postmortem are then *Candidate
+  View*'s, and the Other postmortem is nobody's. `candidate-api` stays a proposed entry with no
+  names: a proposal is a person's to confirm or hide, never withdrawn by the agent.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: gcp:twin
+    kind: gcp
+    ordering: none
+    reordering_window: 10m0s
+  - source_id: datadog:demo
+    kind: datadog
+    ordering: none
+    reordering_window: 30s
+  - source_id: notion:twin
+    kind: notion
+    ordering: none
+    reordering_window: 0s
+  - source_id: sre.attributor
+    kind: attributor
+    ordering: none
+    reordering_window: 0s
+
+clock:
+  start: 2026-09-21T13:50:00Z
+  end:   2026-09-21T16:00:00Z
+
+human_decisions:
+  - catalog_entry: {slug: other, name: Other, kind: service, status: hidden}
+    at: 2026-09-21T14:20:00Z
+    principal: sre-agent-dev|operator
+    reason: Other is the postmortem database's catch-all, not a service
+  - catalog_entry: {slug: candidate-view, name: Candidate View, kind: service}
+    at: 2026-09-21T14:40:00Z
+    principal: sre-agent-dev|pierre
+    reason: Candidate View is ours
+  - alias: {name: gcp.cloudrun.service=twin-production/europe-west1/candidate-api, entry: candidate-view}
+    at: 2026-09-21T14:40:01Z
+    principal: sre-agent-dev|pierre
+    reason: accepted the P2 suggestion, the Cloud Run service is Candidate View's API
+  - reject_alias: {name: datadog.service=production/candidate-api, entry: candidate-api}
+    at: 2026-09-21T14:40:02Z
+    principal: sre-agent-dev|pierre
+    reason: there is no candidate-api service of its own
+  - alias: {name: datadog.service=production/candidate-api, entry: candidate-view}
+    at: 2026-09-21T14:40:03Z
+    principal: sre-agent-dev|pierre
+    reason: the Datadog service is the same API
+
+queries:
+  - name: catalog-1415
+    kind: catalog
+    valid_at: 2026-09-21T14:15:00Z
+  - name: catalog-1500
+    kind: catalog
+    valid_at: 2026-09-21T15:00:00Z
+  - name: proposals-1500
+    kind: proposals
+    valid_at: 2026-09-21T15:00:00Z
+  - name: monitor-1500
+    kind: attribution
+    focus: datadog.monitor=101
+    valid_at: 2026-09-21T15:00:00Z
+  - name: policy-1500
+    kind: attribution
+    focus: gcp.monitoring.alert_policy=projects/twin-production/alertPolicies/5566778899
+    valid_at: 2026-09-21T15:00:00Z
+  - name: candidate-view-postmortem-1500
+    kind: attribution
+    focus: notion.page=d4000000-0000-4000-8000-000000000021
+    valid_at: 2026-09-21T15:00:00Z
+  - name: other-postmortem-1500
+    kind: attribution
+    focus: notion.page=d4000000-0000-4000-8000-000000000022
+    valid_at: 2026-09-21T15:00:00Z
