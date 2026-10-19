@@ -35,7 +35,9 @@ type world struct {
 	at  time.Time
 }
 
-func newWorld(t *testing.T) *world {
+// newWorld is a graph with the attributor's discovery off unless opts turn it on: most of these
+// tests are about the decision layers, and discovery would propose an entry for every service.
+func newWorld(t *testing.T, opts ...catalog.Option) *world {
 	t.Helper()
 	p := projector.New(pgtest.Open(t))
 	for _, src := range []string{"datadog:test", "human"} {
@@ -46,10 +48,10 @@ func newWorld(t *testing.T) *world {
 		}
 	}
 	w := &world{t: t, p: p, at: time.Date(2026, 10, 19, 9, 0, 0, 0, time.UTC)}
-	w.a = catalog.New(p, catalog.WithClock(func() time.Time {
+	w.a = catalog.New(p, append([]catalog.Option{catalog.WithDiscovery(false), catalog.WithClock(func() time.Time {
 		w.at = w.at.Add(time.Millisecond)
 		return w.at
-	}))
+	})}, opts...)...)
 	if err := w.a.Register(context.Background()); err != nil {
 		t.Fatalf("register the attributor: %v", err)
 	}

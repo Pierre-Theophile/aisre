@@ -15,7 +15,8 @@ import (
 //
 //	0 correction  H   a person corrected this signal, or one of its names (a name-level correction
 //	                  is an alias the correction decided)                                  1.0
-//	1 alias       A1  one of its names is an alias of an entry, exactly (research R2)      1.0
+//	1 alias       A1  one of its names is an alias of an entry, exactly (research R2); an alias a
+//	                  person decided outranks one discovery carried over (rule D1)          1.0
 //	2 probable    P1–P4, noisy-OR per entry                                  (feature 009 PR 2)
 //	3 classifier  M   optional                                               (feature 009 PR 3)
 //
@@ -53,6 +54,10 @@ type Alias struct {
 	Slug string
 	// ByCorrection says a name-level correction decided it, which makes it layer 0.
 	ByCorrection bool
+	// Discovered says discovery carried it over from an entity's own claims (rule D1) and no person
+	// decided it. An alias a person decided outranks it: a catalog someone wrote is not overruled
+	// by the one the agent proposed before they did.
+	Discovered bool
 }
 
 // Facts is the part of the catalog a decision reads.
@@ -100,6 +105,7 @@ func (r Rules) Decide(s Signal, f Facts) Decision {
 	}
 
 	byName, byCorrection, hidden := map[string][]string{}, map[string][]string{}, []string{}
+	byDiscovery := map[string][]string{}
 	for _, name := range s.Names {
 		for _, alias := range f.Aliases {
 			if !alias.matches(name) {
@@ -112,6 +118,8 @@ func (r Rules) Decide(s Signal, f Facts) Decision {
 				hidden = append(hidden, name.String())
 			case alias.ByCorrection:
 				byCorrection[alias.Slug] = append(byCorrection[alias.Slug], name.String())
+			case alias.Discovered:
+				byDiscovery[alias.Slug] = append(byDiscovery[alias.Slug], name.String())
 			default:
 				byName[alias.Slug] = append(byName[alias.Slug], name.String())
 			}
@@ -119,6 +127,11 @@ func (r Rules) Decide(s Signal, f Facts) Decision {
 	}
 	if len(hidden) > 0 {
 		evidence["hidden_names"] = anyList(sortedUnique(hidden))
+	}
+	if len(byName) == 0 {
+		byName = byDiscovery
+	} else if len(byDiscovery) > 0 {
+		evidence["outranked_discovered"] = matchedEvidence(byDiscovery)
 	}
 	if len(byName) > 0 {
 		evidence[graph.AttributionLayerAlias] = matchedEvidence(byName)
@@ -192,4 +205,96 @@ func anyList(in []string) []any {
 		out = append(out, s)
 	}
 	return out
+}
+
+// Name matching for the probable rules (research R5): P1 compares names after normalisation, P2
+// by the overlap of their tokens.
+const (
+	RuleNormalised = "P1"
+	RuleTokens     = "P2"
+
+	// ScoreNormalised is P1's starting score.
+	ScoreNormalised = 0.85
+	// tokenFloor is the Jaccard index below which P2 does not fire.
+	tokenFloor = 0.5
+)
+
+// trailingKinds are the deployment suffixes P1 ignores: `candidate-api` and `candidate` are the
+// same service by name.
+var trailingKinds = map[string]bool{"api": true, "svc": true, "service": true, "web": true, "worker": true}
+
+// NameText is the part of a ref a person would call the service: the last segment of its value,
+// so `datadog.service=production/candidate-api` reads `candidate-api` and
+// `notion.value=<database>/Candidate View` reads `Candidate View`.
+func NameText(ref graph.Ref) string {
+	value := ref.Value
+	if i := strings.LastIndex(value, "/"); i >= 0 {
+		value = value[i+1:]
+	}
+	return value
+}
+
+// Tokens are a name's words, lower-cased, with a trailing deployment suffix dropped.
+func Tokens(s string) []string {
+	tokens := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	})
+	if len(tokens) > 1 && trailingKinds[tokens[len(tokens)-1]] {
+		tokens = tokens[:len(tokens)-1]
+	}
+	return tokens
+}
+
+// Normalised is a name as P1 compares it.
+func Normalised(s string) string { return strings.Join(Tokens(s), "-") }
+
+// Slugify turns a name into an entry slug, or "" when nothing of it is left.
+func Slugify(s string) string {
+	slug := strings.Join(strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	}), "-")
+	if len(slug) > 63 {
+		slug = strings.Trim(slug[:63], "-")
+	}
+	if !graph.ValidSlug(slug) {
+		return ""
+	}
+	return slug
+}
+
+// NameScore is how strongly two names say they are the same service: P1 when they are equal after
+// normalisation, P2 when their tokens overlap enough, nothing otherwise.
+func NameScore(a, b string) (rule string, score float64) {
+	na, nb := Normalised(a), Normalised(b)
+	if na == "" || nb == "" {
+		return "", 0
+	}
+	if na == nb {
+		return RuleNormalised, ScoreNormalised
+	}
+	j := jaccard(Tokens(a), Tokens(b))
+	if j < tokenFloor {
+		return "", 0
+	}
+	return RuleTokens, 0.45 + 0.4*j
+}
+
+func jaccard(a, b []string) float64 {
+	set := map[string]int{}
+	for _, t := range sortedUnique(a) {
+		set[t]++
+	}
+	for _, t := range sortedUnique(b) {
+		set[t]++
+	}
+	both := 0
+	for _, n := range set {
+		if n == 2 {
+			both++
+		}
+	}
+	if len(set) == 0 {
+		return 0
+	}
+	return float64(both) / float64(len(set))
 }
