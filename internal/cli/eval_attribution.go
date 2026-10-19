@@ -5,13 +5,16 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Pierre-Theophile/aisre/internal/catalog"
+	"github.com/Pierre-Theophile/aisre/internal/embedding"
 	"github.com/Pierre-Theophile/aisre/internal/eval/attribution"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
 )
 
 // `aisre eval attribution <dir>...` — the attribution evaluation (009 T027, FR-061, research R13).
@@ -25,6 +28,7 @@ import (
 
 func newEvalAttributionCommand(global *globalOptions) *cobra.Command {
 	var dsn, modelConfig string
+	var recordVectors bool
 	cmd := &cobra.Command{
 		Use:   "attribution <dir>...",
 		Short: "Measure signal attribution (precision, coverage, calibration) on the labelled cases and gate on it",
@@ -37,7 +41,10 @@ func newEvalAttributionCommand(global *globalOptions) *cobra.Command {
 			"alias a person declared are reported and not gated: when they are wrong, the catalog is.\n\n" +
 			"Without --model-config the published ruleset is evaluated; with it, the ruleset its\n" +
 			"`attribution:` block names. Each case gets a database of its own, so the role in --db\n" +
-			"needs CREATEDB.",
+			"needs CREATEDB.\n\n" +
+			"A case with a classifier.yaml runs layer 3 over its recorded vectors.jsonl. --record-vectors\n" +
+			"replays those cases through the embedding model --model-config names and writes the\n" +
+			"vectors they used; it is the only path that calls an embedding provider.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cases, err := attribution.LoadAll(args...)
@@ -51,6 +58,9 @@ func newEvalAttributionCommand(global *globalOptions) *cobra.Command {
 			url, err := dsnFrom(dsn, os.Getenv(EnvDSN))
 			if err != nil {
 				return err
+			}
+			if recordVectors {
+				return recordAttributionVectors(cmd, cases, modelConfig, fixture.NewStoreFactoryFromDSN(url), rules)
 			}
 			outcomes, err := attribution.Run(cmd.Context(), fixture.NewStoreFactoryFromDSN(url), cases, catalog.WithRules(rules))
 			if err != nil {
@@ -80,7 +90,45 @@ func newEvalAttributionCommand(global *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dsn, "db", "", "PostgreSQL DSN whose role has CREATEDB (default $"+EnvDSN+")")
+	cmd.Flags().BoolVar(&recordVectors, "record-vectors", false,
+		"replay the cases that have a classifier through the live embedding model and write their vectors.jsonl")
 	cmd.Flags().StringVar(&modelConfig, "model-config", "",
 		"a model configuration whose `attribution:` block names the ruleset to evaluate (default: the published one)")
 	return cmd
+}
+
+// recordAttributionVectors writes the vectors.jsonl of every case that runs the classifier.
+func recordAttributionVectors(cmd *cobra.Command, cases []*attribution.Case, modelConfig string, newStore fixture.StoreFactory, rules catalog.Rules) error {
+	if strings.TrimSpace(modelConfig) == "" {
+		return exitErrorf(ExitUsage, "--record-vectors needs --model-config, whose embedding block names the model")
+	}
+	cfg, err := model.LoadConfig(modelConfig)
+	if err != nil {
+		return exitWith(ExitUsage, err)
+	}
+	live, reason, err := embedding.FromConfig(cfg.Embedding)
+	if err != nil {
+		return exitWith(ExitUsage, err)
+	}
+	if live == nil {
+		return exitErrorf(ExitUsage, "--record-vectors needs an embedding model: %s", reason)
+	}
+	for _, c := range cases {
+		if c.Calibration == nil {
+			continue
+		}
+		recorder := embedding.NewRecorder(live)
+		c.Embedder = recorder
+		if _, err := attribution.Run(cmd.Context(), newStore, []*attribution.Case{c}, catalog.WithRules(rules)); err != nil {
+			return exitWith(ExitTransport, err)
+		}
+		path := filepath.Join(c.Dir, embedding.VectorsFile)
+		if err := recorder.WriteFile(path); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s: recorded %s from %s\n", c.ID, embedding.VectorsFile, live.Model()); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# What each monitor is about, by what it says (research R13). The workloads' names say nothing.
+labels:
+  - signal: datadog.monitor=501
+    expect: [checkout]
+  - signal: datadog.monitor=502
+    expect: [search]
+  - signal: datadog.monitor=503
+    expect: [notifications]
+  - signal: datadog.monitor=504
+    expect: [billing]
+  - signal: datadog.monitor=505
+    expect: [identity]
+  - signal: datadog.monitor=506
+    expect: [checkout]
+  - signal: datadog.monitor=507
+    expect: [search]
+  - signal: datadog.monitor=508
+    expect: [notifications]
+  - signal: datadog.monitor=509
+    expect: []
+  - signal: datadog.monitor=510
+    expect: []
