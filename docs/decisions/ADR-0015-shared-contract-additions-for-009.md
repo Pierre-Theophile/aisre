@@ -114,8 +114,16 @@ still proceeds to `unknown` with "name the affected service(s)".
 
 ### Item 9 — the `attribution:` block of the model configuration
 
-`ruleset`, `threshold`, `margin`, and an optional `classifier` (feature 009 PR 3). Absent, the
-defaults of Item 5 apply and no classifier runs.
+`ruleset`, `threshold`, `margin`, and an optional `classifier` (feature 009 PR 3): `kind`
+(`embedding`, the one shipped), `timeout` (2 s by default) and `calibration` (`slope`, `intercept`).
+Absent, the defaults of Item 5 apply and no classifier runs.
+
+The classifier interface is `pkg/attribution.Classifier`, proven by `pkg/attribution/classifiertest`.
+Layer 3 is asked only about a signal layers 0–2 left `unknown` with no hidden name, and decided on with
+τ and δ; one text over τ for two entries stays `unknown`. An error, a timeout or a missing credential
+leaves the decision to layers 0–2, with `classifier_fallback` in the evidence. The calibration is
+per embedding model: for `mistral-embed` it is slope 72.4 and intercept −53.6, fitted on
+`fixtures/attribution/classifier-01` (logistic regression, L2 penalty 0.001 on the slope).
 
 ### Item 10 — the attribution gate
 
