@@ -11,6 +11,10 @@ production deployment.
 | `docker-compose.yml` | PostgreSQL 16 for development, tests and the quickstart |
 | `kind/` | the disposable Kubernetes cluster: kind config, two demo overlays, the scripted incidents. See [`kind/README.md`](./kind/README.md) |
 
+The container image is built from the repository's [`Dockerfile`](../Dockerfile) and published by
+[`.github/workflows/image.yml`](../.github/workflows/image.yml); see
+[The container image](#the-container-image) below.
+
 ## Start PostgreSQL
 
 ```sh
@@ -227,3 +231,45 @@ back up the database like a system of record (it is a map of your production top
 owners and its change history), run the API behind your own OIDC issuer rather than
 `--auth dev`, and give every feeder read-only credentials toward the system it observes.
 `SECURITY.md` covers the rest.
+
+## The container image
+
+Every commit on `main` and every `v*` tag publishes `ghcr.io/pierre-theophile/aisre` for
+linux/amd64 and linux/arm64:
+
+| Tag | What it is |
+|-----|------------|
+| `main` | the latest commit on `main` |
+| `sha-<short sha>` | one commit; pin a deployment to this |
+| `1.2.3`, `1.2`, `latest` | a release tag `v1.2.3` |
+
+The image holds the one binary on `distroless/static`, running as a non-root user, with
+`aisre` as its entrypoint. The same image serves the API and runs any feeder:
+
+```sh
+docker run --rm ghcr.io/pierre-theophile/aisre:main version
+docker run --rm -e PG_DSN ghcr.io/pierre-theophile/aisre:main serve --migrate --auth oidc \
+  --oidc-issuer https://login.example.com/realms/aisre --oidc-audience aisre
+```
+
+`serve` listens on `$PORT` when that is set and `--listen` is not, so it runs unchanged on Cloud
+Run, Knative and most container platforms.
+
+### On Cloud Run
+
+Cloud Run pulls from Artifact Registry or Docker Hub only. Create an Artifact Registry remote
+repository whose upstream is `https://ghcr.io`, then deploy from it:
+
+```sh
+gcloud artifacts repositories create ghcr --location=europe-west1 --repository-format=docker \
+  --mode=remote-repository --remote-docker-repo=https://ghcr.io
+gcloud run deploy aisre \
+  --image=europe-west1-docker.pkg.dev/<project>/ghcr/pierre-theophile/aisre:main \
+  --set-secrets=PG_DSN=aisre-pg-dsn:latest \
+  --args=serve,--migrate,--auth,oidc,--oidc-issuer,<issuer>,--oidc-audience,<audience>
+```
+
+The database is any PostgreSQL 16 or newer that allows the `btree_gist` extension (Cloud SQL
+does). Never deploy `--auth dev` there: its signing key is published, and `serve` refuses it
+on a non-loopback address. The identity provider must put `roles` in its tokens, and
+`source_id` in a feeder's token, because those two claims are what scope a caller.
