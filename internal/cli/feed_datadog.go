@@ -310,7 +310,7 @@ func runFeedDatadog(ctx context.Context, global *globalOptions, opts *feedDatado
 	if err != nil {
 		return exitErrorf(ExitUsage, "feed datadog: %v", err)
 	}
-	connect, err := emit.NewConnectEmitter(global.Server, global.Token, f.Describe(), emit.WithBatchSize(opts.batchSize))
+	connect, err := newFeedEmitter(global, f.Describe(), emit.WithBatchSize(opts.batchSize))
 	if err != nil {
 		return exitErrorf(ExitTransport, "feed datadog: %v", err)
 	}

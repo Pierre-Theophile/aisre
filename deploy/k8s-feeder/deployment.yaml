@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# `aisre feed k8s` running inside the cluster it watches, pushing to a remote `serve` over
+# https. Nothing listens in the cluster and no secret is stored: the feeder proves who it is
+# with a projected ServiceAccount token, audience `aisre`, which the kubelet rotates.
+#
+# Apply after deploy/kind/rbac/ (namespace, ServiceAccount, read-only ClusterRole and binding;
+# not the secrets-metadata/ overlay). Then set the two values marked SET below, and trust this
+# cluster in `serve --trusted-issuers` (README.md in this directory).
+#
+# Whoever may create pods, deployments or serviceaccounts/token in namespace sre-agent can act
+# as this feeder: keep that namespace's RBAC to the owner.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-agent-feeder-k8s
+  namespace: sre-agent
+  labels:
+    app.kubernetes.io/name: sre-agent-feeder-k8s
+    app.kubernetes.io/part-of: sre-agent
+spec:
+  replicas: 1
+  # Two feeders for one source would interleave their checkpoints.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sre-agent-feeder-k8s
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sre-agent-feeder-k8s
+        app.kubernetes.io/part-of: sre-agent
+    spec:
+      serviceAccountName: sre-agent-feeder
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: feeder
+          image: ghcr.io/pierre-theophile/aisre:main
+          args:
+            - feed
+            - k8s
+            - --server=$(AISRE_SERVER)
+            - --cluster-name=$(AISRE_CLUSTER_NAME)
+            - --source-id=k8s:$(AISRE_CLUSTER_NAME)
+            - --secrets=off
+            - --state-dir=/var/lib/aisre
+          env:
+            # SET: the https URL of your `serve`, e.g. https://aisre-xxxxxxxx-ew.a.run.app
+            - name: AISRE_SERVER
+              value: https://aisre.example.com
+            # SET: the name the graph records this cluster under. The source id derives from
+            # it and must match the grant in the trusted-issuers file.
+            - name: AISRE_CLUSTER_NAME
+              value: verda
+            - name: SRE_AGENT_TOKEN_FILE
+              value: /var/run/secrets/aisre/token
+          volumeMounts:
+            - name: aisre-token
+              mountPath: /var/run/secrets/aisre
+              readOnly: true
+            - name: state
+              mountPath: /var/lib/aisre
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        # The credential: audience `aisre` (refused by the Kubernetes API, and the only
+        # audience `serve` accepts), valid an hour, rewritten by the kubelet before it expires.
+        - name: aisre-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: aisre
+                  expirationSeconds: 3600
+                  path: token
+        # Checkpoints survive a container restart, not a reschedule; use a PVC to keep them
+        # across nodes.
+        - name: state
+          emptyDir: {}

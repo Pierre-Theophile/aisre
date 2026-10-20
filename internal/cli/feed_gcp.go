@@ -226,7 +226,7 @@ func runFeedGCP(ctx context.Context, global *globalOptions, opts *feedGCPOptions
 		src = fileSource
 	}
 
-	connect, err := emit.NewConnectEmitter(global.Server, global.Token, f.Describe(),
+	connect, err := newFeedEmitter(global, f.Describe(),
 		emit.WithBatchSize(opts.batchSize))
 	if err != nil {
 		return exitErrorf(ExitTransport, "feed gcp: %v", err)

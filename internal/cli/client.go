@@ -13,6 +13,8 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder"
+	"github.com/Pierre-Theophile/aisre/pkg/feeder/emit"
 )
 
 // Talking to the server (FR-035, FR-041a).
@@ -33,17 +35,47 @@ const clientTimeout = 60 * time.Second
 
 // bearerTransport attaches the caller's credential to every request.
 type bearerTransport struct {
-	base  http.RoundTripper
-	token string
+	base   http.RoundTripper
+	source emit.TokenSource
 }
 
 func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t.token != "" {
-		// The request must not be mutated in place: net/http may retry it.
-		req = req.Clone(req.Context())
-		req.Header.Set("Authorization", "Bearer "+t.token)
+	if t.source != nil {
+		token, err := t.source()
+		if err != nil {
+			return nil, err
+		}
+		if token != "" {
+			// The request must not be mutated in place: net/http may retry it.
+			req = req.Clone(req.Context())
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 	return t.base.RoundTrip(req)
+}
+
+// tokenSource is the caller's credential: the token file when one is given, else the token.
+// Nil means no credential.
+func tokenSource(opts *globalOptions) emit.TokenSource {
+	switch {
+	case opts.TokenFile != "":
+		return emit.TokenFile(opts.TokenFile)
+	case opts.Token != "":
+		return emit.StaticToken(opts.Token)
+	default:
+		return nil
+	}
+}
+
+// checkCredentialTransport refuses to send a credential in clear to a remote host.
+func checkCredentialTransport(opts *globalOptions, base string) error {
+	if tokenSource(opts) == nil || opts.InsecureTransport {
+		return nil
+	}
+	if err := emit.CheckTransport(base); err != nil {
+		return exitWith(ExitUsage, err)
+	}
+	return nil
 }
 
 // clientSet is one connected client per service.
@@ -60,8 +92,11 @@ func newClients(opts *globalOptions) (*clientSet, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkCredentialTransport(opts, base); err != nil {
+		return nil, err
+	}
 	httpClient := &http.Client{
-		Transport: &bearerTransport{base: http.DefaultTransport, token: opts.Token},
+		Transport: &bearerTransport{base: http.DefaultTransport, source: tokenSource(opts)},
 		Timeout:   clientTimeout,
 	}
 	return &clientSet{
@@ -121,6 +156,23 @@ func remoteError(what string, err error) error {
 	default:
 		return exitErrorf(ExitTransport, "%s: %s: %s", what, connectErr.Code(), connectErr.Message())
 	}
+}
+
+// newFeedEmitter builds a feeder's emitter against the configured server with the caller's
+// credential: the token, or the token file re-read on every call.
+func newFeedEmitter(global *globalOptions, desc feeder.Description, opts ...emit.ConnectOption) (*emit.ConnectEmitter, error) {
+	var credential []emit.ConnectOption
+	if global.TokenFile != "" {
+		credential = append(credential, emit.WithTokenSource(emit.TokenFile(global.TokenFile)))
+	}
+	if global.InsecureTransport {
+		credential = append(credential, emit.WithInsecureTransport())
+	}
+	em, err := emit.NewConnectEmitter(global.Server, global.Token, desc, append(credential, opts...)...)
+	if errors.Is(err, emit.ErrInsecureTransport) {
+		return nil, exitWith(ExitUsage, err)
+	}
+	return em, err
 }
 
 // tokenFrom resolves the bearer token from the flag, falling back to the environment.

@@ -190,7 +190,7 @@ func runFeedNotion(ctx context.Context, global *globalOptions, opts *feedNotionO
 		return nil
 	}
 
-	connectEm, err := emit.NewConnectEmitter(global.Server, global.Token, f.Describe(), emit.WithBatchSize(opts.batchSize))
+	connectEm, err := newFeedEmitter(global, f.Describe(), emit.WithBatchSize(opts.batchSize))
 	if err != nil {
 		return exitErrorf(ExitTransport, "feed notion: %v", err)
 	}

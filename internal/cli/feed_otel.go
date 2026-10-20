@@ -225,7 +225,7 @@ func feedOtelEmitter(cmd *cobra.Command, global *globalOptions, opts *feedOtelOp
 	if _, err := normalizeServerURL(global.Server); err != nil {
 		return nil, nil, err
 	}
-	em, err := emit.NewConnectEmitter(global.Server, global.Token, desc,
+	em, err := newFeedEmitter(global, desc,
 		emit.WithBatchSize(opts.batchSize),
 		emit.WithLogger(log),
 		emit.WithResultFunc(func(result *graphv1.IngestResult) {

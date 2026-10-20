@@ -110,6 +110,8 @@ type connectOptions struct {
 	logger         *slog.Logger
 	onResult       func(*graphv1.IngestResult)
 	connectOptions []connect.ClientOption
+	tokenSource    TokenSource
+	insecure       bool
 }
 
 // ConnectOption configures a ConnectEmitter.
@@ -150,6 +152,19 @@ func WithMaxBuffered(n int) ConnectOption {
 // itself.
 func WithHTTPClient(c *http.Client) ConnectOption {
 	return func(o *connectOptions) { o.httpClient = c }
+}
+
+// WithTokenSource replaces the fixed token: src is asked for the token on every call, which
+// is how a rotated token file (TokenFile) stays current. A source that fails fails the call,
+// which is retried like any transport failure.
+func WithTokenSource(src TokenSource) ConnectOption {
+	return func(o *connectOptions) { o.tokenSource = src }
+}
+
+// WithInsecureTransport allows sending the token over plaintext http to a non-loopback
+// address, which NewConnectEmitter otherwise refuses (CheckTransport).
+func WithInsecureTransport() ConnectOption {
+	return func(o *connectOptions) { o.insecure = true }
 }
 
 // WithIngestClient replaces the whole generated client, for a caller that has already built
@@ -222,10 +237,19 @@ func NewConnectEmitter(baseURL, token string, desc feeder.Description, opts ...C
 		case err != nil && client == nil:
 			return nil, err
 		case err == nil:
+			source := o.tokenSource
+			if source == nil && token != "" {
+				source = StaticToken(token)
+			}
+			if source != nil && !o.insecure {
+				if err := CheckTransport(base); err != nil {
+					return nil, err
+				}
+			}
 			httpClient := o.httpClient
 			if httpClient == nil {
 				httpClient = &http.Client{
-					Transport: &bearerTransport{base: http.DefaultTransport, token: token},
+					Transport: &bearerTransport{base: http.DefaultTransport, source: source},
 					Timeout:   DefaultHTTPTimeout,
 				}
 			}
@@ -591,15 +615,21 @@ func RedactAuthorization(h http.Header) http.Header {
 
 // bearerTransport attaches the feeder's credential to every request, streams included.
 type bearerTransport struct {
-	base  http.RoundTripper
-	token string
+	base   http.RoundTripper
+	source TokenSource
 }
 
 func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t.token != "" {
-		// net/http may retry a request, so it must not be mutated in place.
-		req = req.Clone(req.Context())
-		req.Header.Set("Authorization", "Bearer "+t.token)
+	if t.source != nil {
+		token, err := t.source()
+		if err != nil {
+			return nil, err
+		}
+		if token != "" {
+			// net/http may retry a request, so it must not be mutated in place.
+			req = req.Clone(req.Context())
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 	return t.base.RoundTrip(req)
 }
@@ -610,7 +640,7 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 func (t *bearerTransport) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String("authorization", RedactedValue),
-		slog.Bool("token_set", t.token != ""),
+		slog.Bool("token_set", t.source != nil),
 	)
 }
 
