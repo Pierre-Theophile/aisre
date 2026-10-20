@@ -273,7 +273,7 @@ func runFeedSlack(ctx context.Context, global *globalOptions, opts *feedSlackOpt
 		src = fileSource
 	}
 
-	connectEm, err := emit.NewConnectEmitter(global.Server, global.Token, f.Describe(),
+	connectEm, err := newFeedEmitter(global, f.Describe(),
 		emit.WithBatchSize(opts.batchSize))
 	if err != nil {
 		return exitErrorf(ExitTransport, "feed slack: %v", err)

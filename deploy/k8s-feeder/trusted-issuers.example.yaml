@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# `serve --auth oidc --trusted-issuers trusted-issuers.yaml`. Every entry is checked when serve
+# starts, and a mistake stops it: an unknown field, a missing audience, a wildcard subject, a
+# feeder without a source, a shared key.
+issuers:
+  # A cluster's ServiceAccount tokens. Its API server is private, so its public keys are
+  # copied here: kubectl get --raw /openid/v1/jwks > verda-jwks.json
+  # The issuer is what `kubectl get --raw /.well-known/openid-configuration` reports.
+  - name: verda-k3s
+    issuer: https://kubernetes.default.svc.cluster.local
+    audience: aisre
+    jwks_file: verda-jwks.json
+    max_lifetime: 1h
+    subjects:
+      "system:serviceaccount:sre-agent:sre-agent-feeder":
+        roles: [feeder]
+        source_id: "k8s:verda"
+
+  # People, with their Google identity. Map on `sub` (stable; read it from a decoded token),
+  # never on email alone. The audience must be one only this serve uses: a token from plain
+  # `gcloud auth print-identity-token` carries gcloud's own client id, shared by every gcloud
+  # user, so mint one with --audiences=<this audience> through a service account instead.
+  - name: google
+    issuer: https://accounts.google.com
+    audience: aisre-staging
+    jwks_url: https://www.googleapis.com/oauth2/v3/certs
+    require_email_verified: true
+    hosted_domain: example.com
+    subjects:
+      "108000000000000000001":
+        name: A. Person
+        roles: [decider]

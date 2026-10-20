@@ -82,6 +82,7 @@ type serveOptions struct {
 	oidcAudience      string
 	oidcSkipAudience  bool
 	oidcRolesClaim    string
+	trustedIssuers    string
 	otelEndpoint      string
 	otelInsecure      bool
 	migrate           bool
@@ -146,6 +147,9 @@ func newServeCommand(global *globalOptions) *cobra.Command {
 			"other way, and it widens the blast radius of a stolen token")
 	flags.StringVar(&opts.oidcRolesClaim, "oidc-roles-claim", server.DefaultRolesClaim,
 		"dotted path to the roles claim, e.g. realm_access.roles")
+	flags.StringVar(&opts.trustedIssuers, "trusted-issuers", "",
+		"YAML file of workload token issuers (a cluster's ServiceAccount tokens, GitHub Actions, "+
+			"Google) and the exact subjects each may vouch for (--auth oidc; see deploy/README.md)")
 	flags.StringVar(&opts.otelEndpoint, "otel-endpoint", "",
 		"OTLP collector endpoint (default $OTEL_EXPORTER_OTLP_ENDPOINT; empty exports nothing)")
 	flags.BoolVar(&opts.otelInsecure, "otel-insecure", false,
@@ -341,6 +345,10 @@ func newAuthenticator(ctx context.Context, opts *serveOptions, logger *slog.Logg
 		if err := checkDevListen(opts.listen, opts.devUsers, opts.devInsecureListen); err != nil {
 			return nil, err
 		}
+		if opts.trustedIssuers != "" {
+			return nil, exitErrorf(ExitUsage,
+				"--trusted-issuers needs --auth oidc: the dev provider trusts its own published key only")
+		}
 		auth, err := server.NewDevAuthenticator(server.DevConfig{
 			Enabled:   opts.dev,
 			UsersFile: opts.devUsers,
@@ -353,8 +361,12 @@ func newAuthenticator(ctx context.Context, opts *serveOptions, logger *slog.Logg
 		return auth, nil
 	case authModeOIDC:
 		if opts.oidcIssuer == "" {
+			if opts.trustedIssuers != "" {
+				// Workload identities only: no organisation IdP for people.
+				return newWorkloadAuthenticator(ctx, opts.trustedIssuers, nil, logger)
+			}
 			return nil, exitErrorf(ExitUsage,
-				"--auth oidc requires --oidc-issuer (or use --auth dev --dev locally)")
+				"--auth oidc requires --oidc-issuer or --trusted-issuers (or use --auth dev --dev locally)")
 		}
 		// The audience check is what stops a token minted for another service being replayed
 		// at the graph. Turning it off is legitimate for a provider that scopes tokens some
@@ -388,10 +400,28 @@ func newAuthenticator(ctx context.Context, opts *serveOptions, logger *slog.Logg
 		if err != nil {
 			return nil, exitWith(ExitTransport, err)
 		}
+		if opts.trustedIssuers != "" {
+			return newWorkloadAuthenticator(ctx, opts.trustedIssuers, auth, logger)
+		}
 		return auth, nil
 	default:
 		return nil, exitErrorf(ExitUsage, "--auth %q: want %s or %s", opts.authMode, authModeOIDC, authModeDev)
 	}
+}
+
+// newWorkloadAuthenticator loads the trusted-issuers file. Tokens from an issuer it does not
+// list go to fallback, the organisation's OIDC provider, when there is one.
+func newWorkloadAuthenticator(ctx context.Context, path string, fallback server.Authenticator, logger *slog.Logger) (server.Authenticator, error) {
+	cfg, base, err := server.LoadWorkloadConfig(path)
+	if err != nil {
+		return nil, exitWith(ExitUsage, err)
+	}
+	auth, err := server.NewWorkloadAuthenticator(ctx, cfg,
+		server.WorkloadOptions{BaseDir: base, Fallback: fallback, Logger: logger})
+	if err != nil {
+		return nil, exitWith(ExitUsage, err)
+	}
+	return auth, nil
 }
 
 // checkIssuerTLS refuses a plaintext OIDC issuer outside development. `--dev` is the one escape

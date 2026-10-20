@@ -349,8 +349,11 @@ func newInvestigationClient(global *globalOptions) (investigationv1connect.Inves
 	if err != nil {
 		return nil, err
 	}
+	if err := checkCredentialTransport(global, base); err != nil {
+		return nil, err
+	}
 	httpClient := &http.Client{
-		Transport: &bearerTransport{base: http.DefaultTransport, token: global.Token},
+		Transport: &bearerTransport{base: http.DefaultTransport, source: tokenSource(global)},
 		// An investigation runs for longer than a query: the `page` profile's wall-time budget
 		// is minutes, not seconds, and a client timeout shorter than the server's budget would
 		// look like a transport failure to whoever is reading the pager.

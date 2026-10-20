@@ -51,6 +51,9 @@ const (
 const (
 	// EnvToken is the bearer token used when --token is not given.
 	EnvToken = "SRE_AGENT_TOKEN"
+	// EnvTokenFile names a file holding the bearer token, re-read on every call, used when
+	// --token-file is not given.
+	EnvTokenFile = "SRE_AGENT_TOKEN_FILE"
 	// EnvDSN is the PostgreSQL DSN used when --db is not given.
 	EnvDSN = "PG_DSN"
 	// EnvPort is the port a container platform routes to; `serve` listens on it when --listen
@@ -132,6 +135,11 @@ type globalOptions struct {
 	Server   string
 	Token    string
 	LogLevel string
+	// TokenFile is re-read on every call, so a rotated token (a projected ServiceAccount
+	// token) never goes stale. Mutually exclusive with Token.
+	TokenFile string
+	// InsecureTransport allows sending the token over plaintext http to a non-loopback host.
+	InsecureTransport bool
 }
 
 // NewRootCommand builds the whole command tree. It is exported so that tests, and any embedder
@@ -150,6 +158,11 @@ func NewRootCommand() *cobra.Command {
 		Version:       version,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			opts.Token = tokenFrom(opts.Token, os.Getenv(EnvToken))
+			opts.TokenFile = tokenFrom(opts.TokenFile, os.Getenv(EnvTokenFile))
+			if opts.Token != "" && opts.TokenFile != "" {
+				return exitErrorf(ExitUsage, "--token and --token-file both give a token "+
+					"(or $%s and $%s): pass one", EnvToken, EnvTokenFile)
+			}
 			if opts.Output != OutputTable && opts.Output != OutputJSON {
 				return exitErrorf(ExitUsage, "--output %q: want %s or %s",
 					opts.Output, OutputTable, OutputJSON)
@@ -174,6 +187,11 @@ func NewRootCommand() *cobra.Command {
 	// `aisre --help` — in a terminal, in a CI log, in a screenshot on a ticket.
 	flags.StringVar(&opts.Token, "token", "",
 		"bearer token for the server (default $"+EnvToken+")")
+	flags.StringVar(&opts.TokenFile, "token-file", "",
+		"file holding the bearer token, re-read on every call, e.g. a projected ServiceAccount "+
+			"token (default $"+EnvTokenFile+")")
+	flags.BoolVar(&opts.InsecureTransport, "insecure-transport", false,
+		"allow sending the token over plaintext http to a non-loopback server")
 	flags.StringVar(&opts.LogLevel, "log-level", "info",
 		"log level: debug, info, warn or error")
 

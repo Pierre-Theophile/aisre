@@ -233,7 +233,7 @@ func runFeedVercel(ctx context.Context, global *globalOptions, opts *feedVercelO
 		return exitErrorf(ExitUsage, "feed vercel: %v", err)
 	}
 
-	connect, err := emit.NewConnectEmitter(global.Server, global.Token, f.Describe(),
+	connect, err := newFeedEmitter(global, f.Describe(),
 		emit.WithBatchSize(opts.batchSize))
 	if err != nil {
 		return exitErrorf(ExitTransport, "feed vercel: %v", err)

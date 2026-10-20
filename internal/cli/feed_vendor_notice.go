@@ -179,7 +179,7 @@ func runFeedVendorNotice(ctx context.Context, global *globalOptions, opts *feedV
 		}
 	}
 
-	connect, err := emit.NewConnectEmitter(global.Server, global.Token, f.Describe(),
+	connect, err := newFeedEmitter(global, f.Describe(),
 		emit.WithBatchSize(opts.batchSize))
 	if err != nil {
 		return exitErrorf(ExitTransport, "feed vendor-notice: %v", err)
