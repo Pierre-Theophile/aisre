@@ -20,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/metadata"
+	"k8s.io/client-go/metadata/metadatainformer"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
@@ -38,8 +40,16 @@ import (
 //     the graph answers is asked at pod granularity: "which pool does checkout run on" is
 //     stable, "which node does pod checkout-7f9c-x2k4 run on" is noise with a half-life of
 //     hours. The cost is that a workload's pool is read from what it declares (Mapper.NodePoolOf).
-//   - **A Secret's values never enter a payload.** The informer replaces every value with a
-//     digest of itself before the payload is built, drops `managedFields`, drops every
+//   - **Secrets are not read unless asked, and then only their metadata.** By default
+//     (SecretsOff) no Secret is watched and the credential needs no grant on them. With
+//     SecretsMetadata the informer is a metadata-only one: the API server answers with
+//     PartialObjectMetadata, so a Secret's values never reach this process at all, which a
+//     redaction applied after the fact could not promise. RBAC cannot tell a metadata list from
+//     a full one, so the grant is still `list,watch` on secrets: deploy/kind/rbac/secrets-metadata/
+//     binds it per namespace rather than cluster-wide.
+//   - **A Secret's values never enter a payload.** A recording made before metadata-only
+//     watching carries full Secrets; replaying one goes through RedactSecret, which replaces
+//     every value with a digest of itself, drops `managedFields`, drops every
 //     annotation carrying a manifest of the object — `kubectl apply` files the whole Secret,
 //     `stringData` and all, under `last-applied-configuration` — and keeps only the metadata
 //     the mappers read, so a recording made against a real cluster and committed to a
@@ -67,6 +77,12 @@ type Pusher interface {
 type InformerOptions struct {
 	// Client is the Kubernetes client. A fake clientset works and is what the unit tests use.
 	Client kubernetes.Interface
+	// Secrets is what is read of Secrets: SecretsOff (the zero value's meaning) or
+	// SecretsMetadata.
+	Secrets string
+	// Metadata is the metadata-only client the Secrets informer uses. Required with
+	// SecretsMetadata, unused otherwise.
+	Metadata metadata.Interface
 	// Namespaces restricts the watch. Empty watches every namespace.
 	Namespaces []string
 	// LabelSelector restricts the namespaced resources to objects carrying these labels. It
@@ -105,6 +121,9 @@ type Informers struct {
 	now       func() time.Time
 	log       *slog.Logger
 	factories []informers.SharedInformerFactory
+	// metadataFactories hold the metadata-only informers, which is how Secrets are watched
+	// under SecretsMetadata.
+	metadataFactories []metadatainformer.SharedInformerFactory
 
 	// registrations are the handler registrations, one per informer. They are what Run waits
 	// for before pushing the sync marker: a factory's WaitForCacheSync reports that the
@@ -128,6 +147,14 @@ type Informers struct {
 func NewInformers(opts InformerOptions) (*Informers, error) {
 	if opts.Client == nil {
 		return nil, errors.New("k8s: InformerOptions.Client is required")
+	}
+	secrets, err := normalizeSecrets(opts.Secrets)
+	if err != nil {
+		return nil, err
+	}
+	opts.Secrets = secrets
+	if secrets == SecretsMetadata && opts.Metadata == nil {
+		return nil, errors.New("k8s: InformerOptions.Metadata is required to watch Secrets' metadata")
 	}
 	now := opts.Now
 	if now == nil {
@@ -163,7 +190,12 @@ func NewInformers(opts InformerOptions) (*Informers, error) {
 		in.register(KindServices, factory.Core().V1().Services().Informer())
 		in.register(KindIngresses, factory.Networking().V1().Ingresses().Informer())
 		in.register(KindConfigMaps, factory.Core().V1().ConfigMaps().Informer())
-		in.register(KindSecrets, factory.Core().V1().Secrets().Informer())
+		if secrets == SecretsMetadata {
+			metadataFactory := metadatainformer.NewFilteredSharedInformerFactory(opts.Metadata, opts.Resync, namespace,
+				func(o *metav1.ListOptions) { o.LabelSelector = opts.LabelSelector })
+			in.metadataFactories = append(in.metadataFactories, metadataFactory)
+			in.register(KindSecrets, metadataFactory.ForResource(corev1.SchemeGroupVersion.WithResource(KindSecrets)).Informer())
+		}
 	}
 	return in, nil
 }
@@ -230,7 +262,14 @@ func (in *Informers) payloadOf(kind, eventType string, obj any) (feeder.Payload,
 	if !ok {
 		return feeder.Payload{}, fmt.Errorf("watch event carried %T, not a Kubernetes object", obj)
 	}
-	if secret, isSecret := object.(*corev1.Secret); isSecret {
+	if partial, isPartial := object.(*metav1.PartialObjectMetadata); isPartial && kind == KindSecrets {
+		// What a metadata-only informer delivers: a Secret with no data, which is what it is
+		// recorded and replayed as.
+		object = RedactSecret(&corev1.Secret{
+			TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+			ObjectMeta: partial.ObjectMeta,
+		})
+	} else if secret, isSecret := object.(*corev1.Secret); isSecret {
 		object = RedactSecret(secret)
 	} else {
 		object = SanitizeMetadata(object)
@@ -457,6 +496,9 @@ func (in *Informers) Run(ctx context.Context, dst Pusher) error {
 	for _, factory := range in.factories {
 		factory.Start(stop)
 	}
+	for _, factory := range in.metadataFactories {
+		factory.Start(stop)
+	}
 
 	// Forward what the handlers produced while the queue did not exist yet — the initial
 	// lists, which are most of what a fresh feeder has to say.
@@ -470,6 +512,9 @@ func (in *Informers) Run(ctx context.Context, dst Pusher) error {
 	go func() {
 		defer close(synced)
 		for _, factory := range in.factories {
+			factory.WaitForCacheSync(stop)
+		}
+		for _, factory := range in.metadataFactories {
 			factory.WaitForCacheSync(stop)
 		}
 		// And then for the handlers: a registration's HasSynced reports that *this handler*

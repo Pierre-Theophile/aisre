@@ -47,9 +47,11 @@ type apiResource struct {
 	version string
 }
 
-// watchedAPIResources is every resource the informers read, in the order RequiredScopes lists
-// them. It is the single place the resource set is written down: informers.go, the permission
-// check and deploy/kind/rbac/clusterrole.yaml all derive from it.
+// watchedAPIResources is every resource the informers may read, in the order RequiredScopes
+// lists them. It is the single place the resource set is written down: informers.go, the
+// permission check and deploy/kind/rbac/ all derive from it. Secrets are read only under
+// SecretsMetadata, and only their metadata; a write grant on them refuses the credential either
+// way.
 var watchedAPIResources = []apiResource{
 	{group: "", resource: KindNamespaces, version: "v1"},
 	{group: "", resource: KindNodes, version: "v1"},
@@ -64,11 +66,18 @@ var watchedAPIResources = []apiResource{
 	{group: "networking.k8s.io", resource: KindIngresses, version: "v1"},
 }
 
-// RequiredScopes documents the permissions the feeder asks Kubernetes for, in the spelling
-// Description.RequiredScopes publishes and deploy/kind/rbac/clusterrole.yaml grants.
-func RequiredScopes() []string {
+// RequiredScopes documents the permissions the feeder asks Kubernetes for under a secrets mode,
+// in the spelling Description.RequiredScopes publishes and deploy/kind/rbac/ grants.
+func RequiredScopes(secrets string) []string {
 	scopes := make([]string, 0, len(watchedAPIResources)+1)
 	for _, r := range watchedAPIResources {
+		if r.resource == KindSecrets {
+			if secrets == SecretsMetadata {
+				scopes = append(scopes, "list,watch on "+r.path()+" "+r.resource+
+					" in each watched namespace (metadata only; deploy/kind/rbac/secrets-metadata/)")
+			}
+			continue
+		}
 		scopes = append(scopes, "get,list,watch on "+r.path()+" "+r.resource)
 	}
 	// The only thing the feeder creates is the question "what may I do?".
@@ -125,7 +134,10 @@ type PermissionGuard struct {
 	Namespaces []string
 	// AllowWrite downgrades the refusal to a warning. See Options.AllowWriteCredentials.
 	AllowWrite bool
-	// Log receives the warning an allowed write credential produces.
+	// Secrets is the watch's secrets mode. Under anything but SecretsMetadata a credential
+	// that can read Secrets is reported, because it holds more than the feeder uses.
+	Secrets string
+	// Log receives the warnings: an allowed write credential, or an unneeded Secrets grant.
 	Log *slog.Logger
 }
 
@@ -152,6 +164,7 @@ func (g *PermissionGuard) CheckReadOnly(ctx context.Context) error {
 	}
 
 	var violations []Violation
+	var readsSecrets []string
 	for _, namespace := range namespaces {
 		review, err := g.Reviewer.Create(ctx, &authorizationv1.SelfSubjectRulesReview{
 			Spec: authorizationv1.SelfSubjectRulesReviewSpec{Namespace: namespace},
@@ -169,6 +182,15 @@ func (g *PermissionGuard) CheckReadOnly(ctx context.Context) error {
 			reported = ""
 		}
 		violations = append(violations, EvaluateRules(reported, review.Status.ResourceRules)...)
+		if g.Secrets != SecretsMetadata && CanReadSecrets(review.Status.ResourceRules) {
+			readsSecrets = append(readsSecrets, namespace)
+		}
+	}
+	if len(readsSecrets) > 0 {
+		log.Warn("k8s: this credential can read Secrets, and the feeder does not watch them (--secrets off): "+
+			"a credential that can list Secrets can read every value in them. Remove secrets from its role; "+
+			"deploy/kind/rbac/ grants nothing on them",
+			"namespaces", strings.Join(readsSecrets, ","))
 	}
 	if len(violations) == 0 {
 		return nil
@@ -233,6 +255,22 @@ func EvaluateRules(namespace string, rules []authorizationv1.ResourceRule) []Vio
 		out = append(out, Violation{Namespace: namespace, Group: watched.group, Resource: watched.resource, Verbs: names})
 	}
 	return out
+}
+
+// CanReadSecrets reports whether a rule set grants get, list or watch on core Secrets.
+func CanReadSecrets(rules []authorizationv1.ResourceRule) bool {
+	for _, rule := range rules {
+		if !matchesAny(rule.APIGroups, "") || !matchesResource(rule.Resources, KindSecrets) {
+			continue
+		}
+		for _, verb := range rule.Verbs {
+			switch strings.ToLower(strings.TrimSpace(verb)) {
+			case "*", "get", "list", "watch":
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // writeVerbsOf returns the write verbs a rule grants, expanding `*` to all of them.

@@ -21,6 +21,7 @@ coverage.cov
 # local runtime
 /tmp/
 deploy/**/kubeconfig*
+!deploy/kind/rbac/kubeconfig.sh
 *.key
 *.crt
 
