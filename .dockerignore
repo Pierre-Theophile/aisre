@@ -1,0 +1,9 @@
+# The build needs the Go sources and nothing the repository generates or records.
+.git
+bin/
+fixtures/
+specs/
+docs/
+deploy/
+examples/
+**/testdata/

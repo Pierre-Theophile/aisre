@@ -5,7 +5,7 @@
 # fixtures exist, in the `fixture verify` step of the test job.
 
 #
-# Runner minutes (this repository is private, so every one is billed, rounded up per job):
+# Runner minutes (each job is rounded up to a whole minute, so small jobs are merged):
 #
 #   * A change that touches nothing but `specs/` does not run this workflow. No Go code, test or
 #     fixture reads `specs/` (tests do read `docs/`, which is why `docs/` is not ignored), and the

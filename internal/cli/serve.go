@@ -127,7 +127,8 @@ func newServeCommand(global *globalOptions) *cobra.Command {
 
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dsn, "db", "", "PostgreSQL DSN (default $"+EnvDSN+")")
-	flags.StringVar(&opts.listen, "listen", server.DefaultListen, "address to listen on")
+	flags.StringVar(&opts.listen, "listen", server.DefaultListen,
+		"address to listen on; :$"+EnvPort+" instead when $"+EnvPort+" is set and this flag is not")
 	flags.StringVar(&opts.authMode, "auth", authModeOIDC, "identity provider: oidc or dev")
 	flags.BoolVar(&opts.dev, "dev", false,
 		"enable the local dev identity provider; required by --auth dev and never for production")
@@ -183,6 +184,7 @@ func newServeCommand(global *globalOptions) *cobra.Command {
 
 func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) error {
 	ctx := cmd.Context()
+	opts.listen = listenFrom(opts.listen, cmd.Flags().Changed("listen"), os.Getenv(EnvPort))
 
 	logger, err := newLogger(global.LogLevel, cmd.ErrOrStderr())
 	if err != nil {
@@ -414,6 +416,16 @@ func checkIssuerTLS(issuer string, dev bool) error {
 		"--oidc-issuer %q is not https: discovery and the key set travel over it, so anyone on "+
 			"the path could serve their own keys. Pass --dev if this is a local mock provider.",
 		issuer)
+}
+
+// listenFrom picks the address to listen on. Cloud Run, Knative and most container platforms
+// name the port they route to in $PORT and do not pass flags of their own, so $PORT is used when
+// --listen was not given. An explicit --listen always wins.
+func listenFrom(flagValue string, flagSet bool, port string) string {
+	if flagSet || strings.TrimSpace(port) == "" {
+		return flagValue
+	}
+	return ":" + strings.TrimSpace(port)
 }
 
 // checkDevListen refuses the published dev signing key on an address other than loopback.

@@ -53,6 +53,9 @@ const (
 	EnvToken = "SRE_AGENT_TOKEN"
 	// EnvDSN is the PostgreSQL DSN used when --db is not given.
 	EnvDSN = "PG_DSN"
+	// EnvPort is the port a container platform routes to; `serve` listens on it when --listen
+	// is not given.
+	EnvPort = "PORT"
 )
 
 // DefaultServer is the address `--server` defaults to.
