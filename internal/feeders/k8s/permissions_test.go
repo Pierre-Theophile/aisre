@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
@@ -228,10 +229,76 @@ func TestEvaluateRules(t *testing.T) {
 // resource added to the informers without a scope would be a credential the operator was never
 // asked for.
 func TestRequiredScopesCoverEveryWatchedResource(t *testing.T) {
-	scopes := strings.Join(k8sfeeder.RequiredScopes(), "\n")
+	scopes := strings.Join(k8sfeeder.RequiredScopes(k8sfeeder.SecretsMetadata), "\n")
 	for _, resource := range k8sfeeder.WatchedResources {
 		if !strings.Contains(scopes, " "+resource) {
 			t.Errorf("RequiredScopes does not mention %s, which the informers watch", resource)
+		}
+	}
+}
+
+// TestSecretsAreNotAskedForByDefault: without --secrets metadata the documented credential
+// carries no grant on Secrets at all, because a list grant is a read of every value.
+func TestSecretsAreNotAskedForByDefault(t *testing.T) {
+	for _, scope := range k8sfeeder.RequiredScopes(k8sfeeder.SecretsOff) {
+		if strings.Contains(scope, "secrets") {
+			t.Errorf("RequiredScopes(off) asks for %q", scope)
+		}
+	}
+	metadataOnly := strings.Join(k8sfeeder.RequiredScopes(k8sfeeder.SecretsMetadata), "\n")
+	if !strings.Contains(metadataOnly, "list,watch on v1 secrets in each watched namespace (metadata only") {
+		t.Errorf("RequiredScopes(metadata) does not say how Secrets are read:\n%s", metadataOnly)
+	}
+}
+
+// TestTheDocumentedRoleGrantsNothingOnSecrets keeps deploy/kind/rbac/ in step with the default:
+// the base role must not grant Secrets, and the per-namespace one must not grant `get`.
+func TestTheDocumentedRoleGrantsNothingOnSecrets(t *testing.T) {
+	base, err := os.ReadFile("../../../deploy/kind/rbac/clusterrole.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(base), "\n") {
+		if strings.TrimSpace(line) == "- secrets" {
+			t.Error("deploy/kind/rbac/clusterrole.yaml grants secrets; --secrets off needs none")
+		}
+	}
+	metadataOnly, err := os.ReadFile("../../../deploy/kind/rbac/secrets-metadata/clusterrole.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(metadataOnly), `verbs: ["list", "watch"]`) {
+		t.Error("secrets-metadata/clusterrole.yaml grants more than list,watch")
+	}
+}
+
+// TestCanReadSecrets is the decision behind the warning a credential gets for holding a Secrets
+// grant the feeder does not use.
+func TestCanReadSecrets(t *testing.T) {
+	cases := []struct {
+		name  string
+		rules []authorizationv1.ResourceRule
+		want  bool
+	}{
+		{"the documented role", []authorizationv1.ResourceRule{
+			{APIGroups: []string{""}, Resources: []string{"namespaces", "nodes", "services", "configmaps"}, Verbs: []string{"get", "list", "watch"}},
+		}, false},
+		{"list secrets", []authorizationv1.ResourceRule{
+			{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"list"}},
+		}, true},
+		{"every resource", []authorizationv1.ResourceRule{
+			{APIGroups: []string{"*"}, Resources: []string{"*"}, Verbs: []string{"get"}},
+		}, true},
+		{"secrets in another group", []authorizationv1.ResourceRule{
+			{APIGroups: []string{"example.com"}, Resources: []string{"secrets"}, Verbs: []string{"list"}},
+		}, false},
+		{"only a rules review", []authorizationv1.ResourceRule{
+			{APIGroups: []string{"authorization.k8s.io"}, Resources: []string{"selfsubjectrulesreviews"}, Verbs: []string{"create"}},
+		}, false},
+	}
+	for _, c := range cases {
+		if got := k8sfeeder.CanReadSecrets(c.rules); got != c.want {
+			t.Errorf("%s: CanReadSecrets = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

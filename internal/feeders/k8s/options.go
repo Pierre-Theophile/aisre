@@ -140,6 +140,9 @@ type Options struct {
 	// carries no `deploy.commit_sha` at all. See rolloutCommit for why it is opt-in and why only the
 	// pod template is read.
 	CommitLabels []string
+	// Secrets is what the live watch reads of Secrets: SecretsOff, the default, or
+	// SecretsMetadata. A replay reads whatever its recording holds.
+	Secrets string
 	// AllowWriteCredentials disables the read-only credential refusal of FR-046. It exists
 	// for one case — kind's default admin kubeconfig during development — and logs a warning
 	// every time. deploy/kind/rbac/ is the documented path that never needs it.
@@ -188,7 +191,38 @@ func (o Options) Normalize() (Options, error) {
 	out.OwnerLabels = trimmed(out.OwnerLabels)
 	out.NodePoolLabels = trimmed(out.NodePoolLabels)
 	out.Namespaces = trimmed(out.Namespaces)
+	secrets, err := normalizeSecrets(out.Secrets)
+	if err != nil {
+		return Options{}, err
+	}
+	out.Secrets = secrets
 	return out, nil
+}
+
+// What a live watch reads of Secrets.
+//
+// Off is the default because a grant to list Secrets is a grant to read every one of them:
+// RBAC has no verb for "their names only", and the cluster-wide `list secrets` a ClusterRole
+// would give returns every value in the cluster in one call. Nothing the feeder maps needs
+// a value, and what it loses without Secrets is small: a workload's `depends-on` edge to a
+// Secret points at a CONFIG node nobody asserts, and a Secret's rotation is not a change.
+const (
+	// SecretsOff watches no Secret and needs no grant on them.
+	SecretsOff = "off"
+	// SecretsMetadata watches Secrets through a metadata-only informer, so their values never
+	// reach the process, and needs `list,watch` on secrets in each watched namespace.
+	SecretsMetadata = "metadata"
+)
+
+// normalizeSecrets maps the empty value to SecretsOff and rejects anything else unknown.
+func normalizeSecrets(mode string) (string, error) {
+	switch mode = strings.TrimSpace(strings.ToLower(mode)); mode {
+	case "", SecretsOff:
+		return SecretsOff, nil
+	case SecretsMetadata:
+		return SecretsMetadata, nil
+	}
+	return "", fmt.Errorf("k8s: secrets %q: want %s or %s", mode, SecretsOff, SecretsMetadata)
 }
 
 // trimmed drops empty entries and surrounding whitespace, so that `--owner-labels team,`

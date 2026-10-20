@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+#   kubectl apply -k deploy/kind/rbac                    # first: the identity and the base role
+#   kubectl apply -k deploy/kind/rbac/secrets-metadata   # then, only for --secrets metadata
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - clusterrole.yaml
+  - rolebinding.yaml

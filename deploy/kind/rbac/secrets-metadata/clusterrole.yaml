@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# What `aisre feed k8s --secrets metadata` needs on top of ../clusterrole.yaml: list and watch on
+# Secrets, and nothing else.
+#
+# The feeder asks for these through a metadata-only informer, so the API server answers with
+# names, versions and labels and never a value. RBAC cannot express that restriction: this grant
+# would let any other client holding the token read the values. That is why it is a ClusterRole
+# bound by a RoleBinding in each watched namespace (rolebinding.yaml), never cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre-agent-feeder-secrets-metadata
+  labels:
+    app.kubernetes.io/part-of: sre-agent
+rules:
+  - apiGroups: [""]
+    resources:
+      - secrets
+    verbs: ["list", "watch"]

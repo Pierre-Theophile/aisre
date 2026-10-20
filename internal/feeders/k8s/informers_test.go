@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	metadatafake "k8s.io/client-go/metadata/fake"
 
 	k8sfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/k8s"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
@@ -162,68 +163,73 @@ func TestInformersDeliverUpdatesAndDeletes(t *testing.T) {
 	})
 }
 
-// TestInformersRedactSecretsBeforeTheyBecomePayloads is SC-009 at the watch boundary: the
-// material never reaches a payload, so it can never reach a recording (spec edge case
-// "secrets").
-func TestInformersRedactSecretsBeforeTheyBecomePayloads(t *testing.T) {
-	const material = "super-secret-value"
+// TestInformersReadNoSecretByDefault: with the default mode no Secret is listed, so the
+// credential needs no grant on them and no value can reach a payload (spec edge case "secrets").
+func TestInformersReadNoSecretByDefault(t *testing.T) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "payments-secret", Namespace: "shop", ResourceVersion: "1202"},
-		Data:       map[string][]byte{"token": []byte(material)},
+		Data:       map[string][]byte{"token": []byte("super-secret-value")},
 	}
-	_, sink := startInformers(t, secret)
+	client, sink := startInformers(t, secret)
 
-	payload, event, ok := sink.find(k8sfeeder.KindSecrets, k8sfeeder.EventAdded)
-	if !ok {
-		t.Fatal("no ADDED payload for the secret")
+	if _, _, ok := sink.find(k8sfeeder.KindSecrets, k8sfeeder.EventAdded); ok {
+		t.Fatal("a Secret was watched although --secrets is off")
 	}
-	if strings.Contains(string(payload.Bytes), material) {
-		t.Fatal("the payload contains the secret's value")
-	}
-	var decoded corev1.Secret
-	if err := json.Unmarshal(event.Object, &decoded); err != nil {
-		t.Fatalf("decode the object: %v", err)
-	}
-	// The key name survives, because which secret a workload reads is topology.
-	value, present := decoded.Data["token"]
-	if !present {
-		t.Fatal("the key name was dropped; a redacted Secret keeps its shape")
-	}
-	if !strings.HasPrefix(string(value), "sha256:") {
-		t.Errorf("value = %q, want a sha256 digest", value)
+	for _, action := range client.Actions() {
+		if action.GetResource().Resource == k8sfeeder.KindSecrets {
+			t.Errorf("the watch asked the API server to %s secrets", action.GetVerb())
+		}
 	}
 }
 
-// TestInformersRedactTheAppliedManifest is finding 5 of the live run of 2026-09-16 as a test.
-//
-// Digesting `.data` is not enough: `kubectl apply` files the whole submitted manifest, with
-// `stringData` in cleartext, under an annotation, and the old RedactSecret copied metadata
-// untouched. Every Secret on every cluster anybody has ever `kubectl apply`-ed therefore
-// carried its own value into `--record`.
-func TestInformersRedactTheAppliedManifest(t *testing.T) {
+// TestInformersReadOnlySecretMetadata is SC-009 at the watch boundary under --secrets metadata:
+// the informer is a metadata-only one, so the API server never sends a value, and the
+// applied-manifest annotation, which carries the whole submitted Secret in cleartext (live run
+// of 2026-09-16, finding 5), is dropped before the payload is built.
+func TestInformersReadOnlySecretMetadata(t *testing.T) {
 	const material = "not-a-real-token-disposable-demo-cluster"
 	manifest := `{"apiVersion":"v1","kind":"Secret","metadata":{"name":"payments-secret",` +
 		`"namespace":"shop"},"stringData":{"token":"` + material + `"}}`
-	secret := &corev1.Secret{
+	scheme := metadatafake.NewTestScheme()
+	if err := metav1.AddMetaToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	meta := metadatafake.NewSimpleMetadataClient(scheme, &metav1.PartialObjectMetadata{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "payments-secret", Namespace: "shop", ResourceVersion: "573",
 			Annotations: map[string]string{
 				"kubectl.kubernetes.io/last-applied-configuration": manifest,
 				"sre.overlay": "minimal",
 			},
-			ManagedFields: []metav1.ManagedFieldsEntry{{
-				Manager: "kubectl-client-side-apply", Operation: metav1.ManagedFieldsOperationUpdate,
-				APIVersion: "v1", FieldsType: "FieldsV1",
-			}},
-			Finalizers: []string{"example.com/keep"},
 		},
-		Data: map[string][]byte{"token": []byte(material)},
+	})
+	client := fake.NewClientset()
+	watch, err := k8sfeeder.NewInformers(k8sfeeder.InformerOptions{
+		Client: client, Secrets: k8sfeeder.SecretsMetadata, Metadata: meta,
+	})
+	if err != nil {
+		t.Fatalf("new informers: %v", err)
 	}
-	_, sink := startInformers(t, secret)
+	sink := &collector{}
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	go func() {
+		if err := watch.Run(ctx, sink); err != nil && ctx.Err() == nil {
+			t.Errorf("watch: %v", err)
+		}
+	}()
+	waitFor(t, "the initial list to complete", func() bool {
+		_, _, ok := sink.find(k8sfeeder.KindSync, "")
+		return ok
+	})
 
 	payload, event, ok := sink.find(k8sfeeder.KindSecrets, k8sfeeder.EventAdded)
 	if !ok {
 		t.Fatal("no ADDED payload for the secret")
+	}
+	if payload.Seq != 573 {
+		t.Errorf("Seq = %d, want the resourceVersion 573", payload.Seq)
 	}
 	if strings.Contains(string(payload.Bytes), material) {
 		t.Fatal("the payload contains the secret's value, in the applied-manifest annotation")
@@ -235,17 +241,25 @@ func TestInformersRedactTheAppliedManifest(t *testing.T) {
 	if err := json.Unmarshal(event.Object, &decoded); err != nil {
 		t.Fatalf("decode the object: %v", err)
 	}
+	if decoded.Name != "payments-secret" || len(decoded.Data) != 0 {
+		t.Errorf("decoded %s with %d value(s), want payments-secret with none", decoded.Name, len(decoded.Data))
+	}
 	if decoded.Annotations["sre.overlay"] != "minimal" {
 		t.Error("an unrelated annotation was dropped; only manifest-bearing ones go")
 	}
-	if len(decoded.ManagedFields) != 0 {
-		t.Error("a redacted Secret keeps no managedFields")
+	for _, action := range client.Actions() {
+		if action.GetResource().Resource == k8sfeeder.KindSecrets {
+			t.Errorf("the typed client was asked to %s secrets; only the metadata client may be", action.GetVerb())
+		}
 	}
-	if len(decoded.Finalizers) != 0 {
-		t.Error("a redacted Secret keeps only the metadata the mappers read")
+}
+
+func TestInformersRefuseAnUnknownSecretsMode(t *testing.T) {
+	if _, err := k8sfeeder.NewInformers(k8sfeeder.InformerOptions{Client: fake.NewClientset(), Secrets: "all"}); err == nil {
+		t.Error("NewInformers accepted --secrets all")
 	}
-	if decoded.ResourceVersion != "573" {
-		t.Errorf("resourceVersion = %q, want 573: it is what the CONFIG node carries", decoded.ResourceVersion)
+	if _, err := k8sfeeder.NewInformers(k8sfeeder.InformerOptions{Client: fake.NewClientset(), Secrets: k8sfeeder.SecretsMetadata}); err == nil {
+		t.Error("NewInformers accepted metadata mode without a metadata client")
 	}
 }
 

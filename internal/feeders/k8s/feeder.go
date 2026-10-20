@@ -164,7 +164,7 @@ func (f *Feeder) Describe() feeder.Description {
 		Kind:             "k8s",
 		Ordering:         feeder.OrderingPerSourceSequence,
 		ReorderingWindow: f.opts.ReorderingWindow,
-		RequiredScopes:   RequiredScopes(),
+		RequiredScopes:   RequiredScopes(f.opts.Secrets),
 		Namespaces: []string{
 			feeder.NSK8sCluster,
 			feeder.NSK8sNodePool,

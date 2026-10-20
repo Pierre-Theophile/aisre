@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Grants ./clusterrole.yaml in one namespace. Copy it once per namespace `feed k8s --namespaces`
+# watches, changing `metadata.namespace`; the demo cluster's workloads live in `shop`.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-agent-feeder-secrets-metadata
+  namespace: shop
+  labels:
+    app.kubernetes.io/part-of: sre-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sre-agent-feeder-secrets-metadata
+subjects:
+  - kind: ServiceAccount
+    name: sre-agent-feeder
+    namespace: sre-agent

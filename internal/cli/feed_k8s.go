@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/metadata"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -61,6 +62,7 @@ type feedK8sOptions struct {
 	commitLabels     []string
 	stateDir         string
 	allowWrite       bool
+	secrets          string
 	recordDir        string
 	replayDir        string
 	dryRun           bool
@@ -73,16 +75,17 @@ func newFeedK8sCommand(global *globalOptions) *cobra.Command {
 		Use:   "k8s",
 		Short: "Watch Kubernetes and emit workload, configuration and change events",
 		Long: "Watches Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, Services, Ingresses,\n" +
-			"ConfigMaps, Secrets, Nodes and Namespaces through shared informers, and emits the\n" +
+			"ConfigMaps, Nodes and Namespaces through shared informers, and emits the\n" +
 			"topology they describe: workloads, where they run, who owns them, what configuration\n" +
 			"they consume, the names they are known by, and the rollouts, scalings and\n" +
 			"configuration changes that happen to them (FR-043).\n\n" +
-			"A Secret's values never leave the cluster: the node carries its version, the payload\n" +
-			"carries a digest of each value, and neither carries the material (FR-008).\n\n" +
+			"Secrets are not read by default: a grant to list them is a grant to read every value.\n" +
+			"--secrets metadata watches their names and versions through a metadata-only informer,\n" +
+			"so no value ever reaches the process (FR-008).\n\n" +
 			"The credential must be read-only. The feeder asks the API server with a\n" +
 			"SelfSubjectRulesReview and refuses to start if it may create, update, patch or delete\n" +
-			"anything it watches (FR-046, constitution VII). deploy/kind/rbac/ grants exactly what\n" +
-			"it needs.\n\n" +
+			"anything it watches (FR-046, constitution VII), and warns when it can read Secrets it\n" +
+			"does not watch. deploy/kind/rbac/ grants exactly what it needs.\n\n" +
 			"Exit codes: 0 ok, 1 usage, 2 transport, 3 the credential, 5 an event the graph refused.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -131,6 +134,10 @@ func newFeedK8sCommand(global *globalOptions) *cobra.Command {
 	flags.BoolVar(&opts.allowWrite, "allow-write-credentials", false,
 		"start even though the credential can write to the cluster (constitution VII says refuse; "+
 			"this exists only for a disposable development cluster's admin kubeconfig)")
+	flags.StringVar(&opts.secrets, "secrets", k8sfeeder.SecretsOff,
+		"what is read of Secrets: off reads none and needs no grant on them; metadata watches their "+
+			"names and versions only, never a value, and needs list,watch on secrets in each watched "+
+			"namespace (deploy/kind/rbac/secrets-metadata/)")
 	flags.StringVar(&opts.recordDir, "record", "",
 		"record raw watch payloads and emitted events into this fixture directory")
 	flags.StringVar(&opts.replayDir, "replay", "",
@@ -186,6 +193,7 @@ func runFeedK8s(cmd *cobra.Command, global *globalOptions, opts *feedK8sOptions)
 		CheckpointInterval:    opts.checkpointEvery,
 		GapThreshold:          opts.gapThreshold,
 		AllowWriteCredentials: opts.allowWrite,
+		Secrets:               opts.secrets,
 	}, log)
 	if err != nil {
 		return exitWith(ExitUsage, err)
@@ -259,6 +267,7 @@ func feedK8sSource(ctx context.Context, f *k8sfeeder.Feeder, opts *feedK8sOption
 		Reviewer:   client.AuthorizationV1().SelfSubjectRulesReviews(),
 		Namespaces: opts.namespaces,
 		AllowWrite: opts.allowWrite,
+		Secrets:    f.Options().Secrets,
 		Log:        log,
 	}
 
@@ -271,8 +280,16 @@ func feedK8sSource(ctx context.Context, f *k8sfeeder.Feeder, opts *feedK8sOption
 	}
 	f.State = store
 
+	var metadataClient metadata.Interface
+	if f.Options().Secrets == k8sfeeder.SecretsMetadata {
+		if metadataClient, err = metadata.NewForConfig(config); err != nil {
+			return nil, nil, exitWith(ExitUsage, err)
+		}
+	}
 	watch, err := k8sfeeder.NewInformers(k8sfeeder.InformerOptions{
 		Client:        client,
+		Secrets:       f.Options().Secrets,
+		Metadata:      metadataClient,
 		Namespaces:    opts.namespaces,
 		LabelSelector: opts.labelSelector,
 		Start:         start,

@@ -11,8 +11,15 @@
 # The resource list is the same one internal/feeders/k8s/permissions.go checks against; a
 # resource added to the informers without being added here makes the feeder fail to list, loudly.
 #
-# Note what is NOT here: pods. The feeder does not watch them (research §12) and so does not ask
-# to read them, which keeps every container's environment out of reach.
+# Note what is NOT here: pods and secrets. The feeder does not watch pods (research §12). It does
+# not read Secrets by default either: RBAC has no verb for "names only", so `list secrets` across
+# the cluster would read every value in it in one call. `feed k8s --secrets metadata` watches
+# their names and versions through a metadata-only informer; secrets-metadata/ grants that, per
+# namespace, for an operator who wants it.
+#
+# ConfigMaps are read whole, because a configuration change is detected by digesting their
+# content in the process; the digest is what leaves it. A cluster that keeps credentials in
+# ConfigMaps should narrow this role with --namespaces and RoleBindings (README).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -26,7 +33,6 @@ rules:
       - nodes
       - services
       - configmaps
-      - secrets
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources:

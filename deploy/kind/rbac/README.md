@@ -27,9 +27,14 @@ aisre feed k8s \
 |---|---|
 | `namespace.yaml` | `sre-agent`, which holds the identity and nothing else |
 | `serviceaccount.yaml` | `sre-agent-feeder`, the identity the token belongs to |
-| `clusterrole.yaml` | `get,list,watch` on exactly the resources the informers read, plus `create` on `selfsubjectrulesreviews` |
+| `clusterrole.yaml` | `get,list,watch` on exactly the resources the informers read, plus `create` on `selfsubjectrulesreviews`; nothing on Secrets or Pods |
 | `clusterrolebinding.yaml` | binds the two, cluster-wide (Nodes and Namespaces are cluster-scoped) |
 | `kubeconfig.sh` | mints a short-lived token through the TokenRequest API and writes a kubeconfig to stdout |
+| `secrets-metadata/` | only for `feed k8s --secrets metadata`: `list,watch` on Secrets, bound per namespace |
+
+Apply the directory with `kubectl apply -k`, not its files one by one with `kubectl apply -f`:
+`kustomization.yaml` is not an object the API server accepts, and the namespace has to exist
+before the ServiceAccount in it.
 
 The resource list in `clusterrole.yaml` is the same one
 `internal/feeders/k8s/permissions.go` checks a credential against, and
@@ -38,7 +43,25 @@ documented scopes do not mention.
 
 **Pods are deliberately absent.** The feeder does not watch them — they churn on every rollout
 and answer nothing the graph is asked at that granularity (research §12) — so it does not ask to
-read them, which keeps every container's environment out of reach of this credential.
+read them.
+
+**So are Secrets, by default.** RBAC has no verb for "names only": `list secrets` returns every
+value, and a cluster-wide grant of it reads every Secret in the cluster in one call. Nothing the
+feeder maps needs a value, so by default (`--secrets off`) it watches no Secret and this role
+grants nothing on them. What that costs: a workload's `depends-on` edge to a Secret points at a
+`CONFIG` node nobody asserts, and a Secret's rotation is not seen as a change. If the feeder
+starts with a credential that can read Secrets anyway, it says so in a warning.
+
+`--secrets metadata` gets the rotation back without the values: the Secrets informer is a
+metadata-only one, so the API server answers with names, versions and labels and the values never
+reach the process. The grant it needs is still `list,watch`, which another client holding the same
+token could use to read them, so `secrets-metadata/` binds it with a `RoleBinding` in each watched
+namespace and never cluster-wide. `kubeconfig.sh` refuses a token that can list Secrets
+cluster-wide or `get` them anywhere.
+
+**ConfigMaps are read whole.** A configuration change is detected by digesting a ConfigMap's
+content inside the process, and only the digest leaves it. On a cluster that keeps credentials in
+ConfigMaps, narrow the grant to the namespaces you watch, as below.
 
 ## The token
 
@@ -77,14 +100,8 @@ Two changes, both narrowing:
   the `sre-agent-feeder` ServiceAccount and let `feed k8s` pick up the in-cluster credential,
   which it does when no kubeconfig is found.
 
-Reading Secrets is still reading Secrets. The feeder replaces every value with a digest of itself
-before the bytes reach a payload (`informers.go`, `RedactSecret`), and a `CONFIG` node for a
-Secret carries its version and nothing else, so no material reaches the graph — but the
-credential can still read them, and an operator who would rather it could not should remove
-`secrets` from the ClusterRole and accept that `depends-on` edges to Secrets will point at
-placeholders.
-
-**Recordings needed more than digesting the values, and until 2026-09-16 they did not get it.**
+**Recordings made before metadata-only watching needed more than digesting the values, and until
+2026-09-16 they did not get it.**
 `kubectl apply` stores the entire submitted manifest — `stringData` included, in cleartext — in
 the annotation `kubectl.kubernetes.io/last-applied-configuration`. `RedactSecret` copied
 metadata untouched, so `--record` against any cluster that had ever been `kubectl apply`-ed
