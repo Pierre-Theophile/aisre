@@ -644,3 +644,60 @@ func TestAReleasedReservationReturnsItsHeadroom(t *testing.T) {
 		t.Fatal("a seventh expensive call was admitted; the released headroom was double-counted")
 	}
 }
+
+// TestTheVerifiersShareIsNotTheInvestigators is T122 (FR-022c, plan V5): once the reserve is
+// entered, investigator turns may spend it down to the verifier's share and no further, and the
+// verifier may spend that share.
+func TestTheVerifiersShareIsNotTheInvestigators(t *testing.T) {
+	t.Parallel()
+
+	if budget.VerifierShare != 0.05 {
+		t.Fatalf("VerifierShare = %v, want exactly 0.05", budget.VerifierShare)
+	}
+	c := newClock()
+	profile := budget.PageProfile()
+	profile.CostUnits = 10000
+	m := managerFor(t, profile, c)
+	m.EnterSynthesisOnly("model_tokens: the unreserved portion is gone")
+
+	// 9 500 tokens is everything outside the verifier's share: admitted and held.
+	closing := m.Admit(budget.Request{Kind: budget.KindModel, Tokens: 9500, Synthesis: true})
+	if !closing.Admitted {
+		t.Fatalf("a closing turn within 95%% was refused: %s", closing.Reason)
+	}
+	defer closing.Reservation.Release()
+
+	// One more investigator token reaches into the share.
+	more := m.Admit(budget.Request{Kind: budget.KindModel, Tokens: 1, Synthesis: true})
+	if more.Admitted {
+		t.Fatal("an investigator turn was admitted into the verifier's share")
+	}
+	if !strings.Contains(more.Reason, "held for the verifier") {
+		t.Errorf("refusal %q does not name the verifier's share", more.Reason)
+	}
+
+	verifier := m.Admit(budget.Request{Kind: budget.KindModel, Tokens: 500, Verifier: true})
+	if !verifier.Admitted {
+		t.Fatalf("the verifier was refused its own share: %s", verifier.Reason)
+	}
+	verifier.Reservation.Release()
+
+	// The share is a share, not an overdraft: the verifier stops at the budget too.
+	if over := m.Admit(budget.Request{Kind: budget.KindModel, Tokens: 501, Verifier: true}); over.Admitted {
+		t.Error("the verifier was admitted past the whole token budget")
+	}
+}
+
+// TestTheVerifiersShareIsNotConfigurable: like the reserve it sits in, the share is published and
+// refused as a setting.
+func TestTheVerifiersShareIsNotConfigurable(t *testing.T) {
+	t.Parallel()
+
+	err := budget.Configure(budget.SettingVerifierShare)
+	if err == nil {
+		t.Fatal("the verifier's share was accepted as a setting")
+	}
+	if !strings.Contains(err.Error(), "verifier") {
+		t.Errorf("refusal %q does not say why", err)
+	}
+}

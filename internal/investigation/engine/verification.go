@@ -154,8 +154,9 @@ func (e *Engine) verifyClaims(ctx context.Context, stop Stop) Verification {
 	decision := e.budget.Admit(budget.Request{
 		Kind:     budget.KindModel,
 		ModelID:  verifierModel,
-		Tokens:   tokens + model.DefaultMaxTokens,
+		Tokens:   tokens + verify.MaxTokens,
 		Question: "the verification pass over the run's claims (FR-022c)",
+		Verifier: true,
 	})
 	if !decision.Admitted {
 		out.Status = investigationv1.VerificationStatus_NOT_VERIFIED

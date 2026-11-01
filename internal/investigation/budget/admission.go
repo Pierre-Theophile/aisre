@@ -60,6 +60,10 @@ type Request struct {
 	// Synthesis marks a call that belongs to the closing synthesis — the verifier pass, the
 	// render — and may therefore spend the reserve.
 	Synthesis bool
+
+	// Verifier marks the verification pass's model call. It is a synthesis call that may also
+	// spend the verifier's share, which nothing else may (VerifierShare, FR-022c).
+	Verifier bool
 }
 
 // Decision is admission's answer.
@@ -136,7 +140,7 @@ func (m *Manager) Admit(req Request) Decision {
 
 //nolint:gocyclo // one branch per budget dimension; a shorter version would hide a dimension.
 func (m *Manager) decide(req Request) Decision {
-	synthesis := req.Synthesis || m.mode == ModeSynthesisOnly
+	synthesis := req.Synthesis || req.Verifier || m.mode == ModeSynthesisOnly
 
 	// Evidence gathering is over once the reserve is entered. This is checked first so that the
 	// refusal names the mode rather than whichever dimension happens to be tightest.
@@ -169,10 +173,21 @@ func (m *Manager) decide(req Request) Decision {
 		spent := float64(m.tokens.Total().Total() + m.pendingTokens)
 		limit := m.costUnitsLocked()
 		ceiling := limit
-		if !synthesis {
+		switch {
+		case !synthesis:
 			ceiling = unreserved(limit)
+		case !req.Verifier:
+			ceiling = investigatorCeiling(limit)
 		}
 		if spent+float64(req.Tokens) > ceiling {
+			if synthesis && !req.Verifier {
+				return Decision{
+					Budget: "model_tokens",
+					Reason: fmt.Sprintf("a %d-token call would take the run to %.0f tokens, into the %.0f%% of the "+
+						"%.0f-token budget held for the verifier (%.0f usable before it)",
+						req.Tokens, spent+float64(req.Tokens), VerifierShare*100, limit, ceiling),
+				}
+			}
 			if synthesis {
 				return Decision{
 					Budget: "model_tokens",

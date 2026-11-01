@@ -674,10 +674,15 @@ the findings from the investigation, so a report rebuilt from the wire says the 
 ### V5. The verifier's share of the budget
 
 FR-022c asks for a reserved share so that a `page` run reaches its hard stop with the verifier run.
-The verifier call passes the same admission as an investigator turn; the reservation is a published
-share of each profile's model budget that investigator turns may not consume (T122). Until T122
-lands, a verifier refused by admission yields `NOT_VERIFIED` with the exhausted budget named,
-which is the FR-022c fallback rather than a silent skip.
+The verifier call passes the same admission as an investigator turn, marked as the verifier's. The
+share is `budget.VerifierShare`, exactly 5% of the profile's model tokens, held inside the 15%
+synthesis reserve: investigator turns, closing ones included, are refused past 95% of the token
+budget, and only the verifier's call may spend the last 5% (T122). On `page` that is 20 000 tokens
+against a request of the claims, their cited digests and a 4 000-token answer
+(`verify.MaxTokens`). Like the reserve, the share is published and not configurable. Wall time has
+no share: the hard stop stays absolute, so a verifier that would start past it is refused, and a
+verifier refused for any reason yields `NOT_VERIFIED` with the budget named rather than a silent
+skip.
 
 ### V6. The examination report and the expectation table (FR-022b)
 

@@ -27,6 +27,28 @@ import "math"
 // closing synthesis — the verifier pass, the render and the stop reason.
 const ReserveFraction = 0.15
 
+// VerifierShare is the share of the model-token budget held back, inside the reserve, for the
+// verification pass (FR-022c, T122, plan V5): exactly 5% of the profile's tokens, which no
+// investigator turn may consume, in normal mode or in synthesis_only.
+//
+// Without it the reserve is a pool the closing investigator turns and the verifier draw on in
+// order, and the investigator, which speaks first, can leave the verifier nothing: the run then
+// concludes NOT_VERIFIED on every page that ran its budget out, which is the run that most needs
+// checking. A share the investigator cannot reach is what makes "an exhausted investigation still
+// has a verifier pass behind it" (SC-005) true rather than likely. On the page profile it is
+// 20 000 tokens, against a verifier request of the claims, their cited digests and a
+// VerifierMaxTokens answer.
+const VerifierShare = 0.05
+
+// investigatorCeiling is how much of the model-token budget a non-verifier call may reach once
+// it is allowed into the reserve.
+func investigatorCeiling(limit float64) float64 {
+	if limit <= 0 {
+		return 0
+	}
+	return limit * (1 - VerifierShare)
+}
+
 // Mode is whether the engine is still gathering evidence.
 type Mode string
 
