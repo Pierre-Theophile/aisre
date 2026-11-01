@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-01
 
-**Status**: Draft — defaults Q1–Q11 proposed, awaiting the owner's approval
+**Status**: Approved by the owner 2026-11-01 (all eleven defaults); planning slice A
 
 **Input**: User description: "The master agent that queries the bitemporal graph does not have the
 context of my infrastructure: it won't understand precisely that this service talks to that one, that
@@ -44,10 +44,10 @@ what was not queried (002 FR-022b). Both read what this feature builds.
 
 ## Clarifications
 
-### Session 2026-11-01 — defaults proposed for the owner's approval
+### Session 2026-11-01 — defaults approved by the owner
 
-Each default is written into the requirements below. Following 006–009, they are defaults rather than
-`[NEEDS CLARIFICATION]` markers: the owner approves or changes them on the spec PR.
+Each default is written into the requirements below. The owner approved all eleven as written on
+2026-11-01 ("Ok c'est bon pour moi").
 
 - Q1: What does the core schema know about runtimes? → **Default: nothing.** The core keeps 001's node
   and edge types. Every entity gains a **layer** facet: `entrypoint`, `service`, `workload`,

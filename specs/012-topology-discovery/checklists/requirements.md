@@ -26,8 +26,8 @@
 
 - [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
-- [ ] Feature meets measurable outcomes defined in Success Criteria — pending the owner's approval of
-  Q1–Q11 and the thresholds of SC-001 to SC-003
+- [ ] Feature meets measurable outcomes defined in Success Criteria — Q1–Q11 and the thresholds
+  approved 2026-11-01; open until slice A is built and measured
 - [x] No implementation details leak into specification
 
 ## Notes

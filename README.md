@@ -35,7 +35,7 @@ cloud platform and the deploys an organisation actually runs.
 | feature | state |
 |---|---|
 | [001 Temporal graph core](specs/001-temporal-graph-core/spec.md) | complete |
-| [002 Investigation engine](specs/002-investigation-engine/spec.md) | complete; [quickstart run](specs/002-investigation-engine/quickstart-run-2026-09-18.md) on a clean machine |
+| [002 Investigation engine](specs/002-investigation-engine/spec.md) | complete; [quickstart run](specs/002-investigation-engine/quickstart-run-2026-09-18.md) on a clean machine; the 2026-11-01 amendment ([ADR-0019](docs/decisions/ADR-0019-roadmap-after-the-rca-literature-review.md) D1, D6) is approved and not yet built |
 | [003 GCP integration](specs/003-gcp-integration/spec.md) | built and verified on synthetic twins ([quickstart run](specs/003-gcp-integration/quickstart-run-2026-09-22.md)); the recording campaign against a real estate and what can only be shown on it wait on a credential and a named signatory |
 | [004 Deploy feeders](specs/004-deploy-feeders/spec.md) (GitHub, Vercel) | built and verified on synthetic twins; waits on the same campaign, and on a real project-scoped Vercel token to establish the token regime |
 | [005 Datadog connector](specs/005-datadog-connector/spec.md) (log search, monitor intake, optional APM topology) | built and verified on synthetic twins ([quickstart run](specs/005-datadog-connector/quickstart-run-2026-09-27.md)) |
@@ -45,6 +45,7 @@ cloud platform and the deploys an organisation actually runs.
 | [009 Service catalog](specs/009-service-catalog/spec.md) (the agent's own catalog, automatic signal attribution, human corrections) | built: catalog, aliases, corrections, discovery, the decision model with a pluggable classifier, and its evaluation gated in CI ([docs](docs/catalog/README.md)); the owner's real catalog and SC-001 wait on the owner (T040–T041) |
 | 010 MCP server (read-only, for coding agents) | planned by [ADR-0016](docs/decisions/ADR-0016-roadmap-after-the-sazabi-review.md); not yet specified |
 | 011 Change-watch intake (the graph starts an investigation when a change is followed by a shift) | planned by [ADR-0016](docs/decisions/ADR-0016-roadmap-after-the-sazabi-review.md); not yet specified |
+| [012 Topology discovery](specs/012-topology-discovery/spec.md) (runtime-agnostic topology, declared and observed edges, Cloud Run sources) | specified and approved 2026-11-01 ([ADR-0019](docs/decisions/ADR-0019-roadmap-after-the-rca-literature-review.md)); slice A before 011, slice B after |
 
 Each feature's `tasks.md` says exactly what is open and why. What follows is feature 001's part.
 

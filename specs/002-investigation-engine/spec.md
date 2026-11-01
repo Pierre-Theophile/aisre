@@ -255,8 +255,8 @@ Amendment after the RCA literature review
 ([`docs/reviews/2026-11-01-literature-review-agentic-rca.md`](../../docs/reviews/2026-11-01-literature-review-agentic-rca.md))
 and a repository audit the same day, decided in
 [ADR-0019](../../docs/decisions/ADR-0019-roadmap-after-the-rca-literature-review.md) D1. It adds
-suffixed requirements only; nothing is renumbered. The defaults below await the owner's approval on
-the amendment PR.
+suffixed requirements only; nothing is renumbered. The owner approved the seven defaults below as
+written on 2026-11-01 ("Ok c'est bon pour moi").
 
 - Q: The verifier of FR-022a is implemented but no production path calls it. Is that a gap or a
   choice? → **Default: a gap.** Every investigation's terminal path runs the deterministic checker,

@@ -1,8 +1,8 @@
 # ADR-0019: Roadmap after the RCA literature review
 
-- Status: **Proposed** (drafted 2026-11-01 at the owner's request: "if there are scientific advances
-  that let us do better than competitors, we integrate them directly"; awaiting the owner's decision
-  on D1–D6)
+- Status: **Accepted** (drafted 2026-11-01 at the owner's request: "if there are scientific advances
+  that let us do better than competitors, we integrate them directly"; the owner approved D1–D6 as
+  written on 2026-11-01, "Ok c'est bon pour moi")
 - Deciders: project owner; Claude (the analysis and the proposed order)
 - Source: [`docs/reviews/2026-11-01-literature-review-agentic-rca.md`](../reviews/2026-11-01-literature-review-agentic-rca.md),
   findings F1–F8. Follows ADR-0016, which set the order 009 → 010 → 011.
