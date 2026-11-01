@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,9 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Pierre-Theophile/aisre/internal/event"
-
-	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -25,9 +21,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
+	"github.com/Pierre-Theophile/aisre/internal/event"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
-	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/pkg/attribution"
 )
 
@@ -48,13 +43,14 @@ const SchemaVersion = "1.0.0"
 
 // Attributor decides and appends.
 type Attributor struct {
-	projector *projector.Projector
-	names     *Names
-	rules     Rules
-	logger    *slog.Logger
-	interval  time.Duration
-	batch     int
-	now       func() time.Time
+	store    Store
+	events   EventLog
+	names    *Names
+	rules    Rules
+	logger   *slog.Logger
+	interval time.Duration
+	batch    int
+	now      func() time.Time
 	// discover runs discovery before every sweep (the default).
 	discover bool
 	// classifier is layer 3, nil unless configured.
@@ -85,17 +81,19 @@ func WithClock(now func() time.Time) Option { return func(a *Attributor) { a.now
 // turns it off.
 func WithDiscovery(on bool) Option { return func(a *Attributor) { a.discover = on } }
 
-// New builds an attributor over the projector's store.
-func New(p *projector.Projector, opts ...Option) *Attributor {
+// New builds an attributor that reads through store and appends to events. The Postgres adapter
+// (internal/catalog/pgcatalog) builds both from the projector.
+func New(store Store, events EventLog, opts ...Option) *Attributor {
 	a := &Attributor{
-		projector: p,
-		names:     NewNames(p.Store()),
-		rules:     DefaultRules(),
-		logger:    slog.Default(),
-		interval:  2 * time.Second,
-		batch:     500,
-		now:       func() time.Time { return time.Time{} },
-		discover:  true,
+		store:    store,
+		events:   events,
+		names:    NewNames(store),
+		rules:    DefaultRules(),
+		logger:   slog.Default(),
+		interval: 2 * time.Second,
+		batch:    500,
+		now:      func() time.Time { return time.Time{} },
+		discover: true,
 	}
 	for _, opt := range opts {
 		opt(a)
@@ -106,7 +104,7 @@ func New(p *projector.Projector, opts ...Option) *Attributor {
 
 // Register records the attributor's source, once; the log refuses events from an unknown one.
 func (a *Attributor) Register(ctx context.Context) error {
-	return a.projector.RegisterSource(ctx, event.Source{
+	return a.events.RegisterSource(ctx, event.Source{
 		SourceID: graph.AttributorSourceID, Kind: "attributor", Ordering: "none", SchemaVersion: SchemaVersion,
 	})
 }
@@ -153,15 +151,14 @@ func (a *Attributor) Follow(ctx context.Context, cursor int64) (int64, error) {
 			discover bool
 			read     int
 		)
-		err := a.projector.Log().Page(ctx, cursor, a.batch, func(r *eventlog.Record) error {
+		err := a.events.Page(ctx, cursor, a.batch, func(seq int64, env *graphv1.EventEnvelope) error {
 			read++
-			cursor = r.AppendedSeq
-			if r.Envelope.GetSourceId() == graph.AttributorSourceID &&
-				r.Envelope.GetAttributeSignal() != nil {
+			cursor = seq
+			if env.GetSourceId() == graph.AttributorSourceID && env.GetAttributeSignal() != nil {
 				return nil
 			}
-			discover = discover || discovers(r.Envelope)
-			refs, all := affected(r.Envelope)
+			discover = discover || discovers(env)
+			refs, all := affected(env)
 			sweep = sweep || all
 			for _, ref := range refs {
 				signals[ref.String()] = true
@@ -269,21 +266,9 @@ func (a *Attributor) Sweep(ctx context.Context) (appended int, err error) {
 		}
 		appended = n
 	}
-	rows, err := a.projector.Store().Pool().Query(ctx, `
-		SELECT e.entity_id FROM graph.entities e
-		WHERE e.merged_into IS NULL AND e.type = ANY($1)
-		  AND EXISTS (SELECT 1 FROM graph.entity_versions v
-		              WHERE v.entity_id = e.entity_id AND upper_inf(v.observed)
-		                AND (upper_inf(v.valid) OR e.type = $2))
-		ORDER BY e.entity_id`,
-		[]string{string(graph.NodeTypeAlert), string(graph.NodeTypeKnowledgeDoc), string(graph.NodeTypeChange)},
-		string(graph.NodeTypeChange))
+	ids, err := a.store.CurrentSignals(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("catalog: list current signals: %w", err)
-	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return 0, fmt.Errorf("catalog: list current signals: %w", err)
+		return appended, err
 	}
 	for _, id := range ids {
 		ok, err := a.Attribute(ctx, id)
@@ -304,7 +289,7 @@ func (a *Attributor) Attribute(ctx context.Context, entityID string) (bool, erro
 	if err != nil || env == nil {
 		return false, err
 	}
-	result, err := a.projector.Apply(ctx, env, a.now())
+	result, err := a.events.Apply(ctx, env, a.now())
 	if err != nil {
 		return false, fmt.Errorf("catalog: append decision on %s: %w", entityID, err)
 	}
@@ -397,109 +382,31 @@ type currentDecision struct {
 // current reads the signal's standing decision: the latest attribution or correction nothing has
 // superseded or reverted.
 func (a *Attributor) current(ctx context.Context, signalID string) (currentDecision, error) {
-	var (
-		out                  currentDecision
-		entries, suggestions []byte
-	)
-	err := a.projector.Store().Pool().QueryRow(ctx, `
-		SELECT event_id, entries, suggestions FROM graph.attribution_decisions
-		WHERE signal_entity_id = $1 AND kind IN ('attribute', 'correct')
-		  AND superseded_by_event_id IS NULL AND reverted_by_event_id IS NULL
-		ORDER BY decided_at DESC, event_id DESC LIMIT 1`, signalID).Scan(&out.eventID, &entries, &suggestions)
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return out, nil
-	case err != nil:
-		return out, fmt.Errorf("catalog: read the decision on %s: %w", signalID, err)
+	eventID, entries, suggestions, err := a.store.StandingDecision(ctx, signalID)
+	if err != nil || eventID == "" {
+		return currentDecision{}, err
 	}
-	var d Decision
-	for _, pair := range []struct {
-		raw []byte
-		to  *[]Attributed
-	}{{entries, &d.Entries}, {suggestions, &d.Suggestions}} {
-		var items []struct {
-			EntrySlug string  `json:"entry_slug"`
-			Layer     string  `json:"layer"`
-			RuleID    string  `json:"rule_id"`
-			Score     float64 `json:"score"`
-		}
-		if err := json.Unmarshal(pair.raw, &items); err != nil {
-			return out, fmt.Errorf("catalog: decode the decision on %s: %w", signalID, err)
-		}
-		for _, item := range items {
-			*pair.to = append(*pair.to, Attributed{Slug: item.EntrySlug, Layer: item.Layer, RuleID: item.RuleID, Score: item.Score})
-		}
-	}
-	out.digest = decisionDigest(d)
-	return out, nil
+	return currentDecision{eventID: eventID, digest: decisionDigest(Decision{Entries: entries, Suggestions: suggestions})}, nil
 }
 
 // facts reads the part of the catalog a decision needs.
 func (a *Attributor) facts(ctx context.Context, signal Signal) (Facts, error) {
-	pool := a.projector.Store().Pool()
 	facts := Facts{Hidden: map[string]bool{}}
-	signalID := signal.EntityID
 
-	var entries []byte
-	err := pool.QueryRow(ctx, `
-		SELECT entries FROM graph.attribution_decisions
-		WHERE signal_entity_id = $1 AND kind = 'correct'
-		  AND superseded_by_event_id IS NULL AND reverted_by_event_id IS NULL
-		ORDER BY decided_at DESC, event_id DESC LIMIT 1`, signalID).Scan(&entries)
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-	case err != nil:
-		return facts, fmt.Errorf("catalog: read corrections of %s: %w", signalID, err)
-	default:
-		var items []struct {
-			EntrySlug string `json:"entry_slug"`
-		}
-		if err := json.Unmarshal(entries, &items); err != nil {
-			return facts, fmt.Errorf("catalog: decode the correction of %s: %w", signalID, err)
-		}
+	correction, corrected, err := a.store.Correction(ctx, signal.EntityID)
+	if err != nil {
+		return facts, err
+	}
+	if corrected {
 		facts.Corrected = true
-		facts.Correction = []string{}
-		for _, item := range items {
-			facts.Correction = append(facts.Correction, item.EntrySlug)
-		}
+		facts.Correction = append([]string{}, correction...)
 	}
-
-	rows, err := pool.Query(ctx, `
-		SELECT a.namespace, a.value, a.environment, a.entry_slug,
-		       EXISTS (SELECT 1 FROM graph.attribution_decisions d
-		               WHERE d.event_id = a.decided_by_event_id AND d.kind = 'correct'),
-		       coalesce(a.rule_id, '') = $1
-		FROM graph.catalog_alias_versions a WHERE upper_inf(a.observed)
-		ORDER BY 1, 2, 3`, RuleEntityClaim)
+	if facts.Aliases, err = a.store.Aliases(ctx, RuleEntityClaim); err != nil {
+		return facts, err
+	}
+	hidden, err := a.store.HiddenEntries(ctx)
 	if err != nil {
-		return facts, fmt.Errorf("catalog: read aliases: %w", err)
-	}
-	for rows.Next() {
-		var alias Alias
-		if err := rows.Scan(&alias.Name.Ref.Namespace, &alias.Name.Ref.Value, &alias.Name.Environment,
-			&alias.Slug, &alias.ByCorrection, &alias.Discovered); err != nil {
-			rows.Close()
-			return facts, fmt.Errorf("catalog: scan alias: %w", err)
-		}
-		facts.Aliases = append(facts.Aliases, alias)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return facts, fmt.Errorf("catalog: read aliases: %w", err)
-	}
-
-	rows, err = pool.Query(ctx, `
-		SELECT c.value FROM graph.identity_claims c
-		JOIN graph.entity_versions v ON v.entity_id = c.entity_id
-		WHERE c.namespace = $1 AND upper_inf(v.observed) AND upper_inf(v.valid)
-		  AND v.props->$2->>'value' = $3`,
-		graph.CatalogNamespace, graph.CatalogStatusProp, graph.CatalogStatusHidden)
-	if err != nil {
-		return facts, fmt.Errorf("catalog: read hidden entries: %w", err)
-	}
-	hidden, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return facts, fmt.Errorf("catalog: read hidden entries: %w", err)
+		return facts, err
 	}
 	for _, slug := range hidden {
 		facts.Hidden[slug] = true
@@ -514,72 +421,20 @@ func (a *Attributor) facts(ctx context.Context, signal Signal) (Facts, error) {
 		facts.Entries[slug] = Entry{Display: e.display, Status: e.status, Description: e.description}
 	}
 	if len(signal.Owners) > 0 {
-		if facts.EntryOwners, err = a.entryOwners(ctx); err != nil {
+		if facts.EntryOwners, err = a.store.EntryOwners(ctx); err != nil {
 			return facts, err
 		}
 	}
 	return facts, nil
 }
 
-// entryOwners reads, per entry, the owners of the entities its aliases name (rule P4).
-func (a *Attributor) entryOwners(ctx context.Context) (map[string][]string, error) {
-	rows, err := a.projector.Store().Pool().Query(ctx, `
-		WITH named AS (
-			SELECT a.entry_slug, c.entity_id FROM graph.catalog_alias_versions a
-			JOIN graph.identity_claims c ON c.namespace = a.namespace AND c.value = a.value
-			WHERE upper_inf(a.observed) AND a.entry_slug <> $2
-			UNION
-			SELECT a.entry_slug, k.entity_id FROM graph.catalog_alias_versions a
-			JOIN graph.correlation_keys k ON k.namespace = a.namespace AND k.value = a.value
-			WHERE upper_inf(a.observed) AND a.entry_slug <> $2
-		)
-		SELECT DISTINCT named.entry_slug, coalesce(t.merged_into, o.dst_id)
-		FROM named
-		JOIN graph.entities m ON m.entity_id = named.entity_id
-		JOIN graph.edge_versions o ON o.src_id = coalesce(m.merged_into, m.entity_id)
-		LEFT JOIN graph.entities t ON t.entity_id = o.dst_id
-		WHERE o.type = $1 AND upper_inf(o.observed) AND upper_inf(o.valid)
-		ORDER BY 1, 2`, string(graph.EdgeTypeOwnedBy), graph.HiddenEntrySlug)
-	if err != nil {
-		return nil, fmt.Errorf("catalog: read entry owners: %w", err)
-	}
-	defer rows.Close()
-	out := map[string][]string{}
-	for rows.Next() {
-		var slug, owner string
-		if err := rows.Scan(&slug, &owner); err != nil {
-			return nil, fmt.Errorf("catalog: scan entry owner: %w", err)
-		}
-		out[slug] = append(out[slug], owner)
-	}
-	return out, rows.Err()
-}
-
 // lookup resolves a ref to its canonical entity, without creating anything.
 func (a *Attributor) lookup(ctx context.Context, ref graph.Ref) (string, bool, error) {
-	var id string
-	err := a.projector.Store().Pool().QueryRow(ctx, `
-		SELECT entity_id FROM (
-			SELECT entity_id, 0 AS rank, '' AS claim_id FROM graph.entities WHERE entity_id = $1
-			UNION ALL
-			SELECT entity_id, 1, claim_id FROM graph.identity_claims WHERE namespace = $2 AND value = $3
-		) found ORDER BY rank, claim_id LIMIT 1`, ref.EntityID(), ref.Namespace, ref.Value).Scan(&id)
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return "", false, nil
-	case err != nil:
-		return "", false, fmt.Errorf("catalog: look up %s: %w", ref, err)
-	}
-	return id, true, nil
+	return a.store.Lookup(ctx, ref)
 }
 
 // logEnd is the log's last appended_seq: events before it are covered by the initial sweep.
-func (a *Attributor) logEnd(ctx context.Context) (int64, error) {
-	var seq int64
-	err := a.projector.Store().Pool().QueryRow(ctx,
-		`SELECT coalesce(max(appended_seq), 0) FROM log.events`).Scan(&seq)
-	return seq, err
-}
+func (a *Attributor) logEnd(ctx context.Context) (int64, error) { return a.store.LogEnd(ctx) }
 
 func attributedProto(items []Attributed) []*graphv1.Attributed {
 	out := make([]*graphv1.Attributed, 0, len(items))

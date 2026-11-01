@@ -68,6 +68,7 @@ var rules = []rule{
 			"internal/event",
 			"internal/mask",
 			"internal/resolution",
+			"internal/catalog",
 			"internal/investigation/ledger",
 			"internal/investigation/workers/logs",
 			"internal/investigation/workers/metrics",

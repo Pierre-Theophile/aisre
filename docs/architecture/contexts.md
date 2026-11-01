@@ -34,7 +34,7 @@ cmd/aisre ──► internal/cli (composition root: wires everything, owns no ru
 | Graph and ingestion | `internal/graph`, `internal/event`, `internal/resolution` | `internal/projector`, `internal/query` | `internal/log` (Postgres event log), `internal/feeders/*`, `internal/store/postgres` | `pkg/feeder` |
 | Investigation | `internal/investigation/ledger`, `internal/mask`, `internal/injection`, `internal/logmine` | `intake`, `engine`, `verify`, `runner`, `workers/*`, `render` | `internal/backends/*`, `investigation/store`, `investigation/model/anthropic` and the built-in `mistral` and `openai_compatible` adapters, `render/slacksink` | `model.Adapter` (registered with `model.RegisterProvider`), `pkg/backend`, `pkg/worker`, consumer-side interfaces (`graph.QueryService`, `chat.History`, `render.Sink`, …) |
 | Knowledge | `pkg/knowledge`, `internal/knowledgedoc` | `internal/embedding` (indexer) | `internal/store/postgres`, `pkg/knowledge/memory`, `embedding` OpenAI-compatible adapter | `knowledge.Store`, `knowledge.Embedder` |
-| Catalog and attribution | `pkg/attribution` | `internal/catalog` | `internal/catalog/classify` | `attribution.Classifier` |
+| Catalog and attribution | `pkg/attribution`, `internal/catalog` (rules, discovery, decision model) | `catalog.Attributor` | `internal/catalog/pgcatalog` (Postgres and the projector), `internal/catalog/classify` | `catalog.Store`, `catalog.EventLog`, `attribution.Classifier` |
 | Evaluation | — | `internal/eval`, `internal/fixture`, `internal/investigation/replay` | `internal/fixture/graphquery` | — |
 | Shared vendor clients | — | — | `internal/datadogx`, `internal/gcpx`, `internal/slackx`, `internal/notionx` | — |
 
@@ -57,7 +57,9 @@ Cross-context rules:
 
 These are tracked and not yet enforced:
 
-- Application packages take `*postgres.Store` directly instead of repository interfaces
-  (`investigation/runner`, `catalog`, `server`).
+- `investigation/runner` still takes `*postgres.Store` and calls the DAOs in
+  `investigation/store` directly. The catalog (`catalog.Store`, `catalog.EventLog`) and the server's
+  principal registry (`server.PrincipalRecorder`) now go through consumer-side interfaces; the
+  runner is next, and needs the pure parts of `investigation/store` split from its SQL first.
 - Protobuf types double as the domain model (ADR-0002). This is a deliberate trade-off; new
   aggregates should keep the generated types at their edges.

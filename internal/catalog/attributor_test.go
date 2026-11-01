@@ -17,6 +17,7 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/catalog"
+	"github.com/Pierre-Theophile/aisre/internal/catalog/pgcatalog"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
@@ -49,7 +50,7 @@ func newWorld(t *testing.T, opts ...catalog.Option) *world {
 		}
 	}
 	w := &world{t: t, p: p, at: time.Date(2026, 10, 19, 9, 0, 0, 0, time.UTC)}
-	w.a = catalog.New(p, append([]catalog.Option{catalog.WithDiscovery(false), catalog.WithClock(func() time.Time {
+	w.a = pgcatalog.NewAttributor(p, append([]catalog.Option{catalog.WithDiscovery(false), catalog.WithClock(func() time.Time {
 		w.at = w.at.Add(time.Millisecond)
 		return w.at
 	})}, opts...)...)

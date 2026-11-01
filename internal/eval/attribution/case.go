@@ -18,6 +18,7 @@ import (
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/catalog"
 	"github.com/Pierre-Theophile/aisre/internal/catalog/classify"
+	"github.com/Pierre-Theophile/aisre/internal/catalog/pgcatalog"
 	"github.com/Pierre-Theophile/aisre/internal/embedding"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
@@ -193,7 +194,7 @@ func Replay(ctx context.Context, store *postgres.Store, c *Case, opts ...catalog
 		clock = clock.Add(time.Millisecond)
 		return clock
 	})}, opts...)
-	a := catalog.New(p, opts...)
+	a := pgcatalog.NewAttributor(p, opts...)
 	if err := a.Register(ctx); err != nil {
 		return nil, nil, fmt.Errorf("attribution: %s: register the attributor: %w", c.ID, err)
 	}
