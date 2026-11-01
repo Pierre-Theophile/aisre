@@ -5,6 +5,7 @@ package eval_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -293,4 +294,43 @@ func TestAHarnessRefusesAFixtureWithNoIncidentBlock(t *testing.T) {
 		t.Fatal("a fixture with no `incident:` block was accepted")
 	}
 	t.Logf("refused: %v", err)
+}
+
+// TestTheStopCompletesAPathBeyondTheNeighbourhood runs distant-culprit-01, whose culprit's target
+// (fx-rates) is three hops from the alerting service while the neighbourhood read holds two. The
+// stop's completion read — the subgraph one hop wider around fx-rates — supplies the ledger ->
+// fx-rates edge, so the path is drawn along the whole chain instead of reported undrawable
+// (FR-019b, FR-059a).
+func TestTheStopCompletesAPathBeyondTheNeighbourhood(t *testing.T) {
+	harness, err := eval.NewHarness(context.Background(), eval.Options{
+		Dir:        repoRoot + "/fixtures/incidents/distant-culprit-01",
+		NewStore:   storeFactory(t),
+		AuditPath:  auditPath,
+		Kind:       eval.KindModelFree,
+		ModelYAML:  modelYAML,
+		PricesYAML: pricesYAML,
+	})
+	if err != nil {
+		t.Fatalf("NewHarness: %v", err)
+	}
+	t.Cleanup(harness.Close)
+	outcome, err := harness.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !outcome.PathDrawn {
+		t.Fatalf("path not drawn: %+v", outcome.CausalPath)
+	}
+	var got []string
+	for _, step := range outcome.CausalPath {
+		got = append(got, step.Entity)
+	}
+	want := []string{"k8s.change=shop/fx-rates@rev4", "otel.service.name=fx-rates", "otel.service.name=ledger",
+		"otel.service.name=payments", "otel.service.name=checkout"}
+	if strings.Join(got, " > ") != strings.Join(want, " > ") {
+		t.Errorf("path =\n  %s\nwant\n  %s", strings.Join(got, " > "), strings.Join(want, " > "))
+	}
+	if n := outcome.WorkerCalls["graph/subgraph"]; n != 2 {
+		t.Errorf("subgraph reads = %d, want 2: the neighbourhood and the one completion read", n)
+	}
 }

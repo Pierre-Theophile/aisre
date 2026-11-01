@@ -362,11 +362,11 @@ func (e *Engine) Stop(stop Stop) error {
 	// part of the trajectory and no exit can skip it silently (FR-022c).
 	// The paths are drawn on the settled ledger, before verification, so that a path edge the
 	// verifier removes is published as unverified (FR-019b, FR-022c).
-	paths := e.drawPaths()
+	ctx := e.runContext()
+	paths := e.drawPaths(ctx)
 	e.mu.Lock()
 	e.paths = paths
 	e.mu.Unlock()
-	ctx := e.runContext()
 	verification := e.verifyClaims(ctx, stop)
 	e.mu.Lock()
 	e.verification = &verification
