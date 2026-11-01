@@ -58,6 +58,7 @@ ground truth is `unobserved` and there is no culprit to rank.
 | `slow-burn-01` | synthetic (adversarial, T099) | `change_induced` — payments-pool@rv5512 | 337 | 0.0000 | 2 | **4** |
 | `distant-culprit-01` | synthetic (adversarial, T100) | `change_induced` — fx-rates@rev4 | 523 | 0.0000 | 2 | **4** |
 | `adjacent-decoy-01` | synthetic (adversarial, T101) | `change_induced` — ledger@rev5 | 436 | 0.0000 | 2 | **4** |
+| `stopped-flow-01` | synthetic (absence, T127) | `change_induced` — checkout-flags@cfg42, seen only as notifier's traffic falling | 422 | 0.0000 | 2 | **3** |
 
 What each fixture asserts is in its own `manifest.yaml`, at length; that description is the
 documentation and this table is the index into it. Five thousand and forty-seven recorded terms

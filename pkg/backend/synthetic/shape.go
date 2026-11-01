@@ -39,6 +39,8 @@ type Shape struct {
 	Propagation PropagationMode
 	// DiurnalAmplitude is the scenario's daily demand shape.
 	DiurnalAmplitude float64
+	// StopsFlow makes the degrading changes stop their targets' outbound calls rather than fail.
+	StopsFlow bool
 }
 
 // The published shape names.
@@ -54,6 +56,9 @@ const (
 	ShapeDistantCulprit = "distant-culprit"
 	// ShapeAdjacentDecoy is `adjacent-decoy-01`'s.
 	ShapeAdjacentDecoy = "adjacent-decoy"
+	// ShapeStoppedFlow is `stopped-flow-01`'s: the culprit stops its target calling its callees,
+	// and nothing fails.
+	ShapeStoppedFlow = "stopped-flow"
 )
 
 // shapes is the registry, keyed by published name.
@@ -112,6 +117,13 @@ var shapes = map[string]Shape{
 			"moves and `onset` on the subject has something real to find",
 		Propagation: PropagateAttenuated,
 	},
+	ShapeStoppedFlow: {
+		Name: ShapeStoppedFlow,
+		Summary: "the culprit stops its target calling its callees: their request rate falls by " +
+			"StoppedFlowFraction at the change instant and no error rate or latency moves anywhere",
+		Propagation: PropagateAttenuated,
+		StopsFlow:   true,
+	},
 }
 
 // ShapeByName returns the named shape. A name the registry does not hold is reported rather than
@@ -163,6 +175,9 @@ func (sh Shape) ApplyTo(scenario *Scenario) {
 		}
 		if change.CapacityFraction == 0 {
 			change.CapacityFraction = sh.CapacityFraction
+		}
+		if !change.StopsFlow {
+			change.StopsFlow = sh.StopsFlow
 		}
 	}
 }

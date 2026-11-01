@@ -307,9 +307,10 @@ func (b *Backend) series(entity Entity, selector string, window *engine.Window, 
 		case investigationv1.Statistic_ERROR_RATE:
 			value = round6(errorBase * degradation * round6(1+wobble))
 		case investigationv1.Statistic_COUNT:
-			value = round6(round6(round6(rateBase*round6(1+wobble))*b.scenario.diurnalAt(at)) * float64(step/time.Second))
+			value = round6(round6(round6(round6(rateBase*round6(1+wobble))*b.scenario.diurnalAt(at))*float64(step/time.Second)) *
+				b.scenario.flowFactorAt(entity, at))
 		case investigationv1.Statistic_RATE:
-			value = round6(round6(rateBase*round6(1+wobble)) * b.scenario.diurnalAt(at))
+			value = round6(round6(round6(rateBase*round6(1+wobble))*b.scenario.diurnalAt(at)) * b.scenario.flowFactorAt(entity, at))
 		case investigationv1.Statistic_P95:
 			value = round6(latencyBase * 2.1 * round6(1+wobble) * latencyFactor(degradation))
 		case investigationv1.Statistic_P99:
@@ -720,7 +721,8 @@ func (b *Backend) errorsByVersion(term *investigationv1.ErrorsByVersionTerm) (en
 			byVersion[version] = acc
 			order = append(order, version)
 		}
-		requests := round6(baselineRateFloor + baselineRateSpan*unitOf(b.scenario.Seed, selector, "rate"))
+		requests := round6(round6(baselineRateFloor+baselineRateSpan*unitOf(b.scenario.Seed, selector, "rate")) *
+			b.scenario.flowFactorAt(entity, at))
 		acc.total = round6(acc.total + requests)
 		acc.errors = round6(acc.errors + round6(requests*round6(base*b.scenario.effectiveDegradationAt(entity, at))))
 	}

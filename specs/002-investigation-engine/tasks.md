@@ -939,7 +939,7 @@ feature, ordered as the plan's "Order of work" says.
 ### Absence in the first wave (FR-046b)
 
 - [x] T126 Add RATE `compare` terms on each top candidate's callers and callees and the edges `diff` reports as retracted (or whose weight class fell) in the window to the first wave; a fall is scored by magnitude; a candidate with no caller or callee is a profile blind spot; extend the recorded worlds that lack the terms → FR-046b, FR-046a; fixture: rollout-regression-01-incident, distant-culprit-01
-- [ ] T127 Add the incident fixture `stopped-flow-01`, whose root cause is visible only as a callee that stops receiving calls, with its ground truth and decoys → FR-046b, FR-061b; fixture: stopped-flow-01
+- [x] T127 Add the incident fixture `stopped-flow-01`, whose root cause is visible only as a callee that stops receiving calls, with its ground truth and decoys → FR-046b, FR-061b; fixture: stopped-flow-01
 
 ### Paths and process metrics (FR-019b, FR-059a)
 
