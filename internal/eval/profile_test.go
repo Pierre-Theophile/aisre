@@ -86,3 +86,44 @@ func TestTheProfileNamesAFeederThatHasNotReportedTheWindow(t *testing.T) {
 		t.Errorf("blind spots %q do not name the feeder k8s:demo", profile.BlindSpots)
 	}
 }
+
+// TestTheExaminationReportSaysWhatWasAskedAndWhatWasNot is FR-022b on the rollout fixture
+// (T125): the culprit's hypothesis was examined on its target, and everything the report names
+// as an omission is a decisive family the profile listed as reachable.
+func TestTheExaminationReportSaysWhatWasAskedAndWhatWasNot(t *testing.T) {
+	harness, err := eval.NewHarness(context.Background(), eval.Options{
+		Dir: incidentFixture, NewStore: storeFactory(t), AuditPath: auditPath,
+		Kind: eval.KindModelFree, ModelYAML: modelYAML, PricesYAML: pricesYAML,
+	})
+	if err != nil {
+		t.Fatalf("NewHarness: %v", err)
+	}
+	t.Cleanup(harness.Close)
+	e, err := harness.Engine(backend.NewRecordedFromWorld(harness.World()))
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	if _, err := e.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	report := e.Examination()
+	t.Logf("examination:\n%s", report.Render())
+	if report.Table != "v1 (observe)" {
+		t.Errorf("table = %q", report.Table)
+	}
+	top := e.Ledger().Hypotheses()[0]
+	for _, h := range report.Hypotheses {
+		if h.HypothesisID != top.ID {
+			continue
+		}
+		if h.Category != "rollout" {
+			t.Errorf("top category = %q, want rollout", h.Category)
+		}
+		if len(h.Queried) == 0 {
+			t.Error("the top hypothesis records no family queried on its target")
+		}
+		if len(h.Omissions) != 0 {
+			t.Errorf("the first wave queried the rollout's metrics, yet omissions = %v", h.Omissions)
+		}
+	}
+}

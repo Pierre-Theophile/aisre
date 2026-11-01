@@ -208,6 +208,7 @@ func (e *Engine) seed(diff *graphv1.DiffResponse) error {
 		// a staleness decision must be made on.
 		e.mu.Lock()
 		e.changeOffsets[entityID] = change.GetSignedTimeDistanceSeconds()
+		e.changeKinds[entityID] = change.GetChange().GetChange().GetKind()
 		e.mu.Unlock()
 		if e.hypothesisFor(entityID) != "" {
 			continue

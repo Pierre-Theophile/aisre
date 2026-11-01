@@ -933,8 +933,8 @@ feature, ordered as the plan's "Order of work" says.
 ### The search-space profile and the examination report (FR-012a, FR-022b)
 
 - [x] T123 Build the search-space profile from the graph at the pinned instants (entities and layers in scope, edges with provenance where recorded, signal families per entity from its pointers, blind spots), cap it with the truncation stated, put it in the first brief and record it with the investigation → FR-012a; fixture: rollout-regression-01-incident, unknown-feeder-gap-01
-- [ ] T124 Publish `config/expectations/v1.yaml` (cause category → decisive signal families, mode `observe`) with its loader and schema test → FR-022b, plan V6; fixture: unit
-- [ ] T125 Compute and publish the examination report at conclusion (queried, reachable and unqueried, untouched impact-surface entities, per hypothesis); unreachable families are coverage gaps, never omissions; in `observe` mode no status changes → FR-022b, FR-027; fixture: rollout-regression-01-incident, unknown-feeder-gap-01
+- [x] T124 Publish `config/expectations/v1.yaml` (cause category → decisive signal families, mode `observe`) with its loader and schema test → FR-022b, plan V6; fixture: unit
+- [x] T125 Compute and publish the examination report at conclusion (queried, reachable and unqueried, untouched impact-surface entities, per hypothesis); unreachable families are coverage gaps, never omissions; in `observe` mode no status changes → FR-022b, FR-027; fixture: rollout-regression-01-incident, unknown-feeder-gap-01
 
 ### Absence in the first wave (FR-046b)
 

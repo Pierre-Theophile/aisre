@@ -12,6 +12,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -409,7 +410,7 @@ const investigationSelect = `
 	       coalesce(decision_event_id, ''), coalesce(onset_estimate_evidence_id, ''),
 	       started_at, ended_at,
 	       coalesce(verification_status, ''), coalesce(verification_detail, ''),
-	       coalesce(search_space_profile, '')
+	       coalesce(search_space_profile, ''), examination
 	FROM investigation.investigations`
 
 func (d *InvestigationDAO) scanOne(ctx context.Context, where string, args ...any) (*investigationv1.Investigation, error) {
@@ -435,6 +436,7 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 		endedAt                                      *time.Time
 		lifecycle, conclusionKind, outcome, stopName string
 		verification                                 string
+		examination                                  []byte
 		modelConfig                                  []byte
 		profile                                      string
 	)
@@ -449,7 +451,7 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 		&inv.SchemaVersion, &inv.RecordingKey, &inv.RecordingDigest,
 		&inv.DecisionEventId, &inv.OnsetEstimateEvidenceId,
 		&startedAt, &endedAt,
-		&verification, &inv.VerificationDetail, &inv.SearchSpaceProfile,
+		&verification, &inv.VerificationDetail, &inv.SearchSpaceProfile, &examination,
 	); err != nil {
 		return nil, fmt.Errorf("investigation store: scan investigation: %w", err)
 	}
@@ -465,6 +467,12 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 	inv.Outcome = record.OutcomeProto(outcome)
 	inv.StopReason = record.StopReasonFromName(stopName)
 	inv.VerificationStatus = record.VerificationStatusProto(verification)
+	if len(examination) > 0 {
+		inv.Examination = &investigationv1.ExaminationReport{}
+		if err := protojson.Unmarshal(examination, inv.Examination); err != nil {
+			return nil, fmt.Errorf("investigation store: examination of %s: %w", inv.GetInvestigationId(), err)
+		}
+	}
 	inv.StartedAt = timestamppb.New(startedAt.UTC())
 	if endedAt != nil {
 		inv.EndedAt = timestamppb.New(endedAt.UTC())

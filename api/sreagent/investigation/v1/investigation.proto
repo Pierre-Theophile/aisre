@@ -603,6 +603,25 @@ message HumanReview {
   string author = 5; google.protobuf.Timestamp decided_at = 6; string event_id = 7;
 }
 message Label { string label_id = 1; bool was_this_right = 2; string author = 3; google.protobuf.Timestamp labelled_at = 4; string event_id = 5; }
+// The examination report (FR-022b): what each hypothesis queried on its targets, the decisive
+// families of its cause category that were reachable and never queried (omissions), the ones no
+// target could be asked for (coverage gaps, never omissions), and the entities in scope that no
+// call touched. Entries are rendered as `<family> on <entity reference>`.
+message HypothesisExamination {
+  string hypothesis_id = 1;
+  string cause_category = 2;  // a change kind, not_change_induced or stopped_flow; empty for the open hypothesis
+  repeated string targets = 3;
+  repeated string queried = 4;
+  repeated string omissions = 5;
+  repeated string coverage_gaps = 6;
+}
+message ExaminationReport {
+  string expectation_table = 1;  // the table and the mode in force, e.g. "v1 (observe)"
+  repeated HypothesisExamination hypotheses = 2;
+  repeated string untouched_entities = 3;
+  uint32 omissions = 4;
+}
+
 message VerifierFinding { string claim_ref = 1; string verdict = 2; string offending_value = 3; string cited_evidence_id = 4; string action_taken = 5; }
 
 message Resolution {                       // "what would resolve this" (FR-026, FR-045)
@@ -641,6 +660,7 @@ message Investigation {
   VerificationStatus verification_status = 36;  // FR-022c; unspecified on runs concluded before it
   string verification_detail = 37;         // why, in a sentence: counts kept/demoted/removed, or the reason
   string search_space_profile = 38;        // FR-012a: the profile the first brief carried; empty on runs concluded before it
+  ExaminationReport examination = 39;       // FR-022b; unset on runs concluded before it
 }
 
 // ============================================================================

@@ -372,9 +372,43 @@ func (r *Report) writeRanked(b *strings.Builder) {
 		if h.Rationale != "" {
 			fmt.Fprintf(b, "   %s\n", h.Rationale)
 		}
+		r.writeExamination(b, h.ID)
 		r.writeJudgments(b, h)
 	}
+	if x := r.Investigation.GetExamination(); x != nil {
+		fmt.Fprintf(b, "examined against expectation table %s; %d decisive famil%s reachable and not queried\n",
+			x.GetExpectationTable(), x.GetOmissions(), plural(int(x.GetOmissions()), "y", "ies"))
+		if untouched := x.GetUntouchedEntities(); len(untouched) > 0 {
+			fmt.Fprintf(b, "in scope and never queried: %s\n", strings.Join(untouched, ", "))
+		}
+	}
 	b.WriteString("\n")
+}
+
+// writeExamination renders one hypothesis's part of the examination report (FR-022b): what was
+// queried on its targets, and what was reachable, decisive and not queried.
+func (r *Report) writeExamination(b *strings.Builder, hypothesisID string) {
+	for _, x := range r.Investigation.GetExamination().GetHypotheses() {
+		if x.GetHypothesisId() != hypothesisID {
+			continue
+		}
+		if len(x.GetQueried()) > 0 {
+			fmt.Fprintf(b, "   queried: %s\n", strings.Join(x.GetQueried(), ", "))
+		}
+		if len(x.GetOmissions()) > 0 {
+			fmt.Fprintf(b, "   not queried (decisive for %s): %s\n", x.GetCauseCategory(), strings.Join(x.GetOmissions(), ", "))
+		}
+		if len(x.GetCoverageGaps()) > 0 {
+			fmt.Fprintf(b, "   coverage gap: %s\n", strings.Join(x.GetCoverageGaps(), ", "))
+		}
+	}
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // writeJudgments renders supports, refutations and exonerations under one hypothesis.

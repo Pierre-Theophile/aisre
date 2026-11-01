@@ -225,4 +225,8 @@ func TestAModelFreeRunIsVerifiedWithNothingToCheck(t *testing.T) {
 	if !strings.Contains(final.GetSearchSpaceProfile(), "focus: ") {
 		t.Errorf("the concluded investigation records no search-space profile: %q", final.GetSearchSpaceProfile())
 	}
+	// And so is the examination report, with the table and mode in force (FR-022b).
+	if final.GetExamination().GetExpectationTable() != "v1 (observe)" || len(final.GetExamination().GetHypotheses()) == 0 {
+		t.Errorf("examination = %v", final.GetExamination())
+	}
 }
