@@ -10,6 +10,7 @@ import (
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/budget"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/verify"
 )
@@ -98,7 +99,65 @@ func (e *Engine) Claims() []verify.Claim {
 			EvidenceIDs: cited,
 		})
 	}
-	return claims
+	return append(claims, e.pathClaims()...)
+}
+
+// pathClaims are the verified edges of the paths of the hypotheses the investigator proposed: the
+// path is part of what the model put forward, so each edge it says the fault crossed is checked
+// against the evidence it cites (FR-019b, FR-022c). Engine-drawn paths of engine-seeded
+// hypotheses are composed from typed values and are not claims, like their statements.
+func (e *Engine) pathClaims() []verify.Claim {
+	e.mu.Lock()
+	paths := append([]Path(nil), e.paths...)
+	proposed := make(map[string]bool, len(e.modelHypotheses))
+	for id := range e.modelHypotheses {
+		proposed[id] = true
+	}
+	e.mu.Unlock()
+	var out []verify.Claim
+	for _, p := range paths {
+		if !proposed[p.HypothesisID] {
+			continue
+		}
+		h, ok := e.ledger.Hypothesis(p.HypothesisID)
+		if !ok || h.Status != ledger.StatusSupported {
+			continue
+		}
+		for i, edge := range p.Edges {
+			if edge.Unverified {
+				continue
+			}
+			out = append(out, verify.Claim{
+				Ref:         PathClaimRef(p.HypothesisID, i),
+				Kind:        verify.KindRanked,
+				Text:        fmt.Sprintf("the fault crossed %s -> %s along a %s edge", edge.Src, edge.Dst, edge.Type),
+				EvidenceIDs: append([]string(nil), edge.EvidenceIDs...),
+			})
+		}
+	}
+	return out
+}
+
+// withdrawRemovedEdges marks unverified every path edge whose claim a finding removed.
+func withdrawRemovedEdges(paths []Path, findings []verify.Finding) []Path {
+	removed := map[string]bool{}
+	for _, f := range findings {
+		if f.ActionTaken == verify.ActionRemoved {
+			removed[f.ClaimRef] = true
+		}
+	}
+	out := make([]Path, len(paths))
+	for i, p := range paths {
+		p.Edges = append([]PathEdge(nil), p.Edges...)
+		for j := range p.Edges {
+			if removed[PathClaimRef(p.HypothesisID, j)] {
+				p.Edges[j].Unverified = true
+				p.Edges[j].EvidenceIDs = nil
+			}
+		}
+		out[i] = p
+	}
+	return out
 }
 
 // verifyClaims runs the checker, then the verifier over what the checker kept.

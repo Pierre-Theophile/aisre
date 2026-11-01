@@ -622,6 +622,26 @@ message ExaminationReport {
   uint32 omissions = 4;
 }
 
+// One edge of a propagation path (FR-019b), in the direction the fault travelled: from the entity
+// nearer the cause to the entity nearer the alerting one.
+message PathEdge {
+  string src = 1;                    // a reference, or the change's reference for `changed_by`
+  string dst = 2;
+  string edge_type = 3;              // the graph's edge type, lower-case: changed_by, calls, depends_on
+  bool against_edge = 4;             // the fault travelled against the edge (a callee's fault reaching its caller)
+  repeated string evidence_ids = 5;  // the evidence that shows the fault crossed it; empty when unverified
+  bool unverified = 6;
+}
+// A hypothesis's propagation path: an ordered chain of typed graph edges from the candidate cause to
+// the alerting entity, as of the pinned instants (FR-019b).
+message PropagationPath {
+  string hypothesis_id = 1;
+  repeated PathEdge edges = 2;
+  bool drawable = 3;                 // false when no chain of edges on the graph links the cause to the subject
+  Resolution missing_link = 4;       // set when not drawable: the link the graph lacks, as a resolving action
+}
+message PropagationPaths { repeated PropagationPath paths = 1; }
+
 message VerifierFinding { string claim_ref = 1; string verdict = 2; string offending_value = 3; string cited_evidence_id = 4; string action_taken = 5; }
 
 message Resolution {                       // "what would resolve this" (FR-026, FR-045)
@@ -661,6 +681,7 @@ message Investigation {
   string verification_detail = 37;         // why, in a sentence: counts kept/demoted/removed, or the reason
   string search_space_profile = 38;        // FR-012a: the profile the first brief carried; empty on runs concluded before it
   ExaminationReport examination = 39;       // FR-022b; unset on runs concluded before it
+  PropagationPaths propagation_paths = 40;  // FR-019b; unset on runs concluded before it
 }
 
 // ============================================================================

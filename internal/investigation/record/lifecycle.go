@@ -92,6 +92,9 @@ type Conclusion struct {
 	SearchSpaceProfile string
 	// Examination is the examination report (FR-022b), nil on a path that never ran the engine.
 	Examination *investigationv1.ExaminationReport
+	// PropagationPaths are the paths of the supported and top-ranked hypotheses (FR-019b), nil on
+	// a path that never ran the engine.
+	PropagationPaths *investigationv1.PropagationPaths
 	// VerifierFindings is every claim's verdict, written in the same transaction as the
 	// conclusion: a removed claim is part of how the answer was reached (FR-022a).
 	VerifierFindings []VerifierFinding
