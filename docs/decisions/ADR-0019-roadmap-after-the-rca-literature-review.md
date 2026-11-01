@@ -2,7 +2,7 @@
 
 - Status: **Proposed** (drafted 2026-11-01 at the owner's request: "if there are scientific advances
   that let us do better than competitors, we integrate them directly"; awaiting the owner's decision
-  on D1–D5)
+  on D1–D6)
 - Deciders: project owner; Claude (the analysis and the proposed order)
 - Source: [`docs/reviews/2026-11-01-literature-review-agentic-rca.md`](../reviews/2026-11-01-literature-review-agentic-rca.md),
   findings F1–F8. Follows ADR-0016, which set the order 009 → 010 → 011.
@@ -62,6 +62,12 @@ renumbers nothing; see `specs/002-investigation-engine/spec.md`, *Session 2026-1
   - the neighbouring entities on the impact surface that were never looked at.
   A hypothesis cannot reach *supported* while a signal family that the published expectation table
   marks *decisive* for its cause category was reachable and unqueried. The verifier enforces this.
+  The table is hand-written domain knowledge applied at the conclusion, which is what F1 warns
+  about: a wrong row would hold correct answers at *inconclusive*. Each version of the table
+  therefore starts in **observe mode** (omissions are reported, nothing is held) and moves to
+  **enforce mode** only after it passes the dual gate of D4 on the corpus. The cost of enforcement,
+  the share of runs whose ground-truth hypothesis the table held back, is published beside the
+  omission rate.
 - **FR-046b, absence in the first wave.** The first wave adds the request rate of each candidate's
   callees and callers before and after onset, and the edges `diff` reports as retracted in the window.
   A stopped flow becomes a candidate, not a footnote.
@@ -88,14 +94,24 @@ A new feature owns the reconciled topology that 009 left to the feeders. Its out
 
 Its core schema names no runtime. Kubernetes, Cloud Run, Lambda and virtual machines are adapters.
 
+012 ships in two slices so that it does not compete with the live installation:
+
+- **Slice A**: layer and platform facets, the provenance class, the reconciliation states, the
+  Cloud Run and OpenTelemetry messaging sources, asynchronous edges and the enriched profile. This
+  is what gives the owner's estate, and 011, a neighbourhood.
+- **Slice B**: the reviewable `aisre topology plan`, human decisions, the declared topology file,
+  Gateway API routes and the `intermittent` flag. Unreviewed edges are usable at once (012 FR-033),
+  so nothing waits for slice B.
+
 ### D3. Order: the 002 amendment first, then 012 ahead of 011
 
 1. The 002 amendment (D1) is small and fixes a live failure; it goes first.
 2. 010 (MCP server) keeps its place: it reads the algebra and does not depend on topology.
-3. **012 moves ahead of 011 (change-watch).** Change-watch fires when a change is followed by a
+3. **012 slice A moves ahead of 011 (change-watch).** Change-watch fires when a change is followed by a
    shift on the pointers of the services in its `impact`. On a Cloud Run estate without OTel or
    Datadog topology, `impact` is the changed service alone, so change-watch would watch almost
    nothing. 012 is what gives 011 a neighbourhood.
+4. 012 slice B follows 011, after the live installation has shown which review steps are needed.
 
 ADR-0016 D5 (the live installation) is unchanged and remains the owner's priority for his time.
 
@@ -120,14 +136,44 @@ CI failure. No feature number is reserved.
 - **Graph-learned ranking models.** F4 found no reliable effect of graph structure on learned
   localisation. No GNN work is planned. Topology serves scoping, navigation and the Verifier.
 
+### D6. Success is measured against baselines that can lose, not only on our own corpus
+
+The corpus cannot yet tell a better agent from a worse one: its 20 incident fixtures are written by
+us, and 002 records that the deterministic ranker already puts the culprit first on every one of
+them. F4 shows the same trap on a public benchmark, where a ranker that reads no telemetry scores
+0.488. New process metrics on that corpus measure little, and a paired comparison over 20 cases has
+no statistical power. Evaluation therefore gains, in this order:
+
+1. **A simple-harness baseline.** F1's main result: a general agent given the data and left free
+   outdiagnoses hand-crafted pipelines. Every scheduled evaluation run also scores a general agent
+   (a coding agent or a SQL-style agent) reading the same recorded world through 010's read-only
+   interface, with no engine. If the engine does not beat it, the engine's design is in question,
+   not the model.
+2. **An imported external benchmark.** An importer converts a public, validated RCA corpus (RCAtlas,
+   arXiv:2610.35767, or the propagation subset of RCA100 used in arXiv:2608.21310) into recorded
+   worlds, so that results are comparable with published numbers. These corpora are Kubernetes-only
+   and RCAtlas has not yet released its converted data; the importer is scoped when one is
+   available.
+3. **Live feedback.** The live installation (ADR-0016 D5) records, for every investigation, the
+   on-call verdict (right, partly right, wrong) and the actual root cause. This is the only measure
+   on a real estate, and the input D4 needs later. It records feedback; it learns nothing.
+4. **A telemetry-free floor.** Every scheduled evaluation run also scores a ranker that reads only
+   the graph's priors, so that fixtures whose answer can be guessed are visible (F4).
+
+Items 1 and 4 are added to 002 as FR-059b. Item 3 is specified with the live installation. Item 2
+waits for a public corpus with data.
+
 ## Consequences
 
 - `specs/002-investigation-engine/spec.md` gains *Session 2026-11-01* and the suffixed requirements of
-  D1. A plan delta and tasks follow the owner's approval, not this ADR.
+  D1 and D6. A plan delta and tasks follow the owner's approval, not this ADR.
 - `specs/012-topology-discovery` is drafted with its defaults as numbered questions, following 006–009:
   the owner approves or changes them on the spec PR.
 - The README status table gains a 012 row once approved, and ADR-0016's order becomes 009 → 002
-  amendment → 010 → 012 → 011 → setup path.
+  amendment → 010 → 012 slice A → 011 → 012 slice B → setup path.
 - Evaluation gains two process metrics that the literature uses and we lacked as gates: propagation
   path edge F1 (FR-019b) and the omission rate (FR-022b). They are reported first and gated once the
-  corpus has a baseline, as for pass@1.
+  corpus has a baseline, as for pass@1. The omission rate is read beside the cost of enforcement
+  (D1), since both depend on the same expectation table.
+- Evaluation gains the baselines of D6: a simple harness and a telemetry-free floor on every run,
+  live verdicts once installed, and an external corpus when one is importable.

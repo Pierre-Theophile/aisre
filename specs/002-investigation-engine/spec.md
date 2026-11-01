@@ -268,11 +268,15 @@ the amendment PR.
   An investigation publishes an examination report: what it examined, what was reachable and not
   examined, and which entities of the impact surface it never looked at. A hypothesis cannot be
   *supported* while a signal family marked decisive for its cause category was reachable and
-  unqueried. (FR-022b)
+  unqueried. The table that says which family is decisive is hand-written, so each version starts in
+  observe mode (omissions reported, nothing held) and enforces only after passing ADR-0019 D4's dual
+  gate; what enforcement costs in held-back correct answers is published. (FR-022b, FR-059a)
 - Q: How does the first wave see a service that stops receiving calls? → **Default: absence is
   compared like any other shift.** The first wave adds request rates of each candidate's callers and
   callees before and after onset, and the edges `diff` reports as retracted inside the window. Error
-  rate and latency alone cannot see a silent callee. (FR-046b)
+  rate and latency alone cannot see a silent callee. Where the graph holds no caller or callee of a
+  candidate, as on a Cloud Run estate without traces until feature 012, the gap is a blind spot of
+  the profile and no comparison is invented. (FR-046b)
 - Q: Does a hypothesis carry its propagation path? → **Default: yes.** A *supported* hypothesis carries
   the path from cause to symptom as typed graph edges, each cited or marked unverified. The
   evaluation scores that path; the harness stops reconstructing one. (FR-019b, FR-059a)
@@ -284,6 +288,11 @@ the amendment PR.
 - Q: May runbooks, postmortem lessons or any later learned procedure drive the investigation? →
   **Default: as guidance only.** They are offered with their provenance and never compiled into a
   fixed sequence; FR-013 already forbids a fixed order. (FR-013b)
+- Q: Against what is the engine judged? → **Default: against baselines that can beat it.** Every
+  scheduled evaluation run also scores a general agent reading the same recorded world with no
+  engine, and a ranker that reads only the graph's priors. The current corpus cannot discriminate
+  on its own: the deterministic ranker already puts the culprit first on every fixture.
+  (FR-059b, ADR-0019 D6)
 
 ## Personas
 
@@ -1115,8 +1124,9 @@ over it is reported.
   signal families (metrics, logs, traces, changes, knowledge) can be queried about it, from its
   pointers; and the blind spots — entities with no pointer, edges known only from a declaration,
   sources disconnected or lagging. The profile MUST be recorded with the investigation and MUST be
-  re-renderable from the replayed event log. *(Added 2026-11-01, ADR-0019 D1; feature 012 enriches
-  the provenance and reconciliation fields.)*
+  re-renderable from the replayed event log. The profile MUST stay within a published size cap; when
+  the cap truncates it, the truncation MUST be stated in the profile, as FR-014 requires of digests.
+  *(Added 2026-11-01, ADR-0019 D1; feature 012 enriches the provenance and reconciliation fields.)*
 - **FR-013**: The order of worker calls MUST NOT be fixed. The investigator decides what to ask
   next from what it has learned, subject only to budgets. No specific sequence may be required for
   an investigation to be valid, and the specification MUST NOT be read as prescribing one.
@@ -1172,8 +1182,10 @@ over it is reported.
   it or be marked `unverified`. A path with an unverified edge MUST be rendered as such, and the
   hypothesis's confidence MUST reflect it under FR-023. A hypothesis whose path cannot be drawn on
   the graph MUST say so and name the missing link as a resolving action, in the form FR-026 uses for
-  `unknown`. *(Added
-  2026-11-01, ADR-0019 D1.)*
+  `unknown`. On an estate whose graph has no service-to-service edge around the alerting entity,
+  most paths cannot be drawn until feature 012 supplies the edges; edge F1 (FR-059a) on such an
+  estate MUST be reported with the share of hypotheses whose path could not be drawn, so that a thin
+  graph is not read as a regression. *(Added 2026-11-01, ADR-0019 D1.)*
 - **FR-020**: Every hypothesis MUST carry: a statement in plain language, its candidate cause (a
   change entity or a named condition), the target entities it concerns, a status (proposed,
   supported, refuted, inconclusive, untested), a numeric confidence, a rationale, and references to
@@ -1211,14 +1223,22 @@ over it is reported.
   that are decisive for it. A hypothesis MUST NOT reach status *supported* while a decisive family for
   its category was reachable and unqueried: it is held at *inconclusive*, and the unqueried family is
   named as its resolving action. Unreachable families MUST be reported as coverage gaps under FR-027,
-  never as omissions. *(Added 2026-11-01, ADR-0019 D1.)*
+  never as omissions. Each version of the expectation table MUST carry a mode: in `observe` mode the
+  omissions are reported and no hypothesis is held; in `enforce` mode the hold above applies. A new
+  version MUST start in `observe` and MAY move to `enforce` only after it passes the dual gate of
+  ADR-0019 D4 on the corpus. The mode in force MUST be recorded with the investigation.
+  *(Added 2026-11-01, ADR-0019 D1.)*
 - **FR-022c**: The checker and the verifier of FR-022a MUST run on every investigation's terminal path,
   live and in replay, before the outcome is published, and MUST enforce FR-019b and FR-022b. A
   verifier that fails, times out or is unavailable MUST mark the outcome with the typed verification
   status `not_verified` and its reason, recorded as a typed event and shown in both renderings; it MUST
   never be skipped silently. A verified outcome carries `verified`. The stop reason of FR-045b is
-  unchanged. *(Added
-  2026-11-01, ADR-0019 D1.)*
+  unchanged. The verifier's model outputs MUST be part of the trajectory recording, so that a
+  trajectory replay reproduces its verdict byte for byte; a world replay runs it again. Its time and
+  spend MUST count against the budget profile of FR-047, which MUST reserve a published share for
+  it, so that a `page` investigation reaches its hard stop with the verifier run rather than skipped;
+  if the budget is exhausted anyway, the reason recorded is the exhausted budget.
+  *(Added 2026-11-01, ADR-0019 D1.)*
 - **FR-023**: Confidence MUST be computed, never verbalised. It MUST be a deterministic function of
   the hypothesis ledger — the priors and the likelihood ratios implied by the typed judgments — so
   that the same ledger always yields the same confidence; the model MUST NOT be the source of a
@@ -1404,7 +1424,9 @@ bulk is beside it, and the link between them is a digest.
   a flow that started failing. A fall in rate MUST be scored by its magnitude, never ranked below
   rises by sign alone. These are `compare` queries with the RATE statistic the algebra already
   publishes: existing fixtures' recorded worlds are extended to carry them under FR-046a, which is
-  fixture work and no contract change. *(Added 2026-11-01, ADR-0019 D1.)*
+  fixture work and no contract change. A candidate with no caller or callee on the graph MUST be
+  listed as a blind spot of the profile (FR-012a); no comparison is invented for it.
+  *(Added 2026-11-01, ADR-0019 D1.)*
 - **FR-047**: Budget profiles MUST be selectable by alert priority, the defaults MUST be published,
   and the profile applied MUST be recorded on every investigation. Two profiles MUST exist. `page`,
   for a live incident: the first tested hypothesis within 90–120 seconds, a substantive answer
@@ -1528,9 +1550,19 @@ bulk is beside it, and the link between them is a digest.
   path of FR-061b; and the **omission rate**, the share of concluded investigations whose examination
   report (FR-022b) lists a decisive family as reachable and unqueried for the hypothesis that matched
   the ground truth. When no hypothesis is *supported*, the path of the top-ranked hypothesis is
-  scored if it has one; an investigation with no path scores 0 and is counted separately. Both are
-  reported from the first run and gated once the corpus has a baseline,
-  as pass@1 is. *(Added 2026-11-01, ADR-0019 D1.)*
+  scored if it has one; an investigation with no path scores 0 and is counted separately. Beside the
+  omission rate, each run MUST publish the **cost of enforcement**: the share of runs in which the
+  expectation table held the ground-truth hypothesis at *inconclusive*. The omission rate is defined
+  by the same table it audits, so neither number is read without the other. Both process metrics
+  are reported from the first run and gated once the corpus has a baseline, as pass@1 is.
+  *(Added 2026-11-01, ADR-0019 D1.)*
+- **FR-059b**: Each scheduled evaluation run MUST also score, on the same fixtures and with the same
+  scorer, two baselines that can beat the engine: a **simple harness**, a general agent that reads
+  the fixture's recorded world through the read-only query interface with no engine, no first wave
+  and no prescribed step; and a **telemetry-free floor**, a ranker that reads only the graph's
+  priors. Lift over each baseline MUST be published next to lift over the prior. A fixture that the
+  floor solves MUST be flagged as answerable without telemetry. The baselines are reported, never
+  gated. *(Added 2026-11-01, ADR-0019 D6.)*
 - **FR-060**: The **aggregate pass@1 threshold is set by the first full corpus run** and not
   before: it cannot be guessed ahead of the corpus that measures it, and setting it from a partial
   corpus would be inventing the number the gate exists to defend. Until that run has published it,

@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-01
 
-**Status**: Draft — defaults Q1–Q10 proposed, awaiting the owner's approval
+**Status**: Draft — defaults Q1–Q11 proposed, awaiting the owner's approval
 
 **Input**: User description: "The master agent that queries the bitemporal graph does not have the
 context of my infrastructure: it won't understand precisely that this service talks to that one, that
@@ -70,7 +70,8 @@ Each default is written into the requirements below. Following 006–009, they a
   - `confirmed`: declared and observed;
   - `declared_only`: possibly stale, or a path too rare for the observation window;
   - `observed_only`: an undeclared dependency;
-  - `stopped`: observed and confirmed before, no longer observed while still declared or validated;
+  - `stopped`: observed before while declared or accepted by a person, no longer observed, and
+    still declared or accepted;
   - `ended`: observed only, then retracted, with nothing declaring or validating it;
   - `rejected`: refused by a person.
 
@@ -137,6 +138,15 @@ Each default is written into the requirements below. Following 006–009, they a
 
   002 FR-022b's examination report reads the same profile to decide what was reachable.
   (FR-080–FR-083)
+- Q11: Does the whole feature ship at once? → **Default: no, in two slices** (ADR-0019 D2, D3).
+  - **Slice A**, before 011: sections A, B, C (except FR-025), E (except FR-047), F, G, H (except
+    FR-070), I and J (except FR-090's plan-item measures), and User Stories 1, 3, 4 and 5. It gives
+    the owner's estate, and 011, a neighbourhood.
+  - **Slice B**, after 011 and the live installation: section D, FR-025, FR-047, FR-070, FR-090's
+    plan-item measures, and User Story 2. FR-033 makes every unreviewed edge usable at once, so nothing in slice A waits for a
+    review.
+
+  Each slice is planned and merged on its own. SC-003 and SC-004 belong to slice B.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -254,8 +264,8 @@ state, its presence in `diff`, and its presence in the first wave.
 
 1. **Given** a confirmed edge that the feeder retracts, **Then** its state becomes `stopped` from the
    retraction's valid instant.
-2. **Given** an edge that was only ever observed and is retracted, **Then** it is reported as ended, not
-   as `ended`, not as `stopped`, and raises no plan item until the observation window elapses.
+2. **Given** an edge that was only ever observed and is retracted, **Then** its state is `ended`,
+   not `stopped`, and it raises no plan item until the observation window elapses.
 3. **Given** a live investigation pinned inside the retraction window, **Then** the callee's fall in
    request rate is in its first wave.
 
@@ -291,6 +301,9 @@ trace evidence.
   as the reason, not as N separate items.
 - **An environment variable that names an endpoint through a secret**: the secret's value is never
   read. If the key alone matches no known endpoint, no edge is asserted.
+- **An environment variable whose value embeds a credential**, such as a connection URL with a user
+  and password: only the host and port are extracted, and the rest of the value is discarded before
+  any matching (FR-044).
 - **A traffic split across revisions**: edges attach to the service; revisions keep `runs_on`, so a
   split never doubles the topology.
 - **A topic with no subscriber**: the publish edge exists and the derived async edge does not. The topic
@@ -382,7 +395,9 @@ trace evidence.
   deferred under budget. Where 003 FR-057 omits it for lack of permission, the omission MUST be
   reported as a blind spot (FR-082).
 - **FR-044**: The GCP feeder MUST match each environment-variable value against the published
-  endpoints of known entities at ingestion. It MUST assert a `declared` edge on a match, and MUST keep
+  endpoints of known entities at ingestion. Before matching, it MUST reduce the value to a host and
+  port and discard everything else, user information and query string included; no other part of
+  the value may be held past that step, logged or emitted. It MUST assert a `declared` edge on a match, and MUST keep
   only the key name and the matched entity in the graph (003 FR-033, FR-034). 003 FR-034 MUST be
   amended, as on 2026-10-09 for Cloud SQL connection names, so that a recording may keep the matched
   endpoint, pseudonymised, and the match replays. No other part of the value is recorded.
@@ -446,6 +461,8 @@ trace evidence.
   - the rate of re-proposals after rejection, which MUST be zero.
 - **FR-091**: The fixture set MUST include:
   - a Cloud Run estate with no Kubernetes;
+  - a recording of the owner's estate, sanitised, whose edges are labelled by the owner rather than
+    by the authors of this feature;
   - a mixed estate spanning two providers (User Story 5);
   - a vendor-free twin of a Datadog case;
   - a stopped-flow incident (User Story 4);
@@ -475,9 +492,11 @@ trace evidence.
   service-to-service edges exist after the first ingestion and before any traffic window. At least 95 %
   exist after one observation window.
 - **SC-002**: Edge precision is at least 95 % for `observed` and `declared` assertions on the labelled
-  fixtures.
+  fixtures. SC-001 and SC-002 are also reported separately on the owner-labelled recording (FR-091),
+  since the other fixtures are labelled by the people who wrote the feature.
 - **SC-003**: A new operator reaches a validated topology of the owner's estate by reviewing plan items
-  only, without writing configuration, in under 30 minutes for up to 20 services.
+  only, without writing configuration, in under 30 minutes for up to 20 services. It is measured
+  once, during the live installation (ADR-0016 D5), not in CI.
 - **SC-004**: Zero items are re-proposed after a rejection from the same provenance class, across a full
   replay.
 - **SC-005**: On the stopped-flow fixture, in 100 % of runs: the stopped edge is in the window's `diff`
