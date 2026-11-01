@@ -10,7 +10,6 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/datadogx"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/metrics"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
@@ -151,7 +150,7 @@ func comparisonOf(statistic investigationv1.Statistic, baseline, symptom float64
 	return &investigationv1.Comparison{
 		Statistic: statistic, Baseline: baseline, Symptom: symptom,
 		AbsoluteDelta: absolute, RelativeDelta: relative, Direction: direction,
-		Separable: metrics.Separates(relative) || (baseline == 0 && symptom > 0),
+		Separable: sdk.Separates(relative) || (baseline == 0 && symptom > 0),
 	}
 }
 

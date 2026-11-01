@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Pierre-Theophile/aisre/internal/graph"
+	"github.com/Pierre-Theophile/aisre/internal/knowledgedoc"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 )
 
@@ -53,7 +54,7 @@ func documentOf(c query.KnowledgeCandidate, at time.Time) Document {
 		// A reviewed past investigation: the engine's own verdict, cited by its id. Its summary is
 		// empty on purpose — the verdict line is the engine's words, and the title already holds
 		// them; the ranking should not count them twice.
-		doc.Kind = KindInvestigation
+		doc.Kind = knowledgedoc.KindInvestigation
 		if verdict := stringProp(c.Props, investigationVerdictProp); verdict != "" {
 			doc.Title = verdict
 		}

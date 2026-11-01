@@ -4,9 +4,10 @@ package engine
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/Pierre-Theophile/aisre/internal/injection"
 
 	"google.golang.org/protobuf/proto"
 
@@ -153,60 +154,25 @@ func outcomeMeaning(outcome investigationv1.TermOutcome) string {
 	}
 }
 
-// Injection is a detected attempt to instruct the investigator through retrieved content. It is
-// recorded as an evidence item of kind `injection_attempt` and changes nothing else.
-type Injection struct {
-	// Field is where it was seen: `free_text` or `exemplar`.
-	Field string
-	// Pattern is the published pattern name that matched, so a fixture can assert on it.
-	Pattern string
-	// Excerpt is a bounded quotation of what matched, kept so a reviewer can see it.
-	Excerpt string
-}
-
-// Statement renders the finding as the evidence item's statement.
-func (i Injection) Statement() string {
-	return fmt.Sprintf(
-		"retrieved content in the %s field reads as an instruction (%s): %q. It is data about the "+
-			"systems under investigation, it was recorded, and it changed nothing about this "+
-			"investigation's scope, budgets, worker set, read-only posture or output (FR-017).",
-		i.Field, i.Pattern, i.Excerpt)
-}
-
-// injectionPatterns is the published detector. It is deliberately a small set of named patterns
-// rather than a cleverness: the detector's job is to *record* an attempt, not to be the thing
-// that stops one, because what stops one is the structure above. A pattern that misses costs a
-// recorded observation; it cannot cost the investigation its integrity.
-var injectionPatterns = []struct {
-	name    string
-	pattern *regexp.Regexp
-}{
-	{"override_instructions", regexp.MustCompile(`(?i)\b(ignore|disregard|forget)\b[^.]{0,40}\b(previous|prior|above|earlier|all)\b[^.]{0,20}\b(instruction|prompt|rule|direction)`)},
-	{"assert_conclusion", regexp.MustCompile(`(?i)\b(the\s+)?root\s+cause\s+is\b|\bconclude\s+that\b|\bstop\s+investigating\b|\bno\s+further\s+investigation\b`)},
-	{"redirect_tooling", regexp.MustCompile(`(?i)\b(call|fetch|curl|POST|GET)\b[^.]{0,30}\b(https?://|endpoint|webhook|api\s+key)`)},
-	{"raise_privilege", regexp.MustCompile(`(?i)\b(raise|increase|remove|disable)\b[^.]{0,30}\b(budget|limit|guardrail|verification|read-only|readonly)`)},
-	{"impersonate_operator", regexp.MustCompile(`(?i)\b(system|operator|administrator)\s*[:>]\s|\bnew\s+instructions?\b|\byou\s+are\s+now\b`)},
-}
-
 // DetectInjections scans the two fields a source's own words arrive in — the bounded free-text
 // field and exemplar text — and returns every pattern that matched, in a fixed order.
 //
 // Nothing else is scanned, because nothing else carries a source's prose: identifiers, counts and
 // aggregates are the digest boundary's whole point.
-func DetectInjections(resp *investigationv1.AlgebraResponse) []Injection {
+func DetectInjections(resp *investigationv1.AlgebraResponse) []injection.Injection {
 	digest := resp.GetDigest()
 	if digest == nil {
 		return nil
 	}
-	var out []Injection
-	out = append(out, scan("free_text", digest.GetFreeText())...)
+	var out []injection.Injection
+	out = append(out, injection.Scan("free_text", digest.GetFreeText())...)
 	for _, exemplar := range digest.GetExemplars().GetExemplars() {
-		out = append(out, scan("exemplar", exemplar.GetText())...)
+		out = append(out, injection.Scan("exemplar", exemplar.GetText())...)
 	}
 	// The chat worker never returns a message, so it reports the count of messages that read as
 	// instructions instead, and each such answer is one recorded attempt (006 FR-035).
 	if n := digest.GetChatMentions().GetInstructionLike(); n > 0 {
-		out = append(out, Injection{
+		out = append(out, injection.Injection{
 			Field:   "chat",
 			Pattern: "instruction_like",
 			Excerpt: fmt.Sprintf("%d message(s) in the incident channel; their text is not carried", n),
@@ -218,56 +184,6 @@ func DetectInjections(resp *investigationv1.AlgebraResponse) []Injection {
 		}
 		return out[i].Pattern < out[j].Pattern
 	})
-	return out
-}
-
-// InstructionPatterns names the published injection patterns text matches, in a fixed order. A
-// worker whose source's prose never crosses the boundary — the chat worker reads messages and
-// returns only counts — uses it to count what it would otherwise have had to quote.
-func InstructionPatterns(text string) []string {
-	var out []string
-	for _, found := range scan("", text) {
-		out = append(out, found.Pattern)
-	}
-	return out
-}
-
-func scan(field, text string) []Injection {
-	if strings.TrimSpace(text) == "" {
-		return nil
-	}
-	var out []Injection
-	for _, candidate := range injectionPatterns {
-		if match := candidate.pattern.FindString(text); match != "" {
-			out = append(out, Injection{
-				Field:   field,
-				Pattern: candidate.name,
-				Excerpt: excerpt(text, match),
-			})
-		}
-	}
-	return out
-}
-
-// excerpt bounds the quotation so a recorded attempt cannot itself be a payload of unbounded size.
-func excerpt(text, match string) string {
-	const width = 120
-	index := strings.Index(text, match)
-	if index < 0 {
-		index = 0
-	}
-	start := index - 20
-	if start < 0 {
-		start = 0
-	}
-	end := start + width
-	if end > len(text) {
-		end = len(text)
-	}
-	out := strings.TrimSpace(text[start:end])
-	if end < len(text) {
-		out += "…"
-	}
 	return out
 }
 

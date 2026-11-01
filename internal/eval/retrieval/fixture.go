@@ -20,10 +20,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/knowledgedoc"
+
 	"gopkg.in/yaml.v3"
 
 	"github.com/Pierre-Theophile/aisre/internal/embedding"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	kstore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/knowledge/memory"
 )
@@ -222,7 +223,7 @@ func (f *Fixture) Validate() error {
 			problems = append(problems, fmt.Sprintf("document %s appears twice", d.Ref))
 		}
 		refs[d.Ref] = true
-		if !knowledge.ValidKind(d.Kind) {
+		if !knowledgedoc.ValidKind(d.Kind) {
 			problems = append(problems, fmt.Sprintf("document %s: kind %q is not published", d.Ref, d.Kind))
 		}
 		if d.Title == "" || len(d.Links) == 0 {

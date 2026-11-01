@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package logs
+// Package logmine is the log-template miner shared by the logs worker and every telemetry
+// backend that answers a log query: one implementation, so a template minted by a backend and a
+// template minted by the worker are the same template.
+package logmine
 
 import (
 	"sort"

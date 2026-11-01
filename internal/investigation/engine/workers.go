@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/injection"
+
 	"google.golang.org/protobuf/proto"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -191,7 +193,7 @@ type Answer struct {
 	ToolResult string
 	// Injections are the attempts the detector saw in the free-text and exemplar fields. Each is
 	// recorded as its own evidence item and changes nothing else.
-	Injections []Injection
+	Injections []injection.Injection
 	// Minted names the pointer and handle ids this answer added to the catalogue.
 	Minted []string
 	// Refused is set when admission refused the call. The call was not issued.

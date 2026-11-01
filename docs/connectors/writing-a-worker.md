@@ -240,7 +240,7 @@ answer relative to the recording it came from, and a byte-for-byte golden become
 field `After` writes that the backend also writes must be written with the **same rule**, or the
 recording carries a `response_digest` its own content does not hash to and every replay of it
 diverges. Publish the rule once, exported, and have the backend call it too:
-`metrics.Separates(relativeDelta)` is the one this feature has. Two spellings of one rule is one
+`backend.Separates(relativeDelta)` (pkg/backend) is the one this feature has. Two spellings of one rule is one
 spelling too many.
 
 If what you want to add is not a statement about the *question*, it belongs in the backend, where

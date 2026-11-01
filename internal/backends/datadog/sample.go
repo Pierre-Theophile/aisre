@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/logmine"
+
 	"github.com/Pierre-Theophile/aisre/internal/mask"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -15,7 +17,6 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/datadogx"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
 )
 
 // The bounded, paged log sample behind new_log_patterns, exemplars and drill_down (contract §3.2).
@@ -36,7 +37,7 @@ const pageSize = 1000
 const lagHorizon = 5 * time.Minute
 
 type sample struct {
-	lines []logs.Line
+	lines []logmine.Line
 	// window is the part of the asked window the sample spans.
 	window *engine.Window
 	// capped is true when the line cap stopped the search before Datadog ran out of lines.
@@ -64,7 +65,7 @@ func (b *Backend) sampleLogs(ctx context.Context, sel selector, window *engine.W
 		s.partial = s.partial || page.Meta.Partial()
 		for _, ev := range page.Data {
 			a := ev.Attributes
-			s.lines = append(s.lines, logs.Line{At: a.Timestamp.UTC(), Text: a.Message, Status: a.Status,
+			s.lines = append(s.lines, logmine.Line{At: a.Timestamp.UTC(), Text: a.Message, Status: a.Status,
 				PodOrHost: a.Host, Version: versionOf(ev, facet)})
 			if a.Timestamp.After(s.newest) {
 				s.newest = a.Timestamp.UTC()
@@ -131,7 +132,7 @@ func matches(template, line string) bool {
 		return false
 	}
 	for i := range want {
-		if want[i] != logs.Wildcard && want[i] != got[i] {
+		if want[i] != logmine.Wildcard && want[i] != got[i] {
 			return false
 		}
 	}

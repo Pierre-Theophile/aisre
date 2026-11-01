@@ -32,8 +32,8 @@ cmd/aisre ──► internal/cli (composition root: wires everything, owns no ru
 | Context | Domain | Application | Adapters | Ports |
 |---|---|---|---|---|
 | Graph and ingestion | `internal/graph`, `internal/event`, `internal/resolution` | `internal/projector`, `internal/query` | `internal/log` (Postgres event log), `internal/feeders/*`, `internal/store/postgres` | `pkg/feeder` |
-| Investigation | `internal/investigation/ledger`, `internal/mask` | `intake`, `engine`, `verify`, `runner`, `workers/*`, `render` | `internal/backends/*`, `investigation/store`, `investigation/model/anthropic` and the built-in `mistral` and `openai_compatible` adapters, `render/slacksink` | `model.Adapter` (registered with `model.RegisterProvider`), `pkg/backend`, `pkg/worker`, consumer-side interfaces (`graph.QueryService`, `chat.History`, `render.Sink`, …) |
-| Knowledge | `pkg/knowledge` | `internal/embedding` (indexer) | `internal/store/postgres`, `pkg/knowledge/memory`, `embedding` OpenAI-compatible adapter | `knowledge.Store`, `knowledge.Embedder` |
+| Investigation | `internal/investigation/ledger`, `internal/mask`, `internal/injection`, `internal/logmine` | `intake`, `engine`, `verify`, `runner`, `workers/*`, `render` | `internal/backends/*`, `investigation/store`, `investigation/model/anthropic` and the built-in `mistral` and `openai_compatible` adapters, `render/slacksink` | `model.Adapter` (registered with `model.RegisterProvider`), `pkg/backend`, `pkg/worker`, consumer-side interfaces (`graph.QueryService`, `chat.History`, `render.Sink`, …) |
+| Knowledge | `pkg/knowledge`, `internal/knowledgedoc` | `internal/embedding` (indexer) | `internal/store/postgres`, `pkg/knowledge/memory`, `embedding` OpenAI-compatible adapter | `knowledge.Store`, `knowledge.Embedder` |
 | Catalog and attribution | `pkg/attribution` | `internal/catalog` | `internal/catalog/classify` | `attribution.Classifier` |
 | Evaluation | — | `internal/eval`, `internal/fixture`, `internal/investigation/replay` | `internal/fixture/graphquery` | — |
 | Shared vendor clients | — | — | `internal/datadogx`, `internal/gcpx`, `internal/slackx`, `internal/notionx` | — |
@@ -42,8 +42,13 @@ Cross-context rules:
 
 - The graph read side (`query`, `server`) does not depend on the investigation engine or on the
   evaluation tooling. Evaluation depends on the read side, never the reverse.
-- Shared utilities (`internal/event`, `internal/mask`, `internal/sanitise`) are leaves: they do not
-  import an application layer.
+- Shared utilities (`internal/event`, `internal/mask`, `internal/sanitise`, `internal/injection`,
+  `internal/logmine`, `internal/knowledgedoc`) are leaves: they do not import an application layer.
+- Ingestion (`internal/feeders/*`) does not import the investigation context. A telemetry backend
+  does not import the workers or the engine that consume it, and a worker does not import the
+  engine that orchestrates it.
+- A shared vendor client (`datadogx`, `gcpx`) may import the feeder whose source interfaces it
+  implements: that is the adapter depending on the port, which is the allowed direction.
 - Every external dependency an operator might want to replace (LLM, embeddings, knowledge store,
   telemetry backends, feeders) sits behind a port and ships at least one adapter that can run
   self-hosted.
@@ -54,8 +59,5 @@ These are tracked and not yet enforced:
 
 - Application packages take `*postgres.Store` directly instead of repository interfaces
   (`investigation/runner`, `catalog`, `server`).
-- A few adapters reach into another context's packages for constants or algorithms
-  (`feeders/notion` → `workers/knowledge`, `datadogx` → `feeders/datadog`,
-  `backends/gcp` → `feeders/gcp`, `backends/datadog` → `workers/logs`).
 - Protobuf types double as the domain model (ADR-0002). This is a deliberate trade-off; new
   aggregates should keep the generated types at their edges.

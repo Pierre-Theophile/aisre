@@ -10,14 +10,14 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/logmine"
+
 	"github.com/Pierre-Theophile/aisre/internal/mask"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/metrics"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 	"github.com/Pierre-Theophile/aisre/pkg/backend/onset"
 )
@@ -411,7 +411,7 @@ func comparisonOf(statistic investigationv1.Statistic, baseline, symptom float64
 		// never state two different things about the same comparison. `direction` is a coarser
 		// description of the same number and is not that rule: a gentle ramp is "up" and still
 		// does not discriminate, which is the shape slow-burn-01 records.
-		Separable: metrics.Separates(relative),
+		Separable: sdk.Separates(relative),
 	}
 }
 
@@ -484,7 +484,7 @@ func (b *Backend) newLogPatterns(term *investigationv1.NewLogPatternsTerm) (engi
 	windowLines := b.lines(entity, selector, term.GetWindow())
 	baselineLines := b.lines(entity, selector, term.GetBaselineWindow())
 
-	templates := logs.Diff(logs.Mine(windowLines), logs.Mine(baselineLines))
+	templates := logmine.Diff(logmine.Mine(windowLines), logmine.Mine(baselineLines))
 	key := termKeyOfLogPatterns(term)
 
 	counts := make(map[string]int64, 3)
@@ -511,7 +511,7 @@ func (b *Backend) newLogPatterns(term *investigationv1.NewLogPatternsTerm) (engi
 		Body: &investigationv1.Digest_Log{Log: &investigationv1.LogDigest{
 			Patterns:       patterns,
 			CountsByStatus: counts,
-			MinerVersion:   logs.MinerVersion,
+			MinerVersion:   logmine.MinerVersion,
 			ModelUsed:      false,
 		}},
 		Coverage: coverage,
@@ -522,7 +522,7 @@ func (b *Backend) newLogPatterns(term *investigationv1.NewLogPatternsTerm) (engi
 // templates, plus a third that appears only once a degrading change has landed. That third
 // template is the lead a log worker is supposed to surface, and it exists in the generated data
 // because it exists in the graph.
-func (b *Backend) lines(entity Entity, selector string, window *engine.Window) []logs.Line {
+func (b *Backend) lines(entity Entity, selector string, window *engine.Window) []logmine.Line {
 	if window.GetStart() == nil || window.GetEnd() == nil {
 		return nil
 	}
@@ -530,19 +530,19 @@ func (b *Backend) lines(entity Entity, selector string, window *engine.Window) [
 	end := window.GetEnd().AsTime().UTC()
 	step := b.scenario.resolution()
 
-	out := make([]logs.Line, 0, 256)
+	out := make([]logmine.Line, 0, 256)
 	for at := start; at.Before(end); at = at.Add(step) {
 		version := b.scenario.versionAt(entity, at)
 		pod := entity.Name + "-" + shortOf(unitOf(b.scenario.Seed, entity.EntityID, "pod"))
 		out = append(out,
-			logs.Line{
+			logmine.Line{
 				At:        at,
 				Text:      fmt.Sprintf("GET /%s/health 200 in %dms", entity.Name, 3+int(unitOf(b.scenario.Seed, selector, at.Format(time.RFC3339))*5)),
 				Status:    "info",
 				PodOrHost: pod,
 				Version:   version,
 			},
-			logs.Line{
+			logmine.Line{
 				At:        at,
 				Text:      fmt.Sprintf("handled request id=%d for %s", 100000+at.Unix()%900000, entity.Name),
 				Status:    "info",
@@ -551,7 +551,7 @@ func (b *Backend) lines(entity Entity, selector string, window *engine.Window) [
 			},
 		)
 		if b.scenario.effectiveDegradationAt(entity, at) > 1 {
-			out = append(out, logs.Line{
+			out = append(out, logmine.Line{
 				At:        at,
 				Text:      fmt.Sprintf("upstream call failed: deadline exceeded after %dms (service=%s)", 250+at.Unix()%50, entity.Name),
 				Status:    "error",

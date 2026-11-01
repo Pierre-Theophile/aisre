@@ -11,11 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/knowledgedoc"
+
 	"gopkg.in/yaml.v3"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 )
 
 // The connector's configuration (contracts/notion-connector.md §4, data-model "Database binding";
@@ -142,7 +143,7 @@ func (c *Config) Validate() error {
 
 func validKind(kind string) bool {
 	for _, k := range Kinds {
-		if k == kind && knowledge.ValidKind(kind) {
+		if k == kind && knowledgedoc.ValidKind(kind) {
 			return true
 		}
 	}

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/knowledgedoc"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
@@ -57,7 +59,7 @@ func TestTheGraphCorpusRanksTheInScopeDocumentFirst(t *testing.T) {
 		t.Errorf("the out-of-scope runbook names %s as linked, want reporting", got)
 	}
 	item := items[0]
-	if item.GetKind() != knowledge.KindRunbook || item.GetExcerpt() == "" {
+	if item.GetKind() != knowledgedoc.KindRunbook || item.GetExcerpt() == "" {
 		t.Errorf("kind %q, excerpt %q", item.GetKind(), item.GetExcerpt())
 	}
 	if item.GetLinkProvenance() != "registered by sre-agent-dev|dana" {
@@ -108,7 +110,7 @@ func TestTheGraphCorpusCitesANotionPostmortem(t *testing.T) {
 		t.Errorf("in_scope = %v, %v; want true then false", items[0].GetInScope(), items[1].GetInScope())
 	}
 	item := items[0]
-	if item.GetKind() != knowledge.KindPostmortem {
+	if item.GetKind() != knowledgedoc.KindPostmortem {
 		t.Errorf("kind %q", item.GetKind())
 	}
 	if got := strings.Join(item.GetLinkedEntityIds(), ","); got != "otel.service.name=checkout,otel.service.name=payments" {

@@ -23,7 +23,7 @@ var infrastructure = []string{
 	"github.com/testcontainers",
 	"github.com/fergusstrange",
 	module + "internal/store/postgres",
-	module + "internal/log", // the Postgres-backed event log; its rules live in internal/event
+	module + "internal/log/", // the Postgres-backed event log; its rules live in internal/event
 }
 
 // llmSDK is the vendor surface of the model boundary.
@@ -37,6 +37,29 @@ type rule struct {
 }
 
 var rules = []rule{
+	{
+		why: "ingestion (feeders) does not depend on the investigation context; shared vocabulary " +
+			"lives in leaf packages (event, knowledgedoc, mask)",
+		packages:  []string{"internal/feeders/..."},
+		forbidden: []string{module + "internal/investigation/"},
+	},
+	{
+		why: "a telemetry backend is an adapter of the pkg/backend port: it does not reach into the " +
+			"workers or the engine that consume it",
+		packages: []string{"internal/backends/...", "pkg/backend/..."},
+		forbidden: []string{
+			module + "internal/investigation/workers",
+			module + "internal/investigation/engine",
+		},
+	},
+	{
+		why:      "a worker is orchestrated by the engine and never depends on it",
+		packages: []string{"internal/investigation/workers/..."},
+		forbidden: []string{
+			module + "internal/investigation/engine",
+			module + "internal/investigation/runner",
+		},
+	},
 	{
 		why: "domain packages and the public SDK (pkg/) are infrastructure-free: a connector built on " +
 			"pkg/ never links a database driver or a vendor SDK, and domain rules run without a database",
@@ -119,6 +142,9 @@ var rules = []rule{
 			"internal/sanitise",
 			"internal/mask",
 			"internal/event",
+			"internal/injection",
+			"internal/logmine",
+			"internal/knowledgedoc",
 		},
 		forbidden: []string{module + "internal/investigation/"},
 	},
@@ -162,7 +188,7 @@ func listDeps(t *testing.T, root, pkg string) []string {
 	}
 	var deps []string
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line != "" && line != module+pkg {
+		if line != "" && line != module+pkg && !strings.HasPrefix(line, module+strings.TrimSuffix(pkg, "...")) {
 			deps = append(deps, line)
 		}
 	}
