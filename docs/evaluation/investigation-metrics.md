@@ -81,6 +81,8 @@ Every other gate is in force from the first run:
 | `not_recorded_miss_rate` | > the fixture's threshold ⇒ that **fixture** is excluded and listed | gates a fixture's **admission**, never the engine's score |
 | `culprit_rank`, `top_k_hit_rate` | — | reported, never the headline |
 | `localisation`, `attribution`, `mechanism` | — | reported, partial credit against `causal_path` |
+| `path_edge_f1`, `undrawable_path_share` | — | reported until the corpus has a baseline (FR-059a): the engine's own propagation path (FR-019b) scored edge by edge against `causal_path`, beside the share of runs whose path could not be drawn on the graph, which score 0 |
+| `omission_rate`, `enforcement_cost` | — | reported until the corpus has a baseline (FR-059a): the share of runs whose ground-truth hypothesis left a decisive family reachable and unqueried, and the share in which an enforced expectation table would have held it, supported, at `inconclusive`. Neither is read without the other |
 | calibration (reliability table, Brier, log-loss) | — | reported; published on **every** pull request from recorded trajectories |
 | `cost_usd`, `cache_read_ratio`, the three timings, `worker_calls.*`, `backend_quota_share.*` | — | reported and trended |
 | `unknown_rate`, `non_unknown_precision` | — | reported (SC-007, SC-023) |

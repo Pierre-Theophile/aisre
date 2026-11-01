@@ -74,6 +74,17 @@ const (
 	MetricLocalisation = "localisation"
 	MetricAttribution  = "attribution"
 	MetricMechanism    = "mechanism"
+	// MetricPathEdgeF1 scores the engine's propagation path (FR-019b) edge by edge against
+	// `causal_path`, and MetricUndrawablePaths is the share of runs whose scored path could not
+	// be drawn on the graph, published beside it so a thin graph is not read as a regression.
+	// MetricOmissionRate is the share of runs whose ground-truth hypothesis left a decisive
+	// family reachable and unqueried (FR-022b), and MetricEnforcementCost the share in which the
+	// expectation table, enforced, would have held that hypothesis at `inconclusive`. All four
+	// are reported until the corpus has a baseline (FR-059a).
+	MetricPathEdgeF1      = "path_edge_f1"
+	MetricUndrawablePaths = "undrawable_path_share"
+	MetricOmissionRate    = "omission_rate"
+	MetricEnforcementCost = "enforcement_cost"
 	// MetricMissRate is the world-replay `not_recorded` miss rate. It gates a fixture's
 	// admission and never the engine's score (FR-060).
 	MetricMissRate = "not_recorded_miss_rate"
@@ -218,6 +229,17 @@ type RunRow struct {
 	// for a fixture whose ground truth publishes no causal path.
 	Credit    CausalCredit
 	HasCredit bool
+	// EdgeF1 is the propagation path's edge F1 against `causal_path`, defined when HasCredit is;
+	// PathDrawn says the scored path was drawn on the graph (FR-059a).
+	EdgeF1    float64
+	PathDrawn bool
+	// Examined is true when the run held a hypothesis naming the ground-truth culprit, the one
+	// the omission rate reads; Omitted says the examination report found a decisive family
+	// reachable and unqueried for it; and EnforcementHeld says it was supported anyway, so an
+	// enforced expectation table would have held it at `inconclusive` (FR-059a).
+	Examined        bool
+	Omitted         bool
+	EnforcementHeld bool
 
 	// Claims is how many claims the conclusion made, ValidClaims how many resolved to an
 	// evidence id whose digest matches the recording, and Untraceable how many resolved to
@@ -375,6 +397,7 @@ func fixtureRows(name string, runs []RunRow) ([]Row, bool) {
 		harms, confidentlyWrong, topKHits          int
 		diverged, improvised                       int
 		localisation, attribution, mechanismCredit []float64
+		paths                                      pathTally
 		onsetErrors                                []float64
 		onsetInTolerance, onsetLabelled            int
 		provisional, firstTested, conclude         []float64
@@ -428,6 +451,7 @@ func fixtureRows(name string, runs []RunRow) ([]Row, bool) {
 			attribution = append(attribution, run.Credit.Attribution)
 			mechanismCredit = append(mechanismCredit, run.Credit.Mechanism)
 		}
+		paths.add(run)
 		if run.OnsetErrorSeconds != nil {
 			onsetLabelled++
 			onsetErrors = append(onsetErrors, *run.OnsetErrorSeconds)
@@ -479,6 +503,9 @@ func fixtureRows(name string, runs []RunRow) ([]Row, bool) {
 		creditRow(MetricLocalisation, name, localisation),
 		creditRow(MetricAttribution, name, attribution),
 		creditRow(MetricMechanism, name, mechanismCredit),
+	)
+	rows = append(rows, paths.rows(ScopeFixture, name)...)
+	rows = append(rows,
 		meanRow(MetricOnsetError, ScopeFixture, name, onsetErrors,
 			detailReported+": seconds between the estimated and the labelled onset"),
 		fraction(MetricOnsetWithinTolerance, ScopeFixture, name, onsetInTolerance, onsetLabelled, detailReported),
@@ -566,6 +593,7 @@ func corpusRows(runs []RunRow, excluded []string, fixtures int) []Row {
 		harms, confidentlyWrong, topKHits  int
 		diverged, improvised               int
 		localisation, attribution, mech    []float64
+		paths                              pathTally
 		humanLabelled, humanAgreed         int
 		humanRegressions                   int
 		citationFailure                    string
@@ -619,6 +647,7 @@ func corpusRows(runs []RunRow, excluded []string, fixtures int) []Row {
 			attribution = append(attribution, run.Credit.Attribution)
 			mech = append(mech, run.Credit.Mechanism)
 		}
+		paths.add(run)
 		if run.HumanLabelAgreed != nil {
 			humanLabelled++
 			if *run.HumanLabelAgreed {
@@ -675,6 +704,7 @@ func corpusRows(runs []RunRow, excluded []string, fixtures int) []Row {
 		count(MetricHumanLabelRegressions, ScopeCorpus, "", humanRegressions, humanLabelled,
 			detailGated+": a corrected case this run got wrong"),
 	}
+	rows = append(rows, paths.rows(ScopeCorpus, "")...)
 	if humanLabelled == 0 {
 		rows = append(rows, NotMeasured(MetricHumanAgreement, ScopeCorpus, "",
 			"n/a — no case in this corpus carries a human correction to agree with"))
@@ -873,6 +903,53 @@ func creditRow(metric, fixture string, values []float64) Row {
 	}
 	return NewRow(metric, scope, fixture, value, len(values),
 		detailReported+": partial credit against `causal_path` (FR-061b)")
+}
+
+// pathTally gathers the four process metrics of FR-059a over a set of runs.
+type pathTally struct {
+	edgeF1             []float64
+	scored, undrawable int
+	examined, omitted  int
+	held               int
+}
+
+func (t *pathTally) add(run RunRow) {
+	if run.HasCredit {
+		t.scored++
+		t.edgeF1 = append(t.edgeF1, run.EdgeF1)
+		if !run.PathDrawn {
+			t.undrawable++
+		}
+	}
+	if run.Examined {
+		t.examined++
+		if run.Omitted {
+			t.omitted++
+		}
+		if run.EnforcementHeld {
+			t.held++
+		}
+	}
+}
+
+func (t *pathTally) rows(scope Scope, fixture string) []Row {
+	f1 := NotMeasured(MetricPathEdgeF1, scope, fixture,
+		"no run had a ground-truth `causal_path` to score a propagation path against")
+	if value, ok := Mean(t.edgeF1); ok {
+		f1 = NewRow(MetricPathEdgeF1, scope, fixture, value, len(t.edgeF1), fmt.Sprintf(
+			"%s: the engine's propagation path against `causal_path`, edge by edge (FR-059a); "+
+				"%d of %d paths could not be drawn and score 0", detailReported, t.undrawable, t.scored))
+	}
+	return []Row{
+		f1,
+		fraction(MetricUndrawablePaths, scope, fixture, t.undrawable, t.scored,
+			detailReported+": read edge F1 beside it — a thin graph is not a regression (FR-019b)"),
+		fraction(MetricOmissionRate, scope, fixture, t.omitted, t.examined,
+			detailReported+": the ground-truth hypothesis left a decisive family reachable and unqueried (FR-022b)"),
+		fraction(MetricEnforcementCost, scope, fixture, t.held, t.examined,
+			detailReported+": an enforced expectation table would have held the supported ground-truth "+
+				"hypothesis at `inconclusive`; read with the omission rate (FR-059a)"),
+	}
 }
 
 func breakdown(metric string, scope Scope, fixture string, counts map[string]int) []Row {
@@ -1320,11 +1397,27 @@ func runRowFrom(outcome *RunOutcome, grade GradeResult, truth GroundTruth, opts 
 	}
 	row.ConfidentlyWrong = confidentlyWrong(outcome, truth)
 
+	matched, examined := outcome.Hypothesis(truth.Culprit)
 	if len(truth.CausalPath) > 0 {
 		row.HasCredit = true
+		got := outcomePathEntities(outcome.CausalPath)
+		// The engine names a change by whichever spelling the graph gave it; the ground truth by
+		// one of them. A cause step that is the culprit's hypothesis's change is the culprit.
+		if examined && len(got) > 0 && (got[0] == matched.CandidateChangeEntityID || matched.NamesChange(got[0])) {
+			got[0] = truth.Culprit
+		}
 		row.Credit = Credit(
-			pathEntities(truth.CausalPath), outcomePathEntities(outcome.CausalPath),
+			pathEntities(truth.CausalPath), got,
 			pathVia(truth.CausalPath), outcomePathVia(outcome.CausalPath))
+		row.PathDrawn = outcome.PathDrawn
+		if outcome.PathDrawn {
+			row.EdgeF1, _ = EdgeF1(pathEntities(truth.CausalPath), got)
+		}
+	}
+	if examined {
+		row.Examined = true
+		row.Omitted = len(matched.Omissions) > 0
+		row.EnforcementHeld = row.Omitted && matched.Status == statusSupported
 	}
 
 	row.Claims, row.ValidClaims, row.Untraceable, row.CitationFailure = checkCitations(outcome.Citations, opts.WorldDigests)

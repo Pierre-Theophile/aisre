@@ -100,6 +100,12 @@ type RunOutcome struct {
 	// CausalPath is the chain the engine reports from cause to symptom, so localisation,
 	// attribution and mechanism can be scored separately and with partial credit (FR-061b).
 	CausalPath []PathStep `json:"causal_path,omitempty"`
+	// PathHypothesisID names the hypothesis whose propagation path CausalPath is (FR-019b): the
+	// first supported one in rank order, else the top-ranked one (FR-059a). PathDrawn is false
+	// when that path could not be drawn on the graph, or when no path was drawn at all; CausalPath
+	// then holds only the cause the run named and the subject, and edge F1 scores 0.
+	PathHypothesisID string `json:"path_hypothesis_id,omitempty"`
+	PathDrawn        bool   `json:"path_drawn"`
 
 	// Citations are the evidence items the run rested on, each with the digest and pointer it
 	// addresses, which is what citation validity is computed over (FR-061a).
@@ -179,6 +185,10 @@ type Hypothesis struct {
 	CausalRole string `json:"causal_role,omitempty"`
 	// UntestedReason is required of an untested hypothesis.
 	UntestedReason string `json:"untested_reason,omitempty"`
+	// Omissions are the decisive families the examination report (FR-022b) found reachable on
+	// the hypothesis's targets and never asked of them. The omission rate and the cost of
+	// enforcement are read off them (FR-059a).
+	Omissions []string `json:"omissions,omitempty"`
 	// SupportingEvidenceIDs, RefutingEvidenceIDs and JudgmentIDs are what was brought against
 	// it. They are what "refuted by evidence on its own target" is checked with: a decoy whose
 	// ledger row carries no judgment was never tested, whatever its status reads.

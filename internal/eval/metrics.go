@@ -223,6 +223,41 @@ func Credit(truthPath, gotPath, truthVia, gotVia []string) CausalCredit {
 	return credit
 }
 
+// EdgeF1 scores a propagation path's edges against the ground truth's (FR-059a). An edge is a
+// pair of consecutive entities, in the direction the fault travelled; the edge type is left to
+// mechanism credit, so a path that crosses the right services by the wrong edge name is not
+// scored twice for one mistake. A path with no edge scores 0, and an empty truth is not scored.
+func EdgeF1(truthPath, gotPath []string) (float64, bool) {
+	truth := edgeSet(truthPath)
+	if len(truth) == 0 {
+		return 0, false
+	}
+	got := edgeSet(gotPath)
+	if len(got) == 0 {
+		return 0, true
+	}
+	hits := 0
+	for edge := range got {
+		if truth[edge] {
+			hits++
+		}
+	}
+	if hits == 0 {
+		return 0, true
+	}
+	precision := float64(hits) / float64(len(got))
+	recall := float64(hits) / float64(len(truth))
+	return 2 * precision * recall / (precision + recall), true
+}
+
+func edgeSet(path []string) map[[2]string]bool {
+	out := map[[2]string]bool{}
+	for i := 0; i+1 < len(path); i++ {
+		out[[2]string{path[i], path[i+1]}] = true
+	}
+	return out
+}
+
 // orderedOverlap is the length of the longest common subsequence over the length of want. It is
 // the partial-credit rule: hops named in the right order count, hops invented do not subtract
 // (they show up in attribution instead), and a path that got two of three edges right scores
