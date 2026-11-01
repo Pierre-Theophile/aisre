@@ -5,6 +5,7 @@ package model
 import (
 	"bytes"
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -54,6 +55,14 @@ type RoleConfig struct {
 	// ThinkingDisplay is "summarized", "omitted", "updates", or empty for not sent. It controls
 	// visibility only: thinking happens and is billed the same under every setting.
 	ThinkingDisplay string `yaml:"thinking_display"`
+	// BaseURL is the API root of an openai_compatible server; calls go to
+	// `POST {base_url}/chat/completions`. It is required for openai_compatible and refused for
+	// every other provider, whose endpoint is fixed. The configuration is recorded on every
+	// investigation (FR-061), so a recording always says which server it was made against.
+	BaseURL string `yaml:"base_url,omitempty"`
+	// APIKeyEnv names the environment variable holding an openai_compatible server's bearer
+	// token. Empty for an unauthenticated local server.
+	APIKeyEnv string `yaml:"api_key_env,omitempty"`
 }
 
 // ProviderOrDefault is the provider this role runs on, with the empty value resolved.
@@ -74,10 +83,23 @@ func (r RoleConfig) ProviderOrDefault() Provider {
 var efforts = map[Provider]map[string]struct{}{
 	ProviderAnthropic: {"low": {}, "medium": {}, "high": {}, "xhigh": {}, "max": {}},
 	ProviderMistral:   {"none": {}, "minimal": {}, "low": {}, "medium": {}, "high": {}, "xhigh": {}},
+	// The OpenAI `reasoning_effort` vocabulary. A server that does not reason ignores it or
+	// refuses it; leave effort empty for such a model.
+	ProviderOpenAICompatible: {"none": {}, "minimal": {}, "low": {}, "medium": {}, "high": {}, "xhigh": {}},
+}
+
+// effortAllowed reports whether a provider publishes an effort level.
+func effortAllowed(p Provider, effort string) bool {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	_, ok := efforts[p][effort]
+	return ok
 }
 
 // effortSet renders a provider's published effort set for an error message.
 func effortSet(p Provider) string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 	names := make([]string, 0, len(efforts[p]))
 	for name := range efforts[p] {
 		names = append(names, name)
@@ -142,7 +164,7 @@ func (c Config) Validate() error {
 		}
 		if rc.Effort != "" {
 			p := rc.ProviderOrDefault()
-			if _, ok := efforts[p][rc.Effort]; !ok {
+			if !effortAllowed(p, rc.Effort) {
 				return fmt.Errorf("model config %s: role %s declares effort %q; %s publishes %s",
 					c.Version, role, rc.Effort, p, effortSet(p))
 			}
@@ -186,16 +208,29 @@ func (c Config) Validate() error {
 // is allowed to be right.
 func (r RoleConfig) validateProvider(version string, role Role) error {
 	p := r.ProviderOrDefault()
-	known := false
-	for _, published := range Providers {
-		if p == published {
-			known = true
-			break
-		}
-	}
-	if !known {
+	if !knownProvider(p) {
 		return fmt.Errorf("model config %s: role %s declares provider %q; the published set is %s",
 			version, role, p, providerList())
+	}
+	if p == ProviderOpenAICompatible {
+		// Any model can sit behind an OpenAI-compatible server — a self-hosted vLLM serving a
+		// Mistral model is the ordinary case — so the model-id table has nothing to refuse here.
+		// What this provider cannot run without is the server's address.
+		if strings.TrimSpace(r.BaseURL) == "" {
+			return fmt.Errorf("model config %s: role %s uses provider %s but names no base_url",
+				version, role, p)
+		}
+		u, err := url.Parse(r.BaseURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("model config %s: role %s: base_url %q is not an http(s) URL",
+				version, role, r.BaseURL)
+		}
+		return nil
+	}
+	if r.BaseURL != "" || r.APIKeyEnv != "" {
+		return fmt.Errorf("model config %s: role %s sets base_url or api_key_env under provider %q, "+
+			"whose endpoint and credential are fixed; use provider %s to point at another server",
+			version, role, p, ProviderOpenAICompatible)
 	}
 	if inferred, ok := ProviderFor(r.Model); ok && inferred != p {
 		return fmt.Errorf(
@@ -218,6 +253,13 @@ func (c Config) Providers() []Provider {
 				seen[published] = true
 				out = append(out, published)
 			}
+		}
+	}
+	// Registered providers follow the published ones, in role order.
+	for _, role := range Roles {
+		if rc, ok := c.Roles[role]; ok && !seen[rc.ProviderOrDefault()] {
+			seen[rc.ProviderOrDefault()] = true
+			out = append(out, rc.ProviderOrDefault())
 		}
 	}
 	return out

@@ -14,6 +14,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
+
+	// The Anthropic adapter registers the `anthropic` provider. The composition root links it;
+	// the engine and verifier do not.
+	_ "github.com/Pierre-Theophile/aisre/internal/investigation/model/anthropic"
 )
 
 // The command tree (contracts/cli.md).

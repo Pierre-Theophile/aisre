@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // The provider seam (Track L; FR-041, FR-042a, FR-061).
@@ -40,10 +41,14 @@ const (
 	ProviderAnthropic Provider = "anthropic"
 	// ProviderMistral is the Mistral chat-completions API, which also serves the GLM models.
 	ProviderMistral Provider = "mistral"
+	// ProviderOpenAICompatible is any server speaking the OpenAI chat-completions wire format at
+	// a configured `base_url`: OpenAI itself, and the self-hosted servers (Ollama, vLLM,
+	// LocalAI, llama.cpp, TGI). It is the provider an operator who runs their own model uses.
+	ProviderOpenAICompatible Provider = "openai_compatible"
 )
 
 // Providers is the published provider set, in the order a rendering lists them.
-var Providers = []Provider{ProviderAnthropic, ProviderMistral}
+var Providers = []Provider{ProviderAnthropic, ProviderMistral, ProviderOpenAICompatible}
 
 // DefaultProvider is what an unset `provider:` means. It is Anthropic on purpose: the checked-in
 // configuration, the recorded trajectories and every test predate the seam, and a default that
@@ -68,6 +73,11 @@ func CredentialEnv(p Provider) string {
 	case ProviderAnthropic:
 		return EnvAnthropicAPIKey
 	default:
+		// openai_compatible names its variable per role (RoleConfig.APIKeyEnv); a registered
+		// provider declares its own.
+		if spec, ok := registered(p); ok {
+			return spec.CredentialEnv
+		}
 		return ""
 	}
 }
@@ -81,13 +91,24 @@ func CredentialEnv(p Provider) string {
 // command runs model-free instead, naming the variable that was missing.
 func (c Config) MissingCredentials() []string {
 	var out []string
-	for _, p := range c.Providers() {
-		env := CredentialEnv(p)
-		if env == "" {
-			continue
+	seen := map[string]bool{}
+	add := func(env string) {
+		if env == "" || seen[env] {
+			return
 		}
+		seen[env] = true
 		if strings.TrimSpace(os.Getenv(env)) == "" {
 			out = append(out, env)
+		}
+	}
+	for _, p := range c.Providers() {
+		add(CredentialEnv(p))
+	}
+	// An openai_compatible role names its own variable, and may name none: a local server
+	// usually takes no credential.
+	for _, role := range Roles {
+		if rc, ok := c.Roles[role]; ok && rc.ProviderOrDefault() == ProviderOpenAICompatible {
+			add(rc.APIKeyEnv)
 		}
 	}
 	return out
@@ -134,36 +155,107 @@ func ProviderFor(modelID string) (Provider, bool) {
 	return "", false
 }
 
-// provider is the internal seam a Client dispatches on.
+// Adapter is the seam a Client dispatches on: one vendor's wire format.
 //
-// It is deliberately small. A provider builds a body, issues it through the client's transport
+// It is deliberately small. An adapter builds a body, issues it through the client's transport
 // and decodes the answer into this package's published types; it owns no retry policy, no budget
 // and no recording, because those are the engine's and they are the same whoever answers.
-type provider interface {
-	// name is the provider this is, for an error message.
-	name() Provider
-	// complete issues one call and returns the decoded answer. The caller fills in the
+//
+// The adapters this repository ships are registered by name: mistral and openai_compatible by
+// this package, anthropic by internal/investigation/model/anthropic, which a binary links by
+// importing it. A Go program embedding the agent plugs another vendor in the same way, with
+// RegisterProvider, without editing this package.
+type Adapter interface {
+	// Complete issues one call and returns the decoded answer. The caller fills in the
 	// transport-level fields (mode, bodies, digests), which are the same for every provider.
-	complete(ctx context.Context, rc RoleConfig, req Request) (*Response, error)
-	// countTokens is the pre-flight admission estimate (FR-047a).
-	countTokens(ctx context.Context, rc RoleConfig, req Request) (int64, error)
+	Complete(ctx context.Context, rc RoleConfig, req Request) (*Response, error)
+	// CountTokens is the pre-flight admission estimate (FR-047a).
+	CountTokens(ctx context.Context, rc RoleConfig, req Request) (int64, error)
 }
 
-// providerFor resolves the provider serving a role.
-func (c *Client) providerFor(rc RoleConfig) (provider, error) {
-	p, ok := c.providers[rc.ProviderOrDefault()]
-	if !ok {
-		return nil, fmt.Errorf("model config %s: no client for provider %q; the published set is %s",
-			c.config.Version, rc.ProviderOrDefault(), providerList())
+// AdapterFactory builds an adapter over the client's transport. Every call the adapter makes
+// must cross that transport: it is what records a live run and answers a replayed one.
+type AdapterFactory func(config Config, transport Transport) (Adapter, error)
+
+// ProviderSpec is what a provider registers.
+type ProviderSpec struct {
+	// New builds the adapter.
+	New AdapterFactory
+	// Efforts is the published effort set; empty means the provider takes no effort parameter.
+	Efforts []string
+	// CredentialEnv is the environment variable the credential is read from, if any.
+	CredentialEnv string
+}
+
+var (
+	registryMu sync.RWMutex
+	registry   = map[Provider]ProviderSpec{}
+)
+
+// RegisterProvider makes a provider available to every Client built afterwards. Registering a
+// name twice replaces the earlier registration, which is what lets a test substitute an adapter.
+func RegisterProvider(name Provider, spec ProviderSpec) {
+	if name == "" || spec.New == nil {
+		panic("model: RegisterProvider needs a name and a factory")
 	}
-	return p, nil
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	registry[name] = spec
+	if _, published := efforts[name]; !published || len(spec.Efforts) > 0 {
+		set := map[string]struct{}{}
+		for _, e := range spec.Efforts {
+			set[e] = struct{}{}
+		}
+		efforts[name] = set
+	}
+}
+
+func registered(name Provider) (ProviderSpec, bool) {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	spec, ok := registry[name]
+	return spec, ok
+}
+
+// knownProvider reports whether a name is published or registered.
+func knownProvider(p Provider) bool {
+	for _, published := range Providers {
+		if p == published {
+			return true
+		}
+	}
+	_, ok := registered(p)
+	return ok
+}
+
+// providerFor resolves the adapter serving a role.
+func (c *Client) providerFor(rc RoleConfig) (Adapter, error) {
+	name := rc.ProviderOrDefault()
+	if p, ok := c.providers[name]; ok {
+		return p, nil
+	}
+	if name == ProviderAnthropic {
+		return nil, fmt.Errorf("model config %s: provider %q is not linked into this build; import "+
+			"github.com/Pierre-Theophile/aisre/internal/investigation/model/anthropic", c.config.Version, name)
+	}
+	return nil, fmt.Errorf("model config %s: no client for provider %q; the published set is %s",
+		c.config.Version, name, providerList())
 }
 
 func providerList() string {
+	seen := map[Provider]bool{}
 	names := make([]string, 0, len(Providers))
 	for _, p := range Providers {
+		seen[p] = true
 		names = append(names, string(p))
 	}
+	registryMu.RLock()
+	for p := range registry {
+		if !seen[p] {
+			names = append(names, string(p))
+		}
+	}
+	registryMu.RUnlock()
 	sort.Strings(names)
 	return strings.Join(names, ", ")
 }

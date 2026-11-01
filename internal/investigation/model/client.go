@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
 // ErrNotYetImplemented is returned by an entry point this feature publishes in Phase 1 and
@@ -30,20 +28,18 @@ var ErrNotYetImplemented = errors.New("model: not implemented yet")
 // property of the wiring rather than a promise: a test, a fixture replay and Phase 7's CI gate
 // all hand this client a replaying transport and the code below does not know the difference.
 type Client struct {
-	providers map[Provider]provider
+	providers map[Provider]Adapter
 	config    Config
 	prices    Prices
 	transport Transport
 }
 
-// NewClient returns a Client for the given configuration. Request options are passed through to
-// the SDK, which resolves credentials in its own published order — an unset ANTHROPIC_API_KEY
-// does not mean there are none.
+// NewClient returns a Client for the given configuration.
 //
 // The engine is inert without a model configuration, which is what makes an operator who runs
 // only the graph unaffected by this feature existing (plan §Design Decisions 1).
-func NewClient(config Config, prices Prices, opts ...option.RequestOption) (*Client, error) {
-	return NewClientWithTransport(config, prices, NewLiveTransport(nil), opts...)
+func NewClient(config Config, prices Prices) (*Client, error) {
+	return NewClientWithTransport(config, prices, NewLiveTransport(nil))
 }
 
 // NewClientWithTransport returns a Client whose every call crosses the given transport.
@@ -51,7 +47,7 @@ func NewClient(config Config, prices Prices, opts ...option.RequestOption) (*Cli
 // This is the constructor the engine actually uses: a live run passes a recording transport, a
 // fixture replay passes a replaying one built from the trajectory, and a unit test passes a
 // canned one. There is no code path that reaches the network around it.
-func NewClientWithTransport(config Config, prices Prices, transport Transport, opts ...option.RequestOption) (*Client, error) {
+func NewClientWithTransport(config Config, prices Prices, transport Transport) (*Client, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
@@ -66,11 +62,25 @@ func NewClientWithTransport(config Config, prices Prices, transport Transport, o
 	if transport == nil {
 		return nil, errors.New("model: a transport is required; the model boundary is never reached around")
 	}
+	providers := map[Provider]Adapter{
+		ProviderMistral:          newMistralProvider(config, transport),
+		ProviderOpenAICompatible: newOpenAICompatibleProvider(config, transport),
+	}
+	registryMu.RLock()
+	specs := make(map[Provider]ProviderSpec, len(registry))
+	for name, spec := range registry {
+		specs[name] = spec
+	}
+	registryMu.RUnlock()
+	for name, spec := range specs {
+		adapter, err := spec.New(config, transport)
+		if err != nil {
+			return nil, fmt.Errorf("model: provider %s: %w", name, err)
+		}
+		providers[name] = adapter
+	}
 	return &Client{
-		providers: map[Provider]provider{
-			ProviderAnthropic: newAnthropicProvider(config, transport, opts...),
-			ProviderMistral:   newMistralProvider(config, transport),
-		},
+		providers: providers,
 		config:    config,
 		prices:    prices,
 		transport: transport,
@@ -281,7 +291,7 @@ func (c *Client) CountTokens(ctx context.Context, req Request) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return p.countTokens(ctx, rc, req)
+	return p.CountTokens(ctx, rc, req)
 }
 
 // Complete issues one model call and returns the answer together with the bytes that produced
@@ -302,7 +312,7 @@ func (c *Client) Complete(ctx context.Context, req Request) (*Response, error) {
 	}
 
 	before := len(c.transport.Exchanges())
-	out, err := p.complete(ctx, rc, req)
+	out, err := p.Complete(ctx, rc, req)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +334,7 @@ func (c *Client) Complete(ctx context.Context, req Request) (*Response, error) {
 }
 
 // resolve turns a role into the configuration and the provider that serve it.
-func (c *Client) resolve(role Role) (RoleConfig, provider, error) {
+func (c *Client) resolve(role Role) (RoleConfig, Adapter, error) {
 	rc, ok := c.config.Role(role)
 	if !ok {
 		return RoleConfig{}, nil, fmt.Errorf(

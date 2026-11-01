@@ -16,6 +16,9 @@ import (
 	"fmt"
 
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
+
+	// Canned and recorded clients default to the Anthropic body shape, so the kit links it.
+	_ "github.com/Pierre-Theophile/aisre/internal/investigation/model/anthropic"
 )
 
 // Turn is one canned assistant turn.

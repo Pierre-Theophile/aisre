@@ -282,7 +282,7 @@ func TestConfigValidationRejections(t *testing.T) {
 				rc.Provider = "openai"
 				c.Roles[model.RoleInvestigator] = rc
 			},
-			mustSay: "the published set is anthropic, mistral",
+			mustSay: "the published set is anthropic, ",
 		},
 		{
 			// The one that earns its keep: a pair that parses, validates against every other

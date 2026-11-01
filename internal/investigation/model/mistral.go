@@ -38,11 +38,18 @@ import (
 // other than what it says it was.
 const mistralEndpoint = "https://api.mistral.ai/v1/chat/completions"
 
-// mistralProvider speaks the Mistral chat-completions API.
+// mistralProvider speaks the chat-completions wire format. It serves two providers: Mistral, at
+// its fixed endpoint with $MISTRAL_API_KEY, and openai_compatible, at each role's `base_url` with
+// the variable the role names (newOpenAICompatibleProvider). The body and its decoding are the
+// same; only the address and the credential differ.
 type mistralProvider struct {
-	config Config
-	http   *http.Client
-	apiKey string
+	provider Provider
+	config   Config
+	http     *http.Client
+	// endpoint is where a role's calls go.
+	endpoint func(RoleConfig) string
+	// credential returns the variable a role's key is read from and its value.
+	credential func(RoleConfig) (env, key string)
 	// replaying says the transport answers from a recording, so a missing credential is not a
 	// problem: a replay makes no network call and requiring a key would make the CI gate depend
 	// on a vendor account (FR-041).
@@ -55,15 +62,43 @@ type mistralProvider struct {
 // through would be a run where two turns were made under different credentials and the recording
 // said nothing about it.
 func newMistralProvider(config Config, transport Transport) *mistralProvider {
+	key := os.Getenv(EnvMistralAPIKey)
 	return &mistralProvider{
-		config:    config,
-		http:      &http.Client{Transport: transport},
-		apiKey:    os.Getenv(EnvMistralAPIKey),
-		replaying: transport.Mode() == TransportReplaying,
+		provider:   ProviderMistral,
+		config:     config,
+		http:       &http.Client{Transport: transport},
+		endpoint:   func(RoleConfig) string { return mistralEndpoint },
+		credential: func(RoleConfig) (string, string) { return EnvMistralAPIKey, key },
+		replaying:  transport.Mode() == TransportReplaying,
 	}
 }
 
-func (p *mistralProvider) name() Provider { return ProviderMistral }
+// newOpenAICompatibleProvider builds the client for any OpenAI-compatible server, hosted or
+// self-hosted. Each role carries its own base_url and credential variable, and both are part of
+// the configuration every investigation records, so a recording still says what it was made
+// against — the property the fixed Mistral endpoint protects.
+//
+// Credentials are read once, here, for the same reason as Mistral's.
+func newOpenAICompatibleProvider(config Config, transport Transport) *mistralProvider {
+	keys := map[string]string{}
+	for _, rc := range config.Roles {
+		if rc.APIKeyEnv != "" {
+			keys[rc.APIKeyEnv] = os.Getenv(rc.APIKeyEnv)
+		}
+	}
+	return &mistralProvider{
+		provider: ProviderOpenAICompatible,
+		config:   config,
+		http:     &http.Client{Transport: transport},
+		endpoint: func(rc RoleConfig) string {
+			return strings.TrimRight(rc.BaseURL, "/") + "/chat/completions"
+		},
+		credential: func(rc RoleConfig) (string, string) { return rc.APIKeyEnv, keys[rc.APIKeyEnv] },
+		replaying:  transport.Mode() == TransportReplaying,
+	}
+}
+
+func (p *mistralProvider) prefix() string { return "model: " + string(p.provider) + ": " }
 
 // countTokens is the pre-flight admission estimate (FR-047a).
 //
@@ -74,29 +109,30 @@ func (p *mistralProvider) name() Provider { return ProviderMistral }
 // function of the request alone, so the same request admits the same way every time — which is
 // what the loop's determinism needs. What it is not is a re-measurement of the tokenizer, and
 // the admission check does not need one: it needs a stable, conservative number.
-func (p *mistralProvider) countTokens(_ context.Context, rc RoleConfig, req Request) (int64, error) {
+func (p *mistralProvider) CountTokens(_ context.Context, rc RoleConfig, req Request) (int64, error) {
 	body, err := p.body(rc, req)
 	if err != nil {
 		return 0, err
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
-		return 0, fmt.Errorf("model: mistral: estimate tokens: %w", err)
+		return 0, fmt.Errorf(p.prefix()+"estimate tokens: %w", err)
 	}
 	return int64(len(raw) / bytesPerToken), nil
 }
 
 // complete issues one chat-completions call and decodes it into this package's vocabulary.
-func (p *mistralProvider) complete(ctx context.Context, rc RoleConfig, req Request) (*Response, error) {
+func (p *mistralProvider) Complete(ctx context.Context, rc RoleConfig, req Request) (*Response, error) {
 	if req.Stream {
 		return nil, errors.New(
-			"model: mistral: streaming is not implemented on this provider; the engine's loop does " +
+			p.prefix() + "streaming is not implemented on this provider; the engine's loop does " +
 				"not stream and a streamed recording would be a different artefact from a JSON one")
 	}
-	if p.apiKey == "" && !p.replaying {
+	env, key := p.credential(rc)
+	if key == "" && env != "" && !p.replaying {
 		return nil, fmt.Errorf(
-			"model: mistral: $%s is not set; a live run needs a credential and this one would fail "+
-				"on its first turn", EnvMistralAPIKey)
+			p.prefix()+"$%s is not set; a live run needs a credential and this one would fail "+
+				"on its first turn", env)
 	}
 
 	body, err := p.body(rc, req)
@@ -105,17 +141,17 @@ func (p *mistralProvider) complete(ctx context.Context, rc RoleConfig, req Reque
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("model: mistral: marshal request: %w", err)
+		return nil, fmt.Errorf(p.prefix()+"marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, mistralEndpoint, bytes.NewReader(raw))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint(rc), bytes.NewReader(raw))
 	if err != nil {
-		return nil, fmt.Errorf("model: mistral: build request: %w", err)
+		return nil, fmt.Errorf(p.prefix()+"build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
-	if p.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	if key != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+key)
 	}
 
 	resp, err := p.do(ctx, httpReq, raw)
@@ -125,15 +161,15 @@ func (p *mistralProvider) complete(ctx context.Context, rc RoleConfig, req Reque
 	answer, readErr := io.ReadAll(resp.Body)
 	closeErr := resp.Body.Close()
 	if readErr != nil {
-		return nil, fmt.Errorf("model: mistral: read response: %w", readErr)
+		return nil, fmt.Errorf(p.prefix()+"read response: %w", readErr)
 	}
 	if closeErr != nil {
-		return nil, fmt.Errorf("model: mistral: close response: %w", closeErr)
+		return nil, fmt.Errorf(p.prefix()+"close response: %w", closeErr)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, &APIError{Provider: ProviderMistral, Status: resp.StatusCode, Body: truncate(string(answer))}
+		return nil, &APIError{Provider: p.provider, Status: resp.StatusCode, Body: truncate(string(answer))}
 	}
-	return decodeMistral(answer)
+	return decodeMistral(answer, p.prefix())
 }
 
 // transportAttempts is how many times one turn is put on the wire before the run gives up, and
@@ -176,11 +212,11 @@ func (p *mistralProvider) do(ctx context.Context, req *http.Request, body []byte
 			return nil, d
 		}
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("model: mistral: chat/completions: %w", err)
+			return nil, fmt.Errorf(p.prefix()+"chat/completions: %w", err)
 		}
 		last = err
 	}
-	return nil, fmt.Errorf("model: mistral: chat/completions: %d transport attempts failed, last: %w",
+	return nil, fmt.Errorf(p.prefix()+"chat/completions: %d transport attempts failed, last: %w",
 		transportAttempts, last)
 }
 
@@ -564,13 +600,13 @@ type mistralChunk struct {
 }
 
 // decodeMistral turns the vendor's answer into this package's vocabulary.
-func decodeMistral(raw []byte) (*Response, error) {
+func decodeMistral(raw []byte, prefix string) (*Response, error) {
 	var completion mistralCompletion
 	if err := json.Unmarshal(raw, &completion); err != nil {
-		return nil, fmt.Errorf("model: mistral: decode response: %w", err)
+		return nil, fmt.Errorf(prefix+"decode response: %w", err)
 	}
 	if len(completion.Choices) == 0 {
-		return nil, errors.New("model: mistral: the response carries no choices; " +
+		return nil, errors.New(prefix + "the response carries no choices; " +
 			"a turn with no content is a turn the engine cannot record")
 	}
 	choice := completion.Choices[0]
@@ -601,7 +637,7 @@ func decodeMistral(raw []byte) (*Response, error) {
 		}
 		if !json.Valid([]byte(arguments)) {
 			return nil, fmt.Errorf(
-				"model: mistral: tool call %s (%s) carries arguments that are not JSON; the engine "+
+				prefix+"tool call %s (%s) carries arguments that are not JSON; the engine "+
 					"decodes a tool call before it dispatches it", call.ID, call.Function.Name)
 		}
 		blocks = append(blocks, Block{
@@ -634,7 +670,7 @@ func mistralBlocks(content json.RawMessage) ([]Block, error) {
 
 	var chunks []mistralChunk
 	if err := json.Unmarshal(content, &chunks); err != nil {
-		return nil, fmt.Errorf("model: mistral: decode content: %w", err)
+		return nil, fmt.Errorf("model: chat completions: decode content: %w", err)
 	}
 	out := make([]Block, 0, len(chunks))
 	for _, chunk := range chunks {

@@ -32,7 +32,7 @@ cmd/aisre ──► internal/cli (composition root: wires everything, owns no ru
 | Context | Domain | Application | Adapters | Ports |
 |---|---|---|---|---|
 | Graph and ingestion | `internal/graph`, `internal/event`, `internal/resolution` | `internal/projector`, `internal/query` | `internal/log` (Postgres event log), `internal/feeders/*`, `internal/store/postgres` | `pkg/feeder` |
-| Investigation | `internal/investigation/ledger`, `internal/mask` | `intake`, `engine`, `verify`, `runner`, `workers/*`, `render` | `internal/backends/*`, `investigation/store`, `investigation/model` (LLM vendors), `render/slacksink` | `pkg/backend`, `pkg/worker`, consumer-side interfaces (`graph.QueryService`, `chat.History`, `render.Sink`, …) |
+| Investigation | `internal/investigation/ledger`, `internal/mask` | `intake`, `engine`, `verify`, `runner`, `workers/*`, `render` | `internal/backends/*`, `investigation/store`, `investigation/model/anthropic` and the built-in `mistral` and `openai_compatible` adapters, `render/slacksink` | `model.Adapter` (registered with `model.RegisterProvider`), `pkg/backend`, `pkg/worker`, consumer-side interfaces (`graph.QueryService`, `chat.History`, `render.Sink`, …) |
 | Knowledge | `pkg/knowledge` | `internal/embedding` (indexer) | `internal/store/postgres`, `pkg/knowledge/memory`, `embedding` OpenAI-compatible adapter | `knowledge.Store`, `knowledge.Embedder` |
 | Catalog and attribution | `pkg/attribution` | `internal/catalog` | `internal/catalog/classify` | `attribution.Classifier` |
 | Evaluation | — | `internal/eval`, `internal/fixture`, `internal/investigation/replay` | `internal/fixture/graphquery` | — |
@@ -52,8 +52,6 @@ Cross-context rules:
 
 These are tracked and not yet enforced:
 
-- The model boundary (`internal/investigation/model`) exposes a concrete client rather than a
-  port, so the engine and verifier still link the Anthropic SDK.
 - Application packages take `*postgres.Store` directly instead of repository interfaces
   (`investigation/runner`, `catalog`, `server`).
 - A few adapters reach into another context's packages for constants or algorithms

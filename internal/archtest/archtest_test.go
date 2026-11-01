@@ -77,6 +77,19 @@ var rules = []rule{
 		},
 	},
 	{
+		why: "the model boundary is vendor-neutral: an LLM vendor's SDK is linked only by its adapter " +
+			"(internal/investigation/model/anthropic), which the composition root imports",
+		packages: []string{
+			"internal/investigation/model",
+			"internal/investigation/engine",
+			"internal/investigation/verify",
+			"internal/investigation/budget",
+			"internal/investigation/runner",
+			"internal/investigation/replay",
+		},
+		forbidden: llmSDK,
+	},
+	{
 		why: "only the model boundary speaks to an LLM vendor; knowledge, the graph read side and the " +
 			"sanitiser must not link one",
 		packages: []string{

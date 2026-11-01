@@ -5,8 +5,6 @@ package model
 import (
 	"fmt"
 	"sort"
-
-	"github.com/anthropics/anthropic-sdk-go"
 )
 
 // Usage accounting (T060, T072, FR-048, plan §Observability and cost accounting).
@@ -46,15 +44,6 @@ type Usage struct {
 	CacheRead int64
 	// Output is generated tokens.
 	Output int64
-}
-
-func usageOf(u anthropic.BetaUsage) Usage {
-	return Usage{
-		Input:      u.InputTokens,
-		CacheWrite: u.CacheCreationInputTokens,
-		CacheRead:  u.CacheReadInputTokens,
-		Output:     u.OutputTokens,
-	}
 }
 
 // ByClass returns the usage keyed by published class, omitting the classes that are zero so that
