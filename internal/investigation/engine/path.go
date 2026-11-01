@@ -3,10 +3,12 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
+	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 )
@@ -53,6 +55,9 @@ type Path struct {
 	Drawable bool
 	// Missing names the absent link as a resolving action, when the path is not drawable.
 	Missing *investigationv1.Resolution
+
+	// missingFrom is the reference the missing link's read is centred on.
+	missingFrom string
 }
 
 // pathEdgeTypes are the edges a fault travels along: a call is a dependency on an answer, and so
@@ -69,30 +74,98 @@ func (e *Engine) Paths() []Path {
 	return append([]Path(nil), e.paths...)
 }
 
+// MaxPathCompletions caps the graph reads the stop makes to complete undrawable paths: one per
+// distinct missing link, and no more than this many over the whole stop.
+const MaxPathCompletions = 2
+
 // drawPaths draws the paths of the supported hypotheses and of the top-ranked one.
-func (e *Engine) drawPaths() []Path {
-	var out []Path
+//
+// A path that cannot be drawn on the neighbourhood read is first completed, not given up on: the
+// stop issues the read its resolving action names — the subgraph one hop wider around the cause's
+// target — and draws the path again over both reads (FR-019b). The neighbourhood is read at
+// NeighbourhoodHops while the candidate set reaches one hop further (the diff's change-hop
+// margin), so a culprit at the edge of the candidate set has a target the first read holds and
+// no edge to it; this is the read that supplies that edge. It is an ordinary worker call, in the
+// trajectory and in the budget like any other, and a refused one leaves the path undrawable.
+func (e *Engine) drawPaths(ctx context.Context) []Path {
+	var chosen []ledger.Hypothesis
 	top := true
 	for _, h := range e.ledger.Hypotheses() {
 		if h.Kind == ledger.KindNoObservedChange {
 			continue
 		}
 		if h.Status == ledger.StatusSupported || top {
-			out = append(out, e.pathOf(h))
+			chosen = append(chosen, h)
 		}
 		top = false
+	}
+	out := make([]Path, 0, len(chosen))
+	for _, h := range chosen {
+		out = append(out, e.pathOf(h))
+	}
+
+	var completions []*Profile
+	read := map[string]bool{}
+	for i := range out {
+		if out[i].Drawable || out[i].missingFrom == "" || read[out[i].missingFrom] {
+			continue
+		}
+		if len(read) >= MaxPathCompletions {
+			break
+		}
+		read[out[i].missingFrom] = true
+		if wider := e.completionRead(ctx, out[i].missingFrom, out[i].HypothesisID); wider != nil {
+			completions = append(completions, wider)
+		}
+	}
+	if len(completions) == 0 {
+		return out
+	}
+	for i, h := range chosen {
+		if out[i].Drawable {
+			continue
+		}
+		redrawn := e.pathOf(h, completions...)
+		if !redrawn.Drawable {
+			redrawn.Missing.Statement += "; a read one hop wider, made at the stop, does not hold it either"
+		}
+		out[i] = redrawn
 	}
 	return out
 }
 
-// pathOf draws one hypothesis's path.
-func (e *Engine) pathOf(h ledger.Hypothesis) Path {
-	profile := e.Profile()
+// completionRead issues one path-completion read and returns its answer as a profile, or nil when
+// it was refused, failed, or is not a subgraph.
+func (e *Engine) completionRead(ctx context.Context, from, hypothesisID string) *Profile {
+	req := e.subgraphRequest(from)
+	if req == nil {
+		return nil
+	}
+	req.ServesHypothesisId = hypothesisID
+	answer, err := e.Call(ctx, req)
+	if err != nil || answer == nil || answer.Refused != nil {
+		return nil
+	}
+	sub, ok := answer.Graph.(*graphv1.SubgraphResponse)
+	if !ok || sub == nil {
+		return nil
+	}
+	return BuildProfile(sub, e.subject.Window.GetStart().AsTime(), e.subject.Window.GetEnd().AsTime(), e.at.ObservedAt)
+}
+
+// pathOf draws one hypothesis's path, on the neighbourhood read and any completion reads.
+func (e *Engine) pathOf(h ledger.Hypothesis, completions ...*Profile) Path {
+	reads := append([]*Profile{e.Profile()}, completions...)
 	idOf := map[string]string{}
 	refOf := map[string]string{}
-	for _, ent := range profile.InScope() {
-		idOf[ent.Ref] = ent.ID
-		refOf[ent.ID] = ent.Ref
+	for _, profile := range reads {
+		for _, ent := range profile.InScope() {
+			if _, ok := refOf[ent.ID]; ok {
+				continue
+			}
+			idOf[ent.Ref] = ent.ID
+			refOf[ent.ID] = ent.Ref
+		}
 	}
 	resolve := func(s string) string {
 		if _, ok := refOf[s]; ok {
@@ -123,16 +196,20 @@ func (e *Engine) pathOf(h ledger.Hypothesis) Path {
 		against bool
 	}
 	adjacent := map[string][]link{}
-	for _, edge := range profile.AllEdges() {
-		if !pathEdgeTypes[edge.Type] {
-			continue
+	seenEdge := map[[3]string]bool{}
+	for _, profile := range reads {
+		for _, edge := range profile.AllEdges() {
+			if !pathEdgeTypes[edge.Type] {
+				continue
+			}
+			src, dst := idOf[edge.Src], idOf[edge.Dst]
+			if src == "" || dst == "" || src == dst || seenEdge[[3]string{src, dst, edge.Type}] {
+				continue
+			}
+			seenEdge[[3]string{src, dst, edge.Type}] = true
+			adjacent[src] = append(adjacent[src], link{dst, edge.Type, false})
+			adjacent[dst] = append(adjacent[dst], link{src, edge.Type, true})
 		}
-		src, dst := idOf[edge.Src], idOf[edge.Dst]
-		if src == "" || dst == "" || src == dst {
-			continue
-		}
-		adjacent[src] = append(adjacent[src], link{dst, edge.Type, false})
-		adjacent[dst] = append(adjacent[dst], link{src, edge.Type, true})
 	}
 	for id := range adjacent {
 		links := adjacent[id]
@@ -176,6 +253,7 @@ func (e *Engine) pathOf(h ledger.Hypothesis) Path {
 			NextQuery:    e.subgraphTerm(name(target)),
 			HypothesisId: h.ID,
 		}
+		path.missingFrom = name(target)
 		return path
 	}
 	path.Drawable = true
@@ -292,6 +370,11 @@ func moved(digest *investigationv1.Digest) bool {
 
 // subgraphTerm is the query that would look one hop further for the missing link.
 func (e *Engine) subgraphTerm(entityRef string) *investigationv1.AlgebraTerm {
+	return e.subgraphRequest(entityRef).GetTerm()
+}
+
+// subgraphRequest is the read subgraphTerm names, as a request.
+func (e *Engine) subgraphRequest(entityRef string) *investigationv1.AlgebraRequest {
 	req, err := DecodeCall("subgraph", jsonObject(map[string]any{
 		"entity_ref":              entityRef,
 		"hops":                    NeighbourhoodHops + 1,
@@ -301,7 +384,7 @@ func (e *Engine) subgraphTerm(entityRef string) *investigationv1.AlgebraTerm {
 	if err != nil {
 		return nil
 	}
-	return req.GetTerm()
+	return req
 }
 
 // widenUnverifiedPaths reports every supported hypothesis whose path has an unverified edge, or

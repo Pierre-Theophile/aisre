@@ -1182,7 +1182,10 @@ over it is reported.
   it or be marked `unverified`. A path with an unverified edge MUST be rendered as such, and the
   hypothesis's confidence MUST reflect it under FR-023. A hypothesis whose path cannot be drawn on
   the graph MUST say so and name the missing link as a resolving action, in the form FR-026 uses for
-  `unknown`. On an estate whose graph has no service-to-service edge around the alerting entity,
+  `unknown`. Before it says so, the stop MUST issue that resolving action once — the subgraph read one
+  hop wider around the cause's target, at most two such reads per stop, recorded and budgeted like any
+  other call — and draw the path again over both reads: the candidate set reaches one hop beyond the
+  neighbourhood read, so a culprit at its edge otherwise has no edge to it. *(Added 2026-11-01.)* On an estate whose graph has no service-to-service edge around the alerting entity,
   most paths cannot be drawn until feature 012 supplies the edges; edge F1 (FR-059a) on such an
   estate MUST be reported with the share of hypotheses whose path could not be drawn, so that a thin
   graph is not read as a regression. *(Added 2026-11-01, ADR-0019 D1.)*
@@ -1550,7 +1553,9 @@ bulk is beside it, and the link between them is a digest.
   path of FR-061b; and the **omission rate**, the share of concluded investigations whose examination
   report (FR-022b) lists a decisive family as reachable and unqueried for the hypothesis that matched
   the ground truth. When no hypothesis is *supported*, the path of the top-ranked hypothesis is
-  scored if it has one; an investigation with no path scores 0 and is counted separately. Beside the
+  scored if it has one; an investigation with no path scores 0 and is counted separately. A ground
+  truth whose causal path is the symptom alone has no edge to score against: its runs are left out
+  of edge F1 and of the undrawable share, and still count for mechanism credit. Beside the
   omission rate, each run MUST publish the **cost of enforcement**: the share of runs in which the
   expectation table held the ground-truth hypothesis at *inconclusive*. The omission rate is defined
   by the same table it audits, so neither number is read without the other. Both process metrics
