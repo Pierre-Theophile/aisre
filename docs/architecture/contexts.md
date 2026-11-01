@@ -13,8 +13,10 @@ cmd/aisre ──► internal/cli (composition root: wires everything, owns no ru
                  │
                  ▼
   adapters ──► application (use cases) ──► domain ◄── ports (pkg/, consumer-side interfaces)
-  postgres,     runner, intake, engine,      graph, event, ledger,
-  vendor SDKs,  projector, query, catalog    resolution, mask, knowledge
+  postgres,     runner, intake, engine,      graph, event, ledger, record,
+  projector,    server, catalog              resolution, mask, knowledge
+  query, pg*,
+  vendor SDKs,
   connectors
 ```
 
@@ -31,7 +33,7 @@ cmd/aisre ──► internal/cli (composition root: wires everything, owns no ru
 
 | Context | Domain | Application | Adapters | Ports |
 |---|---|---|---|---|
-| Graph and ingestion | `internal/graph`, `internal/event`, `internal/resolution` | `internal/projector`, `internal/query` | `internal/log` (Postgres event log), `internal/feeders/*`, `internal/store/postgres` | `pkg/feeder` |
+| Graph and ingestion | `internal/graph`, `internal/event`, `internal/resolution` | — | `internal/projector` (Postgres write side), `internal/query` (Postgres read side), `internal/log` (Postgres event log), `internal/feeders/*`, `internal/store/postgres` | `pkg/feeder` |
 | Investigation | `internal/investigation/ledger`, `internal/investigation/record`, `internal/mask`, `internal/injection`, `internal/logmine` | `intake`, `engine`, `verify`, `runner`, `workers/*`, `render` | `internal/backends/*`, `investigation/store` and `investigation/pginvestigation` (Postgres, projector, query engine), `investigation/model/anthropic` and the built-in `mistral` and `openai_compatible` adapters, `render/slacksink` | `model.Adapter` (registered with `model.RegisterProvider`), `pkg/backend`, `pkg/worker`, `runner.Persistence` (`Investigations`, `Ledgers`, `Lifecycle`, `Evidence`, `DecisionLog`), `knowledge.Corpus`, consumer-side interfaces (`graph.QueryService`, `chat.History`, `render.Sink`, …) |
 | Knowledge | `pkg/knowledge`, `internal/knowledgedoc` | `internal/embedding` (indexer) | `internal/store/postgres`, `pkg/knowledge/memory`, `embedding` OpenAI-compatible adapter | `knowledge.Store`, `knowledge.Embedder` |
 | Catalog and attribution | `pkg/attribution`, `internal/catalog` (rules, discovery, decision model) | `catalog.Attributor` | `internal/catalog/pgcatalog` (Postgres and the projector), `internal/catalog/classify` | `catalog.Store`, `catalog.EventLog`, `attribution.Classifier` |
@@ -62,5 +64,7 @@ Cross-context rules:
 
 These are tracked and not yet enforced:
 
+- The projector's folding rules are written in SQL, so a second read model would have to
+  re-implement them (ADR-0018). Move a rule into `internal/graph` when it is next changed.
 - Protobuf types double as the domain model (ADR-0002). This is a deliberate trade-off; new
   aggregates should keep the generated types at their edges.
