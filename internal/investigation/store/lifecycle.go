@@ -11,6 +11,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
@@ -82,6 +83,14 @@ func ConcludeInTx(ctx context.Context, tx pgx.Tx, investigationID string, c reco
 	if endedAt.IsZero() {
 		endedAt = time.Now().UTC()
 	}
+	var examination any
+	if c.Examination != nil {
+		raw, err := protojson.Marshal(c.Examination)
+		if err != nil {
+			return fmt.Errorf("investigation store: conclude %s: examination: %w", investigationID, err)
+		}
+		examination = raw
+	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE investigation.investigations SET
 			lifecycle = $2,
@@ -99,14 +108,15 @@ func ConcludeInTx(ctx context.Context, tx pgx.Tx, investigationID string, c reco
 			onset_estimate_evidence_id = coalesce(nullif($13, ''), onset_estimate_evidence_id),
 			verification_status = $15,
 			verification_detail = $16,
-			search_space_profile = $17
+			search_space_profile = $17,
+			examination = $18
 		WHERE investigation_id = $1 AND lifecycle = $14`,
 		investigationID, record.LifecycleConcluded, c.Kind, c.Outcome,
 		record.StopReasonName(c.StopReason), c.StopDetail, nullable(c.VerdictLine),
 		nullable(c.RollbackCandidate), endedAt.UTC(),
 		c.RecordingKey, c.RecordingDigest, c.DecisionEventID, c.OnsetEstimateEvidenceID,
 		record.LifecycleRunning, nullable(c.VerificationStatus), nullable(c.VerificationDetail),
-		nullable(c.SearchSpaceProfile))
+		nullable(c.SearchSpaceProfile), examination)
 	if err != nil {
 		return fmt.Errorf("investigation store: conclude %s: %w", investigationID, err)
 	}

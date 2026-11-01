@@ -460,6 +460,7 @@ func (r *Runner) conclude(
 	if profile := eng.Profile(); profile != nil {
 		conclusion.SearchSpaceProfile = profile.Render()
 	}
+	conclusion.Examination = eng.Examination().Proto()
 	written := r.writeTrajectory(rn.investigationID, eng)
 	conclusion.RecordingKey = written.key
 	conclusion.RecordingDigest = written.digest

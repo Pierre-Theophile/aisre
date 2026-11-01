@@ -13,6 +13,7 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/audit"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/budget"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/expectations"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/verify"
@@ -113,6 +114,9 @@ type Config struct {
 	// It is called from the run's own goroutine, in order, and never concurrently with itself.
 	// Nil is legal and is the ordinary case for a recording.
 	OnState func(*Snapshot)
+	// Expectations is the expectation table the examination report applies (FR-022b). Nil means
+	// the published table, expectations.Published().
+	Expectations *expectations.Table
 }
 
 // DefaultMaxTurns is the published ceiling on model turns in one investigation. It is not a
@@ -172,6 +176,8 @@ type Engine struct {
 	// changeKinds is each candidate change's kind, as the diff published it: the cause category
 	// the examination report reads its expectations by (FR-022b).
 	changeKinds map[string]graphv1.ChangeKind
+	// expectations is the table the examination report applies.
+	expectations *expectations.Table
 
 	// onset is the estimated symptom onset and its evidence id, once the metrics worker has
 	// produced one. Everything about causal ordering hangs off it (T081).
@@ -275,6 +281,7 @@ func New(cfg Config) (*Engine, error) {
 		rankerScores:  map[string]float64{},
 		changeOffsets: map[string]int64{},
 		changeKinds:   map[string]graphv1.ChangeKind{},
+		expectations:  cfg.Expectations,
 
 		verifier:            verifier,
 		verifierUnavailable: unavailable,

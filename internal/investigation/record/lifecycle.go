@@ -90,6 +90,8 @@ type Conclusion struct {
 	// SearchSpaceProfile is the rendered search-space profile the first brief carried
 	// (FR-012a). Empty on a path that never read the neighbourhood.
 	SearchSpaceProfile string
+	// Examination is the examination report (FR-022b), nil on a path that never ran the engine.
+	Examination *investigationv1.ExaminationReport
 	// VerifierFindings is every claim's verdict, written in the same transaction as the
 	// conclusion: a removed claim is part of how the answer was reached (FR-022a).
 	VerifierFindings []VerifierFinding
