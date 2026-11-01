@@ -82,6 +82,10 @@ type FirstWave struct {
 	// worker. Its items are knowledge-derived evidence: no hypothesis is judged from them
 	// (002 FR-051, 008 FR-031).
 	Knowledge *Answer
+	// Flows are the request-rate comparisons on the candidates' callers and callees and on the
+	// callees of retracted edges (FR-046b); StoppedFlows the candidates they opened.
+	Flows        []*Answer
+	StoppedFlows []string
 }
 
 // RunFirstWave runs the wave over the top candidates in the ledger.
@@ -129,6 +133,27 @@ func (e *Engine) RunFirstWave(ctx context.Context) (*FirstWave, error) {
 		}
 		requests[i] = built
 	}
+	// The flows (FR-046b): the request rates of the candidates' callers and callees, and of the
+	// callees of the edges the diff retracted. Their pointers come from the same sequential reads,
+	// and their comparisons are one more group, admitted and issued after every candidate's own
+	// questions, so a binding budget refuses a flow before it refuses a candidate's test.
+	flows := e.planFlows(plans)
+	for _, flow := range flows {
+		if len(e.catalogue.PointersFor(flow.entityRef)) > 0 {
+			continue
+		}
+		pointers, err := e.pointersFor(ctx, flow.entityRef)
+		if err != nil {
+			return nil, err
+		}
+		wave.Answers = append(wave.Answers, pointers)
+	}
+	flowRequests, err := e.planFlowQueries(flows, reference)
+	if err != nil {
+		return nil, err
+	}
+	groups := len(plans)
+	requests = append(requests, flowRequests)
 
 	// Admission, sequentially, in the wave's own plan order: candidate rank, then query order
 	// within a candidate.
@@ -139,9 +164,9 @@ func (e *Engine) RunFirstWave(ctx context.Context) (*FirstWave, error) {
 	// made in. Made inside the goroutines below, that order was the Go scheduler's, and the same
 	// world produced a 27-call run or a 26-call run depending on it. Made here, it is the plan's:
 	// the lowest-ranked candidate's last query is the one that loses, every run, on every machine.
-	admissions := make([][]*admitted, len(plans))
-	refusals := make([][]*Answer, len(plans))
-	for i := range plans {
+	admissions := make([][]*admitted, len(requests))
+	refusals := make([][]*Answer, len(requests))
+	for i := range requests {
 		for _, req := range requests[i] {
 			adm, refused, err := e.preAdmit(req)
 			if err != nil {
@@ -157,8 +182,8 @@ func (e *Engine) RunFirstWave(ctx context.Context) (*FirstWave, error) {
 
 	// The telemetry calls, in parallel across candidates. Every one of them has already been
 	// admitted, so a goroutine here can only issue a call the budget has already booked.
-	answers := make([][]*Answer, len(plans))
-	errs := make([]error, len(plans))
+	answers := make([][]*Answer, len(requests))
+	errs := make([]error, len(requests))
 	// Each candidate records into a trajectory of its own, and the branches are spliced back in
 	// plan order below.
 	//
@@ -169,9 +194,9 @@ func (e *Engine) RunFirstWave(ctx context.Context) (*FirstWave, error) {
 	// of the Go scheduler. It was invisible on an idle machine, where a goroutine per candidate
 	// usually runs to completion before the next one starts, and it surfaced as a failed
 	// determinism test the moment two full test runs competed for cores.
-	sinks := make([]*Trajectory, len(plans))
+	sinks := make([]*Trajectory, len(requests))
 	var wg sync.WaitGroup
-	for i := range plans {
+	for i := range requests {
 		sinks[i] = e.trajectory.Concurrent()
 		wg.Add(1)
 		go func(i int) {
@@ -189,7 +214,7 @@ func (e *Engine) RunFirstWave(ctx context.Context) (*FirstWave, error) {
 		}(i)
 	}
 	wg.Wait()
-	for i := range plans {
+	for i := range requests {
 		e.trajectory.Splice(sinks[i])
 	}
 	for _, err := range errs {
@@ -231,6 +256,23 @@ func (e *Engine) RunFirstWave(ctx context.Context) (*FirstWave, error) {
 			wave.Untested = append(wave.Untested, plan.hypothesisID)
 		}
 	}
+	// The flows are recorded after every candidate, and judged by nobody: a fall that stopped a
+	// flow opens a candidate of its own (flows.go).
+	for _, answer := range answers[groups] {
+		if err := e.record(answer); err != nil {
+			return nil, err
+		}
+		wave.Answers = append(wave.Answers, answer)
+		wave.Flows = append(wave.Flows, answer)
+		if answer.Response.GetOutcome() == investigationv1.TermOutcome_NOT_RECORDED {
+			wave.Missing = append(wave.Missing, "flow:"+answer.Capability)
+		}
+	}
+	opened, err := e.openStoppedFlows(answers[groups])
+	if err != nil {
+		return nil, err
+	}
+	wave.StoppedFlows = opened
 	knowledge, err := e.firstWaveKnowledge(ctx, plans)
 	if err != nil {
 		return nil, err
