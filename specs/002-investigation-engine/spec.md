@@ -260,8 +260,8 @@ the amendment PR.
 
 - Q: The verifier of FR-022a is implemented but no production path calls it. Is that a gap or a
   choice? → **Default: a gap.** Every investigation's terminal path runs the deterministic checker,
-  then the fresh-context verifier, before the outcome is published; a verifier failure is a typed
-  stop, never a silent skip. (FR-022a, FR-022c)
+  then the fresh-context verifier, before the outcome is published; a verifier that fails marks the
+  outcome `not_verified`, never a silent skip. (FR-022a, FR-022c)
 - Q: Must a conclusion say what was *not* looked at? → **Default: yes.** The dominant failure of LLM
   investigators in the literature is omission: decisive evidence reachable and never queried, with
   nothing in the answer saying so. The owner reported the same failure on his estate on 2026-11-01.
@@ -1171,7 +1171,8 @@ over it is reported.
   of the pinned instants. Each edge MUST either cite the evidence items that show the fault crossed
   it or be marked `unverified`. A path with an unverified edge MUST be rendered as such, and the
   hypothesis's confidence MUST reflect it under FR-023. A hypothesis whose path cannot be drawn on
-  the graph MUST say so and name the missing link as a resolving action under FR-026. *(Added
+  the graph MUST say so and name the missing link as a resolving action, in the form FR-026 uses for
+  `unknown`. *(Added
   2026-11-01, ADR-0019 D1.)*
 - **FR-020**: Every hypothesis MUST carry: a statement in plain language, its candidate cause (a
   change entity or a named condition), the target entities it concerns, a status (proposed,
@@ -1203,15 +1204,20 @@ over it is reported.
   and rendered: for each hypothesis, the signal families and sources it queried; the signal families
   and sources that were *reachable* for its target entities (a pointer or a connected source exists,
   per FR-012a) and were never queried; and the entities of the impact surface that no call touched. A
-  published, versioned **expectation table** MUST name, for each cause category, the signal families
+  hypothesis's **cause category** is the kind of its candidate cause: the change kind for a change
+  entity (001's change kinds), the `not_change_induced` category for a named condition (FR-061b), or
+  `stopped_flow` for a flow surfaced under FR-046b. A published, versioned **expectation table** MUST
+  name, for each cause category, the signal families
   that are decisive for it. A hypothesis MUST NOT reach status *supported* while a decisive family for
   its category was reachable and unqueried: it is held at *inconclusive*, and the unqueried family is
   named as its resolving action. Unreachable families MUST be reported as coverage gaps under FR-027,
   never as omissions. *(Added 2026-11-01, ADR-0019 D1.)*
 - **FR-022c**: The checker and the verifier of FR-022a MUST run on every investigation's terminal path,
   live and in replay, before the outcome is published, and MUST enforce FR-019b and FR-022b. A
-  verifier that fails, times out or is unavailable MUST produce a typed stop reason under FR-045b and
-  a rendering that says the answer was not verified; it MUST never be skipped silently. *(Added
+  verifier that fails, times out or is unavailable MUST mark the outcome with the typed verification
+  status `not_verified` and its reason, recorded as a typed event and shown in both renderings; it MUST
+  never be skipped silently. A verified outcome carries `verified`. The stop reason of FR-045b is
+  unchanged. *(Added
   2026-11-01, ADR-0019 D1.)*
 - **FR-023**: Confidence MUST be computed, never verbalised. It MUST be a deterministic function of
   the hypothesis ledger — the priors and the likelihood ratios implied by the typed judgments — so
@@ -1396,7 +1402,9 @@ bulk is beside it, and the link between them is a digest.
   `diff` reports as retracted, or whose weight class fell, inside the investigation's window. A flow
   that stopped MUST be eligible as a candidate cause or as a link of a propagation path, exactly like
   a flow that started failing. A fall in rate MUST be scored by its magnitude, never ranked below
-  rises by sign alone. *(Added 2026-11-01, ADR-0019 D1.)*
+  rises by sign alone. These are `compare` queries with the RATE statistic the algebra already
+  publishes: existing fixtures' recorded worlds are extended to carry them under FR-046a, which is
+  fixture work and no contract change. *(Added 2026-11-01, ADR-0019 D1.)*
 - **FR-047**: Budget profiles MUST be selectable by alert priority, the defaults MUST be published,
   and the profile applied MUST be recorded on every investigation. Two profiles MUST exist. `page`,
   for a live incident: the first tested hypothesis within 90–120 seconds, a substantive answer
@@ -1519,7 +1527,9 @@ bulk is beside it, and the link between them is a digest.
   corpus: **propagation-path edge F1**, scored on the paths of FR-019b against the ground-truth causal
   path of FR-061b; and the **omission rate**, the share of concluded investigations whose examination
   report (FR-022b) lists a decisive family as reachable and unqueried for the hypothesis that matched
-  the ground truth. Both are reported from the first run and gated once the corpus has a baseline,
+  the ground truth. When no hypothesis is *supported*, the path of the top-ranked hypothesis is
+  scored if it has one; an investigation with no path scores 0 and is counted separately. Both are
+  reported from the first run and gated once the corpus has a baseline,
   as pass@1 is. *(Added 2026-11-01, ADR-0019 D1.)*
 - **FR-060**: The **aggregate pass@1 threshold is set by the first full corpus run** and not
   before: it cannot be guessed ahead of the corpus that measures it, and setting it from a partial

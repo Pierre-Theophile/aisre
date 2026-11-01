@@ -71,7 +71,10 @@ Each default is written into the requirements below. Following 006–009, they a
   - `declared_only`: possibly stale, or a path too rare for the observation window;
   - `observed_only`: an undeclared dependency;
   - `stopped`: observed and confirmed before, no longer observed while still declared or validated;
+  - `ended`: observed only, then retracted, with nothing declaring or validating it;
   - `rejected`: refused by a person.
+
+  `intermittent` is a flag on an edge, not a state (Q7).
 
   The projection is never a stored truth of its own (constitution I). (FR-020–FR-025)
 - Q4: How does the client validate? → **Default: a topology plan, reviewed like a diff.**
@@ -87,22 +90,27 @@ Each default is written into the requirements below. Following 006–009, they a
     - Pub/Sub push subscriptions, Eventarc triggers and Cloud Scheduler jobs, as `declared`
       asynchronous or scheduled edges to their target service;
     - the URL map's host and path rules, carried on the existing `exposed_via` edge, so a route says
-      which part of the front door reaches which service;
-    - environment variables whose value names a known endpoint, as `declared` edges. Only the key name
-      and the matched entity are kept: 003 stores names and fingerprints only, and that rule holds.
+      which part of the front door reaches which service. Under 003 FR-149 the load-balancer path is
+      no longer the first work deferred; 003 FR-057 still lets it be omitted when the credential lacks
+      the permission, and the omission is then a blind spot (FR-082);
+    - environment variables whose value names a known endpoint, as `declared` edges. The graph keeps
+      only the key name and the matched entity, as 003 FR-033 and FR-034 require. 003 FR-034 is
+      amended exactly as it was on 2026-10-09 for Cloud SQL connection names: a recording may keep
+      the matched endpoint, pseudonymised, so that the match replays (FR-048).
   - P1, OpenTelemetry: `messaging.system`, `messaging.destination.name` and span kind
     (producer/consumer), as asynchronous edges through the broker resource.
-  - P2, Kubernetes adapter: Ingress and Gateway routes, and Service selectors, when a cluster is
-    connected.
+  - P2, Kubernetes: the Kubernetes feeder already emits `exposed_via` from Ingress rules and Service
+    selectors. This feature adds Gateway API routes and the provenance class `declared` on all three.
   - P2: a **declared topology file** (GitOps), imported as human decisions, in the same file family as
     009's catalog file.
 
   Terraform stays out, as 003 decided; the audit log captures its effects. (FR-040–FR-049)
-- Q6: How are asynchronous flows represented? → **Default: through the broker, with a mode.** A producer
-  and a consumer each get a `calls` edge to the topic or queue (a `managed_resource`), with
-  `mode = async` and `role = publish | consume`. A derived service-to-service edge with
-  `mode = async` is projected for navigation. A synchronous call keeps `mode = sync`. This is an
-  additive attribute; no new edge type is introduced. Propagation differs by direction, so the role
+- Q6: How are asynchronous flows represented? → **Default: through the broker, with a mode.** Edges
+  follow the data: the producer has a `calls` edge *to* the topic or queue (a `managed_resource`)
+  with `role = publish`, and the topic has a `calls` edge *to* each consumer with `role = consume`.
+  The published modes are `sync`, `async` and `scheduled` (a scheduler invoking a target). A derived
+  service-to-service edge with `mode = async` is projected for navigation. These are additive
+  attributes; no new edge type is introduced. Propagation differs by direction, so the role
   matters: a dead consumer builds a backlog, a dead producer starves the consumer. (FR-050–FR-052)
 - Q7: How long before an observed-only edge is proposed, and how is flapping avoided? → **Default: a
   published observation window, initially 7 days.** That is long enough for rare paths (batch, failover,
@@ -230,8 +238,10 @@ the culprit, or, if it stops early, that its examination report names the unquer
 
 At 14:02 a deploy changes a service's configuration, and its calls to the inventory service stop. The
 inventory service raises no error; it just stops receiving requests. The confirmed edge becomes
-`stopped` at 14:02, the graph's `diff` for the window reports it, and 002 FR-046b's first wave puts it
-in front of the investigator.
+`stopped` at 14:02 and the graph's `diff` for the window reports it. The retraction reaches the graph
+only after the feeder's retraction window (30 minutes for OpenTelemetry, 60 for Datadog). A live
+investigation pinned before that sees the stop through 002 FR-046b's comparison of the callee's request
+rate. A replay or a later investigation sees the stopped edge itself in `diff` and in the first wave.
 
 **Why this priority**: the literature's clearest case of a shared blind spot. Agents that walk the call
 chain, and statistical rankers that score only rises, both missed a service that stops receiving calls
@@ -245,7 +255,9 @@ state, its presence in `diff`, and its presence in the first wave.
 1. **Given** a confirmed edge that the feeder retracts, **Then** its state becomes `stopped` from the
    retraction's valid instant.
 2. **Given** an edge that was only ever observed and is retracted, **Then** it is reported as ended, not
-   as stopped, and raises no plan item until the observation window elapses.
+   as `ended`, not as `stopped`, and raises no plan item until the observation window elapses.
+3. **Given** a live investigation pinned inside the retraction window, **Then** the callee's fall in
+   request rate is in its first wave.
 
 ---
 
@@ -320,7 +332,8 @@ trace evidence.
 ### C. Reconciliation
 
 - **FR-020**: For every service-level edge, the system MUST compute a reconciliation state among
-  `confirmed`, `declared_only`, `observed_only`, `stopped`, `rejected`, as of any pair of instants.
+  `confirmed`, `declared_only`, `observed_only`, `stopped`, `ended`, `rejected`, as of any pair of
+  instants.
 - **FR-021**: The reconciliation state MUST be a projection rebuildable from the event log, with no
   state of its own (constitution I, III).
 - **FR-022**: An edge MUST become `stopped` when a previously observed edge is retracted while it is
@@ -330,8 +343,9 @@ trace evidence.
   changes of the edge.
 - **FR-024**: An `observed_only` edge MUST NOT raise a plan item before the published observation
   window has elapsed since its first observation.
-- **FR-025**: An edge whose observation alternates faster than the observation window MUST be reported
-  once as `intermittent` and MUST NOT raise one plan item per alternation.
+- **FR-025**: An edge whose observation alternates faster than the observation window MUST be flagged
+  `intermittent`, reported once, and MUST NOT raise one plan item per alternation. The flag does not
+  change its state.
 
 ### D. The topology plan and human decisions
 
@@ -360,28 +374,35 @@ trace evidence.
 - **FR-041**: Bindings to `allUsers`, `allAuthenticatedUsers` or a domain MUST NOT yield an edge. They
   MUST mark the service as publicly invocable.
 - **FR-042**: The GCP feeder MUST read Pub/Sub push subscriptions, Eventarc triggers and Cloud Scheduler
-  jobs, and MUST assert `declared` edges with `mode = async` or `mode = scheduled` to their target
-  service.
+  jobs, and MUST assert `declared` edges to their target service: from the topic with
+  `mode = async, role = consume` for a push subscription or an Eventarc trigger, and from the job with
+  `mode = scheduled` for a scheduler job.
 - **FR-043**: The GCP feeder MUST carry the URL map's host and path rules on the `exposed_via` edge that
-  003 already asserts. This promotes 003's P3 load-balancer path from cut-first to required.
+  003 already asserts. 003 FR-149 is amended so the load-balancer path is no longer the first work
+  deferred under budget. Where 003 FR-057 omits it for lack of permission, the omission MUST be
+  reported as a blind spot (FR-082).
 - **FR-044**: The GCP feeder MUST match each environment-variable value against the published
   endpoints of known entities at ingestion. It MUST assert a `declared` edge on a match, and MUST keep
-  only the key name and the matched entity. Values MUST NOT be stored (003's sanitisation contract
-  holds).
+  only the key name and the matched entity in the graph (003 FR-033, FR-034). 003 FR-034 MUST be
+  amended, as on 2026-10-09 for Cloud SQL connection names, so that a recording may keep the matched
+  endpoint, pseudonymised, and the match replays. No other part of the value is recorded.
 - **FR-045**: The OpenTelemetry feeder MUST read `messaging.system`, `messaging.destination.name` and
   span kind, and MUST assert `observed` edges with `mode = async` and `role = publish | consume` to the
   broker resource.
 - **FR-046**: The Datadog feeder's service-dependency edges MUST carry the class `observed`.
-- **FR-047**: When a Kubernetes cluster is connected, its adapter MUST read Ingress and Gateway routes
-  and Service selectors, and MUST assert `declared` edges equivalent to FR-043 (priority P2).
+- **FR-047**: The Kubernetes feeder's existing `exposed_via` edges from Ingress rules and Service
+  selectors MUST carry the class `declared`, and the feeder MUST also read Gateway API routes into
+  equivalent edges (priority P2).
 - **FR-048**: Every new source MUST use read-only credentials (constitution VII) and MUST ship with
   recorded, sanitised real payloads (constitution VIII).
 - **FR-049**: Terraform, Cloud Asset Inventory, flow logs and eBPF MUST NOT be sources in this feature.
 
 ### F. Asynchronous edges
 
-- **FR-050**: Asynchronous flows MUST be represented as `calls` edges to and from the broker resource,
-  with `mode = async` and a role. No new edge type is introduced.
+- **FR-050**: Asynchronous flows MUST be represented as `calls` edges that follow the data, from the
+  producer to the broker resource (`role = publish`) and from the broker to each consumer
+  (`role = consume`), with `mode = async`. The published modes are `sync`, `async` and `scheduled`.
+  No new edge type is introduced.
 - **FR-051**: A derived service-to-service edge with `mode = async` MUST be projected when a publish
   and a consume share a broker resource. It MUST be marked derived and cite both halves.
 - **FR-052**: `impact` and the propagation paths of 002 FR-019b MUST be able to traverse asynchronous
@@ -459,8 +480,9 @@ trace evidence.
   only, without writing configuration, in under 30 minutes for up to 20 services.
 - **SC-004**: Zero items are re-proposed after a rejection from the same provenance class, across a full
   replay.
-- **SC-005**: On the stopped-flow fixture, the stopped edge is in the window's `diff` and in the first
-  wave in 100 % of runs.
+- **SC-005**: On the stopped-flow fixture, in 100 % of runs: the stopped edge is in the window's `diff`
+  and in the first wave when the investigation is pinned after the feeder's retraction window; and the
+  callee's fall in request rate is in the first wave when it is pinned before.
 - **SC-006**: On the incident fixtures, the omission rate (002 FR-059a) with the profile is lower than
   without it, and propagation-path edge F1 is higher. Both are reported paired on the same fixtures and
   models.
@@ -482,10 +504,13 @@ trace evidence.
 ## Assumptions
 
 - Features 001–009 are merged, and the 002 amendment of 2026-11-01 is approved. This feature extends
-  003's GCP feeder, the OTel feeder and 005's Datadog feeder; it replaces none of them.
+  003's GCP feeder, the OTel and Kubernetes feeders of 001, and 005's Datadog feeder; it replaces none
+  of them.
 - Estates hold tens to a few hundred services. The reference workload of constitution X still bounds
   query budgets, and no dedicated graph database is introduced.
 - The owner's estate (Cloud Run on GCP, a GPU Kubernetes cluster at another provider, Datadog) is the
   first live case, recorded under the live-installation item of ADR-0016 D5.
-- IAM policy, Pub/Sub, Eventarc and Cloud Scheduler reads need viewer roles that the 003 access request
-  does not yet list. The access request is amended before the recording campaign.
+- IAM policies on Cloud Run are already readable with `roles/run.viewer`, which the 003 access request
+  lists. The Pub/Sub, Eventarc and Cloud Scheduler viewer roles are not listed, and
+  `roles/compute.viewer` is listed only as optional. The access request is amended before the recording
+  campaign.

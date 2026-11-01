@@ -51,7 +51,11 @@ Two audits of the repository, run the same day, set them against what exists:
 This is a defect-level amendment to an approved, closed feature. It adds suffixed requirements and
 renumbers nothing; see `specs/002-investigation-engine/spec.md`, *Session 2026-11-01*:
 
-- **Wire FR-022a** into every investigation's terminal path.
+- **FR-022c: wire FR-022a** into every investigation's terminal path. An unverified outcome is
+  marked `not_verified` and says so.
+- **FR-012a, the search-space profile.** The investigator's first brief carries the scope's entities,
+  edges, which sources and signal families cover each entity, and the blind spots. It is built from
+  the graph as it is today; 012 enriches it.
 - **FR-022b, the examination report.** A conclusion names what it examined and what it did not:
   - the signal families and sources queried for each hypothesis;
   - the ones that were reachable (a pointer or a connected source exists) and never queried;
@@ -63,7 +67,7 @@ renumbers nothing; see `specs/002-investigation-engine/spec.md`, *Session 2026-1
   A stopped flow becomes a candidate, not a footnote.
 - **FR-019b, the propagation path.** Every hypothesis at *supported* carries a path from cause to
   symptom as typed graph edges, each edge cited or marked unverified. The harness scores that path
-  instead of rebuilding one.
+  instead of rebuilding one. **FR-059a** publishes its edge F1 and the omission rate of FR-022b.
 - **FR-013b, guidance not procedure.** FR-013 already forbids a fixed order of calls. FR-013b adds that procedures (runbooks, postmortem lessons, any later
   learned procedure) are offered to the investigator as optional guidance with their provenance,
   and are never compiled into a fixed sequence. The deterministic first wave (FR-046a) stays: it adds
@@ -79,7 +83,8 @@ A new feature owns the reconciled topology that 009 left to the feeders. Its out
 - a reviewable topology proposal, accepted or rejected as human decisions that win for good;
 - new edge sources for estates without Kubernetes, starting with Cloud Run;
 - asynchronous edges from OpenTelemetry messaging attributes;
-- a per-investigation **search-space profile**, the Grounder that FR-022b's expectations read.
+- the enrichment of the search-space profile that 002 FR-012a requires now (provenance,
+  reconciliation state, mode, review status), which FR-022b's examination report reads.
 
 Its core schema names no runtime. Kubernetes, Cloud Run, Lambda and virtual machines are adapters.
 
