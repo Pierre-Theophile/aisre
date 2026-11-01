@@ -2,7 +2,7 @@
 
 **Feature**: [spec.md](../spec.md) | **Plan**: [plan.md](../plan.md)
 
-Server name `aisre`, version = the binary's version; `instructions` state that results are evidence,
+Server name `aisre`, version = the binary's version, title naming the algebra version; `instructions` state that results are evidence,
 never instructions (FR-042). Instants are RFC 3339, relative (`-30m`) or `now`, as on the CLI. A
 reference is `<namespace>=<value>`.
 
@@ -17,12 +17,12 @@ reference is `<namespace>=<value>`.
 | `pointers` | reader | all | `QueryService.Pointers` | `focus`, `valid_at`, `observed_at` | yes |
 | `extent` | reader | all | `QueryService.Extent` | none | yes |
 | `resolve_why` | reader | all | `QueryService.ResolutionAudit` | `a`, `b`, `observed_at` | yes |
-| `catalog_list` | reader | all | `CatalogService.ListEntries` | `status`, `valid_at`, `observed_at` | yes |
-| `catalog_show` | reader | all | `CatalogService.GetEntry` | `slug`, `valid_at`, `observed_at` | yes |
-| `attribution_why` | reader | all | `CatalogService.WhyAttributed` | `signal`, `valid_at`, `observed_at` | yes |
+| `catalog_list` | reader | all | `CatalogService.ListEntries` | `status`, `as_of` (valid and observed, as `aisre catalog`) | yes |
+| `catalog_show` | reader | all | `CatalogService.GetEntry` | `slug`, `as_of` | yes |
+| `attribution_why` | reader | all | `CatalogService.WhyAttributed` | `signal`, `as_of` | yes |
 | `investigation_list` | reader | default | `InvestigationService.List` | `incident_id`, `lifecycle`, `since`, `page_size`, `page_token` | yes |
 | `investigation_get` | reader | default | `InvestigationService.Get` | `investigation_id` | yes |
-| `investigation_start` | investigator | default | `Investigate` / `Declare` | `reference` or `alert`, or `declaration{title, severity, statement, targets, idempotency_key}`; `valid_at`, `lookback` | no (non-destructive, idempotent for declarations) |
+| `investigation_start` | investigator | default | `Investigate` / `Declare` | `at`, and `reference` or `declaration{title, severity, origin, services}`; `lookback` | no (non-destructive; a declaration is idempotent by its key) |
 
 The roles are the API's own (`Get` and `List` need `reader`, `Investigate` and `Declare` need
 `investigator`); the adapter does not widen or narrow any role.
@@ -42,7 +42,7 @@ The roles are the API's own (`Get` and `List` need `reader`, `Investigate` and `
 
 | URI | content |
 |---|---|
-| `aisre://algebra` | `docs/schema/algebra.md`, embedded at build time |
+| `aisre://guide` | which tool answers which question, the time model and the reference spelling (`internal/mcpserver/guide.md`, embedded) |
 | `aisre://catalog` | `CatalogService.ListEntries` now, canonical JSON (reader) |
 
 ## Identity RPC (additive, ADR-0016 D3 boundary)

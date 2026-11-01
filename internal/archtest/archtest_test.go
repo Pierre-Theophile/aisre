@@ -155,6 +155,21 @@ var rules = []rule{
 		),
 	},
 	{
+		why: "the MCP server (feature 010) is a client of the public API and nothing else: it links no " +
+			"store, projector, query engine, server or investigation engine, and no LLM SDK",
+		packages: []string{"internal/mcpserver"},
+		forbidden: append(append([]string{}, infrastructure...),
+			module+"internal/projector",
+			module+"internal/query",
+			module+"internal/server",
+			module+"internal/store",
+			module+"internal/investigation/engine",
+			module+"internal/investigation/runner",
+			module+"internal/investigation/replay",
+			module+"internal/investigation/workers",
+		),
+	},
+	{
 		why: "shared utilities are leaves: they do not depend on an application layer",
 		packages: []string{
 			"internal/sanitise",

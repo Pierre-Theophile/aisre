@@ -914,6 +914,20 @@ service ResolutionService {
   rpc RevertCorrection(.sreagent.graph.v1.RevertCorrection) returns (IngestResult);
 }
 
+// Who the caller is, as the server authenticated it (feature 010, research R3). Any
+// authenticated principal may ask; the answer repeats what the caller's own token carries, so a
+// client such as the MCP server can list only what the caller may call. It decides nothing: every
+// other RPC still checks its own role.
+message WhoAmIRequest {}
+message WhoAmIResponse {
+  string subject = 1;            // the principal's subject (an individual, a workload or a feeder)
+  string issuer = 2;             // the identity provider that vouched for it
+  repeated string roles = 3;     // reader | decider | feeder | investigator, as granted
+}
+service IdentityService {
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
+}
+
 // The service catalog read back (ADR-0015 item 6). Writes go through ResolutionService.
 service CatalogService {
   rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);

@@ -78,7 +78,7 @@ Each default is written into the requirements below. The owner approved all eigh
   configurable). A declaration re-sent with the same idempotency key returns the existing
   investigation, as the API already does (002 FR-008b). (FR-050–FR-054)
 - Q7: Tools only, or also MCP resources and prompts? → **Default: tools, plus two read-only resources.**
-  The resources are the query algebra reference and the catalog as a document, so a client can load them
+  The resources are a reference for the tools and the catalog as a document, so a client can load them
   as context. No prompts in this feature. (FR-028–FR-029)
 - Q8: How does the evaluation use it? → **Default: a `baseline` profile.** `aisre mcp --profile baseline`
   lists only the graph and catalog tools, never the investigation tools, so a general agent reading a
@@ -240,10 +240,12 @@ injection flag and pattern name are in the answer's metadata and the excerpt is 
 - **FR-025**: The system MUST NOT expose any other write: no human facts, reviews, labels, resolution
   decisions, catalog declarations or corrections, ingestion or delivery.
 - **FR-026**: Every tool except `investigation_start` MUST carry the MCP read-only annotation;
-  `investigation_start` MUST carry the non-destructive, idempotent annotations.
+  `investigation_start` MUST carry the non-destructive annotation (it is idempotent only for a
+  declaration, by its key, so it does not claim idempotency).
 - **FR-027**: Each tool's description MUST say what it answers and when to use it, in terms a coding
   agent can act on, and MUST be covered by a test that lists every tool and its schema.
-- **FR-028**: The system MUST expose the query algebra reference as a read-only resource.
+- **FR-028**: The system MUST expose a reference for the tools (the time model, how to write a
+  reference, which tool answers which question) as a read-only resource.
 - **FR-029**: The system MUST expose the service catalog as a read-only resource.
 
 ### D. Answers
@@ -274,8 +276,9 @@ injection flag and pattern name are in the answer's metadata and the excerpt is 
   existing investigation (002 FR-008b).
 - **FR-053**: The number of running investigations per caller MUST be bounded, default 3, operator
   configurable; a refused call MUST say why.
-- **FR-054**: An investigation started over MCP MUST record that it came through MCP (in its symptom's
-  origin), so it can be told apart and muted.
+- **FR-054**: An investigation of a node started over MCP MUST record that it came through MCP (in its
+  symptom's origin), so it can be told apart and muted. A declared incident keeps the origin it was
+  declared in, because that origin is its idempotency key (002 FR-008b).
 
 ### G. Evaluation and operation
 

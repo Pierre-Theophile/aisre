@@ -1,5 +1,8 @@
 # A connector over MCP
 
+> This page is about reading *from* MCP servers (a connector). aisre also *serves* MCP to coding
+> agents: see [`docs/mcp.md`](../mcp.md) (feature 010).
+
 **Status: spike (T093).** It works, it is tested, and it is not a supported connector. What it
 proves is the *shape* — that a feeder whose transport is the Model Context Protocol is an
 ordinary feeder, with one client library instead of one vendor SDK per source. The code is

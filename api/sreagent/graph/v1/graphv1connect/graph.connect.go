@@ -33,6 +33,8 @@ const (
 	QueryServiceName = "sreagent.graph.v1.QueryService"
 	// ResolutionServiceName is the fully-qualified name of the ResolutionService service.
 	ResolutionServiceName = "sreagent.graph.v1.ResolutionService"
+	// IdentityServiceName is the fully-qualified name of the IdentityService service.
+	IdentityServiceName = "sreagent.graph.v1.IdentityService"
 	// CatalogServiceName is the fully-qualified name of the CatalogService service.
 	CatalogServiceName = "sreagent.graph.v1.CatalogService"
 )
@@ -109,6 +111,8 @@ const (
 	// ResolutionServiceRevertCorrectionProcedure is the fully-qualified name of the ResolutionService's
 	// RevertCorrection RPC.
 	ResolutionServiceRevertCorrectionProcedure = "/sreagent.graph.v1.ResolutionService/RevertCorrection"
+	// IdentityServiceWhoAmIProcedure is the fully-qualified name of the IdentityService's WhoAmI RPC.
+	IdentityServiceWhoAmIProcedure = "/sreagent.graph.v1.IdentityService/WhoAmI"
 	// CatalogServiceListEntriesProcedure is the fully-qualified name of the CatalogService's
 	// ListEntries RPC.
 	CatalogServiceListEntriesProcedure = "/sreagent.graph.v1.CatalogService/ListEntries"
@@ -903,6 +907,76 @@ func (UnimplementedResolutionServiceHandler) CorrectAttribution(context.Context,
 
 func (UnimplementedResolutionServiceHandler) RevertCorrection(context.Context, *connect.Request[v1.RevertCorrection]) (*connect.Response[v1.IngestResult], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.ResolutionService.RevertCorrection is not implemented"))
+}
+
+// IdentityServiceClient is a client for the sreagent.graph.v1.IdentityService service.
+type IdentityServiceClient interface {
+	WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error)
+}
+
+// NewIdentityServiceClient constructs a client for the sreagent.graph.v1.IdentityService service.
+// By default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped
+// responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) IdentityServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	identityServiceMethods := v1.File_sreagent_graph_v1_graph_proto.Services().ByName("IdentityService").Methods()
+	return &identityServiceClient{
+		whoAmI: connect.NewClient[v1.WhoAmIRequest, v1.WhoAmIResponse](
+			httpClient,
+			baseURL+IdentityServiceWhoAmIProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("WhoAmI")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// identityServiceClient implements IdentityServiceClient.
+type identityServiceClient struct {
+	whoAmI *connect.Client[v1.WhoAmIRequest, v1.WhoAmIResponse]
+}
+
+// WhoAmI calls sreagent.graph.v1.IdentityService.WhoAmI.
+func (c *identityServiceClient) WhoAmI(ctx context.Context, req *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error) {
+	return c.whoAmI.CallUnary(ctx, req)
+}
+
+// IdentityServiceHandler is an implementation of the sreagent.graph.v1.IdentityService service.
+type IdentityServiceHandler interface {
+	WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error)
+}
+
+// NewIdentityServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	identityServiceMethods := v1.File_sreagent_graph_v1_graph_proto.Services().ByName("IdentityService").Methods()
+	identityServiceWhoAmIHandler := connect.NewUnaryHandler(
+		IdentityServiceWhoAmIProcedure,
+		svc.WhoAmI,
+		connect.WithSchema(identityServiceMethods.ByName("WhoAmI")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/sreagent.graph.v1.IdentityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case IdentityServiceWhoAmIProcedure:
+			identityServiceWhoAmIHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedIdentityServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedIdentityServiceHandler struct{}
+
+func (UnimplementedIdentityServiceHandler) WhoAmI(context.Context, *connect.Request[v1.WhoAmIRequest]) (*connect.Response[v1.WhoAmIResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sreagent.graph.v1.IdentityService.WhoAmI is not implemented"))
 }
 
 // CatalogServiceClient is a client for the sreagent.graph.v1.CatalogService service.

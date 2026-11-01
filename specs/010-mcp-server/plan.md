@@ -98,7 +98,7 @@ internal/mcpserver/
 ├── tools_graph.go   # subgraph, diff, impact, history, pointers, extent, resolve_why
 ├── tools_catalog.go # catalog_list, catalog_show, attribution_why
 ├── tools_invest.go  # investigation_list, investigation_get, investigation_start
-├── resources.go     # aisre://algebra, aisre://catalog
+├── resources.go     # aisre://guide, aisre://catalog
 ├── answer.go        # canonical JSON, summary, _meta (as_of, partial, injection)
 ├── limits.go        # per-caller running-investigation bound
 ├── http.go          # streamable HTTP handler, bearer forwarding, TLS rule
@@ -110,14 +110,13 @@ docs/mcp.md                              # client setup (Claude Code, Cursor, Co
 
 ## Delivery
 
-Three pull requests, each merged when green:
+Two pull requests, each merged when green:
 
-1. **Spec, plan, tasks** (this branch).
-2. **Graph and catalog over stdio** (US1, US5): `WhoAmI`, the package, the graph and catalog tools,
-   resources, injection metadata, `aisre mcp` over stdio, archtest rule, parity tests, docs.
-3. **Investigations, HTTP and the baseline profile** (US2, US3, US4): the investigation tools, the
-   per-caller bound, streamable HTTP with bearer forwarding, `--profile baseline`, the latency benchmark
-   and quickstart run. 002 T131 follows on its own branch.
+1. **Spec, plan, tasks**.
+2. **The server** (US1–US5): `WhoAmI`, the package, every tool and resource, stdio and streamable
+   HTTP, the baseline profile, archtest rule, parity and security tests, docs, benchmark and quickstart
+   run. The tasks keep the two-phase grouping they were planned in; both phases ship together because
+   the adapter is small. 002 T131 follows.
 
 ## Design decisions (detail in research.md)
 

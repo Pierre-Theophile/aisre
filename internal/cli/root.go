@@ -222,6 +222,7 @@ func NewRootCommand() *cobra.Command {
 		newKnowledgeCommand(opts),
 		newAuditCommand(opts),
 		newEvalCommand(opts),
+		newMCPCommand(opts),
 		newVersionCommand(opts),
 	)
 	return root
