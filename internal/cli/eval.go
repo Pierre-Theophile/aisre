@@ -271,18 +271,51 @@ func evalOneFixture(
 	truth := m.Incident.GroundTruth
 	grades := set.Grade(truth, m.Incident.Question.FiredAt)
 
+	simple, notRun, err := evalSimple(ctx, harness, kind, opts)
+	if err != nil {
+		return nil, err
+	}
 	rows := eval.RunRowsFrom(set, grades, truth, eval.RowOptions{
 		MissRateThreshold: m.Incident.World.MissRateThreshold,
 		WorldDigests:      worldDigests(harness.World()),
+		Simple:            simple,
+		SimpleNotRun:      notRun,
 	})
 	if err := p.writeLine("%s", set.String()); err != nil {
 		return nil, err
+	}
+	if simple != nil {
+		if err := p.writeLine("%s: simple harness answered %s (%s, %d turn(s))",
+			m.ID, simple.Verdict, simple.Stop, simple.Turns); err != nil {
+			return nil, err
+		}
 	}
 	out := &fixtureEval{Rows: rows, Digest: set.ModelConfigDigest, First: set.First()}
 	if out.First != nil {
 		out.Version = out.First.ModelConfigVersion
 	}
 	return out, nil
+}
+
+// evalSimple runs the simple harness on one fixture (002 T131, FR-059b): a general agent over
+// feature 010's MCP server in its baseline profile, with the configured model. It needs a model,
+// so only a live run runs it; every other run reports it as `not run`, with the reason.
+func evalSimple(
+	ctx context.Context, harness *eval.Harness, kind string, opts *evalRunOptions,
+) (*eval.SimpleOutcome, string, error) {
+	if kind != eval.KindLive {
+		return nil, "not run: the simple harness needs a model, and this run is " + kind +
+			" (pass --live with a configured model)", nil
+	}
+	client, err := eval.LiveClient(opts.modelYAML, opts.pricesYAML)
+	if err != nil {
+		return nil, "", exitWith(ExitUsage, err)
+	}
+	out, err := harness.RunSimple(ctx, eval.SimpleOptions{Client: client})
+	if err != nil {
+		return nil, "not run: " + err.Error(), nil
+	}
+	return out, "", nil
 }
 
 // fixtureEval is one fixture's contribution to the report, plus the first run's outcome — which

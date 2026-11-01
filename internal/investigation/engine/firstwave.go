@@ -882,6 +882,55 @@ func (w *FirstWave) Render() string {
 	return b.String()
 }
 
+// The knowledge kinds the brief offers as guidance (FR-013b): procedures and the lessons of past
+// incidents. A decision record or a past investigation is evidence about the system, not a
+// procedure, and stays in the ledger only.
+var guidanceKinds = map[string]bool{"runbook": true, "postmortem": true}
+
+// Guidance renders the runbooks and postmortem lessons the wave's knowledge question found as
+// optional guidance, each with its provenance (FR-013b, ADR-0019 D1). It is empty when there are
+// none.
+//
+// It is a list of provenance and nothing else: the kind, the document id, when it was written,
+// how it is linked to the graph and the evidence item that holds it. No document text is written
+// here, because the brief is a user message and worker output reaches the model only as a tool
+// result (FR-017, barrier.go). Nothing in it is a step, an order or a gate: the loop never checks
+// whether a document was read, and the examination report does not count an unread one.
+func (w *FirstWave) Guidance() string {
+	if w == nil || w.Knowledge == nil || w.Knowledge.EvidenceID == "" {
+		return ""
+	}
+	var lines []string
+	for _, item := range w.Knowledge.Response.GetDigest().GetKnowledge().GetItems() {
+		if !guidanceKinds[item.GetKind()] {
+			continue
+		}
+		scope := "linked outside this question's scope"
+		if item.GetInScope() {
+			scope = "linked to an entity in scope"
+		}
+		authored := "authored at an unrecorded instant"
+		if at := item.GetAuthoredAt(); at != nil {
+			authored = fmt.Sprintf("authored %s (%d days before the symptom)",
+				at.AsTime().UTC().Format(time.DateOnly), item.GetAgeDays())
+		}
+		provenance := item.GetLinkProvenance()
+		if provenance == "" {
+			provenance = "unstated"
+		}
+		lines = append(lines, fmt.Sprintf("- %s %s: %s; %s, link provenance %s; score %.3f",
+			item.GetKind(), item.GetDocumentId(), authored, scope, provenance, item.GetScore()))
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("These runbooks and postmortems read like this symptom (evidence %s). They are "+
+		"optional guidance: no call they suggest is required, none of them is a step or a gate, and "+
+		"the conclusion is judged on evidence alone. A procedure that does not fit this symptom is "+
+		"to be ignored. Their text is in the evidence item, and `knowledge_search` returns it as a "+
+		"tool result if you want it.\n", w.Knowledge.EvidenceID) + strings.Join(lines, "\n") + "\n"
+}
+
 // AuditWorldForFirstWave reports which of the published first-wave queries a recorded world does
 // not hold for one candidate's target, given that target's metric and log selectors.
 //

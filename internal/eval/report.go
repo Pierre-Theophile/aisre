@@ -89,10 +89,16 @@ const (
 	MetricFloorAccuracy              = "floor_verdict_accuracy"
 	MetricLiftOverFloor              = "lift_over_floor"
 	MetricAnswerableWithoutTelemetry = "answerable_without_telemetry"
-	MetricPathEdgeF1                 = "path_edge_f1"
-	MetricUndrawablePaths            = "undrawable_path_share"
-	MetricOmissionRate               = "omission_rate"
-	MetricEnforcementCost            = "enforcement_cost"
+	// MetricSimpleAccuracy is the same verdict-only rule applied to the simple harness, a general
+	// agent reading the graph through feature 010's MCP server in its baseline profile (T131), on
+	// the first run of each fixture; MetricLiftOverSimple is the engine's verdict accuracy on those
+	// runs minus it. Reported, never gated, and `not run` without a model (FR-059b, ADR-0019 D6).
+	MetricSimpleAccuracy  = "simple_harness_verdict_accuracy"
+	MetricLiftOverSimple  = "lift_over_simple_harness"
+	MetricPathEdgeF1      = "path_edge_f1"
+	MetricUndrawablePaths = "undrawable_path_share"
+	MetricOmissionRate    = "omission_rate"
+	MetricEnforcementCost = "enforcement_cost"
 	// MetricMissRate is the world-replay `not_recorded` miss rate. It gates a fixture's
 	// admission and never the engine's score (FR-060).
 	MetricMissRate = "not_recorded_miss_rate"
@@ -258,6 +264,12 @@ type RunRow struct {
 	HasFloor     bool
 	VerdictRight bool
 	FloorRight   bool
+	// HasSimple is true on the run the simple harness was scored beside (the fixture's first);
+	// SimpleRight scores its answer by the same rule. SimpleNotRun says why it was not run, for
+	// the `not run` row.
+	HasSimple    bool
+	SimpleRight  bool
+	SimpleNotRun string
 
 	// Claims is how many claims the conclusion made, ValidClaims how many resolved to an
 	// evidence id whose digest matches the recording, and Untraceable how many resolved to
@@ -935,6 +947,10 @@ type pathTally struct {
 	// floorMisses counts, per fixture, the runs the floor got wrong; a fixture present with 0
 	// is one the floor solves.
 	floorMisses map[string]int
+	// simpled counts the runs scored beside the simple harness, with the engine's and the simple
+	// harness's right answers on them; simpleNotRun is the first reason it was not run.
+	simpled, simpleEngineRight, simpleRight int
+	simpleNotRun                            string
 }
 
 func (t *pathTally) add(run RunRow) {
@@ -961,6 +977,17 @@ func (t *pathTally) add(run RunRow) {
 		if run.FloorRight {
 			t.floorRight++
 		}
+	}
+	if run.HasSimple {
+		t.simpled++
+		if run.VerdictRight {
+			t.simpleEngineRight++
+		}
+		if run.SimpleRight {
+			t.simpleRight++
+		}
+	} else if t.simpleNotRun == "" && run.SimpleNotRun != "" {
+		t.simpleNotRun = run.SimpleNotRun
 	}
 	if run.Examined {
 		t.examined++
@@ -991,7 +1018,33 @@ func (t *pathTally) rows(scope Scope, fixture string) []Row {
 		fraction(MetricEnforcementCost, scope, fixture, t.held, t.examined,
 			detailReported+": an enforced expectation table would have held the supported ground-truth "+
 				"hypothesis at `inconclusive`; read with the omission rate (FR-059a)"),
-	}, t.floorRows(scope, fixture)...)
+	}, append(t.floorRows(scope, fixture), t.simpleRows(scope, fixture)...)...)
+}
+
+// simpleRows are the simple harness's rows (FR-059b, ADR-0019 D6): its verdict accuracy by the
+// rule the engine and the floor are held to, and the engine's lift over it on the same runs.
+// Without a model it is `not run`, never 0.
+func (t *pathTally) simpleRows(scope Scope, fixture string) []Row {
+	if t.simpled == 0 {
+		reason := t.simpleNotRun
+		if reason == "" {
+			reason = "not run: no run was scored beside the simple harness"
+		}
+		return []Row{
+			NotMeasured(MetricSimpleAccuracy, scope, fixture, reason),
+			NotMeasured(MetricLiftOverSimple, scope, fixture, reason),
+		}
+	}
+	engine, _ := Rate(t.simpleEngineRight, t.simpled)
+	simple, _ := Rate(t.simpleRight, t.simpled)
+	return []Row{
+		fraction(MetricSimpleAccuracy, scope, fixture, t.simpleRight, t.simpled,
+			detailReported+": a general agent over the read-only MCP server's baseline profile, no engine, "+
+				"scored by the verdict-only rule (FR-059b)"),
+		NewRow(MetricLiftOverSimple, scope, fixture, engine-simple, t.simpled,
+			detailReported+": the engine's verdict accuracy minus the simple harness's, on the runs both "+
+				"answered (FR-059b)"),
+	}
 }
 
 // floorRows are the telemetry-free floor's rows (FR-059b, plan V8): both answers scored by the
@@ -1201,7 +1254,8 @@ func (r *Report) reportedTable() string {
 		MetricPassHatK, MetricBestOfK, MetricInvestigatorMRR, MetricPriorMRR, MetricCulpritRank,
 		MetricTopKHit, MetricLocalisation, MetricAttribution, MetricMechanism, MetricUnknownRate,
 		MetricNonUnknownPrecision, MetricHumanAgreement, MetricCost, MetricCacheReadRatio,
-		MetricWorkerCalls,
+		MetricWorkerCalls, MetricVerdictAccuracy, MetricFloorAccuracy, MetricLiftOverFloor,
+		MetricSimpleAccuracy, MetricLiftOverSimple,
 	} {
 		row, ok := r.row(metric, ScopeCorpus, "")
 		if !ok {
@@ -1346,6 +1400,9 @@ func (r *Report) cell(metric, fixture string) string {
 func valueOf(row Row) string {
 	value, ok := row.Float()
 	if !ok {
+		if strings.HasPrefix(row.Detail, "not run") {
+			return "not run"
+		}
 		return "n/a"
 	}
 	switch row.Metric {
@@ -1429,6 +1486,10 @@ type RowOptions struct {
 	// run, so a disagreement now is a *regression* rather than a standing difference. It is
 	// what FR-060's "any regression against a corrected or human-labelled case" gates on.
 	PreviouslyAgreed bool
+	// Simple is the simple harness's answer on this fixture (T131), scored beside the first run;
+	// nil when it was not run, and SimpleNotRun then says why.
+	Simple       *SimpleOutcome
+	SimpleNotRun string
 }
 
 // RunRowsFrom adapts one fixture's graded run set into the report's rows.
@@ -1486,9 +1547,17 @@ func runRowFrom(outcome *RunOutcome, grade GradeResult, truth GroundTruth, opts 
 	}
 	row.ConfidentlyWrong = confidentlyWrong(outcome, truth)
 
+	row.VerdictRight = VerdictRight(outcome, truth, grade.AskedAt)
+	if outcome.RunIndex <= 1 {
+		if opts.Simple != nil {
+			row.HasSimple = true
+			row.SimpleRight = VerdictRight(opts.Simple.Outcome(), truth, grade.AskedAt)
+		} else {
+			row.SimpleNotRun = opts.SimpleNotRun
+		}
+	}
 	if outcome.FloorVerdict != "" {
 		row.HasFloor = true
-		row.VerdictRight = VerdictRight(outcome, truth, grade.AskedAt)
 		floor := &RunOutcome{Verdict: outcome.FloorVerdict, VerdictRefs: outcome.FloorVerdictRefs}
 		row.FloorRight = VerdictRight(floor, truth, grade.AskedAt)
 	}

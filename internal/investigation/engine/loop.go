@@ -541,6 +541,9 @@ func (e *Engine) brief(wave *FirstWave) string {
 		b.WriteString("\nThe digests it produced are evidence items in the ledger above; their ids are the " +
 			"ones your judgments must cite. Read the ledger, then either propose judgments on what the " +
 			"wave established or call the tools that would settle what it did not.\n")
+		if guidance := wave.Guidance(); guidance != "" {
+			b.WriteString("\n# Guidance (optional)\n\n" + guidance)
+		}
 	}
 	return b.String()
 }
