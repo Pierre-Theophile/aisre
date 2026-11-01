@@ -175,6 +175,33 @@ func TestLocalisationAttributionAndMechanismGetPartialCreditSeparately(t *testin
 	near(t, credit.Mechanism, 2.0/3.0, "mechanism over three edges")
 }
 
+// TestPathEdgeF1ScoresConsecutiveEntityPairs pins FR-059a's edge F1: edges are consecutive pairs
+// in the direction the fault travelled, a path with no edge scores 0, and no truth is no score.
+func TestPathEdgeF1ScoresConsecutiveEntityPairs(t *testing.T) {
+	t.Parallel()
+	truth := []string{"change", "payments", "checkout"}
+	cases := []struct {
+		name string
+		got  []string
+		want float64
+	}{
+		{"the same path", truth, 1},
+		{"one of two edges, and one invented", []string{"change", "payments", "cart"}, 0.5},
+		{"the right services, travelled backwards", []string{"checkout", "payments", "change"}, 0},
+		{"no edge at all", []string{"checkout"}, 0},
+	}
+	for _, each := range cases {
+		got, ok := eval.EdgeF1(truth, each.got)
+		if !ok {
+			t.Fatalf("%s: not scored", each.name)
+		}
+		near(t, got, each.want, each.name)
+	}
+	if _, ok := eval.EdgeF1(nil, truth); ok {
+		t.Error("a fixture with no causal path must not be scored")
+	}
+}
+
 // TestAFixtureAboveItsMissRateIsExcludedFromTheCorpusAndNeverScoresTheEngine is the rule that
 // keeps a recording defect from being reported as a reasoning defect.
 func TestAFixtureAboveItsMissRateIsExcludedFromTheCorpusAndNeverScoresTheEngine(t *testing.T) {

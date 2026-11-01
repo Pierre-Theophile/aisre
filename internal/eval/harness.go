@@ -422,7 +422,7 @@ func (h *Harness) outcome(
 	out.Outcome = outcomeName(stop.Outcome(ranked))
 	out.Verdict, out.VerdictRefs, out.VerdictConfidence, out.VerdictBucket =
 		verdictOf(out.Ledger, out.Outcome, h.manifest.Incident.GroundTruth.CauseCategory())
-	out.CausalPath = causalPathOf(e, out)
+	out.CausalPath, out.PathHypothesisID, out.PathDrawn = causalPathOf(e, out)
 	out.Onset = onsetOf(e.Onset())
 
 	traj := e.Trajectory()
@@ -481,6 +481,10 @@ func hypothesesOf(e *engine.Engine) []Hypothesis {
 	for _, h := range e.Ledger().Proto().GetHypotheses() {
 		judgments[h.GetHypothesisId()] = h
 	}
+	omissions := map[string][]string{}
+	for _, x := range e.Examination().Hypotheses {
+		omissions[x.HypothesisID] = x.Omissions
+	}
 	rows := e.Ledger().Hypotheses()
 	out := make([]Hypothesis, 0, len(rows))
 	for _, h := range rows {
@@ -498,6 +502,7 @@ func hypothesesOf(e *engine.Engine) []Hypothesis {
 			Rationale:               h.Rationale,
 			CausalRole:              string(h.CausalRole),
 			UntestedReason:          h.UntestedReason,
+			Omissions:               append([]string(nil), omissions[h.ID]...),
 		}
 		if fh, ok := byID[h.ID]; ok {
 			row.CandidateChangeRefs = append([]string(nil), fh.GetCandidateChangeEntityRefs()...)
@@ -557,40 +562,57 @@ func verdictOf(rows []Hypothesis, outcome, category string) (verdict string, ref
 	return named, refs, top.Posterior, top.Bucket
 }
 
-// causalPathOf reports the chain the run states from cause to symptom.
+// causalPathOf reports the engine's propagation path from cause to symptom (FR-019b, FR-059a).
 //
-// The engine does not publish a path object; it publishes a ranked hypothesis whose candidate
-// change has targets, and a subject. The path is therefore read off those three: the change, the
-// entity it targeted, and the subject the question was asked about. Where the change's target
-// *is* the subject the middle step is not repeated, so a one-hop incident reports two steps
-// rather than a step twice.
-func causalPathOf(e *engine.Engine, out *RunOutcome) []PathStep {
-	if out.VerdictClass() != "change_induced" {
-		// Even where no change explains the symptom, the path localises it — which is what
-		// SC-023 grades, and what a culprit-deleted variant is checked on.
-		return []PathStep{{Entity: e.Subject().EntityRef, Role: "symptom"}}
-	}
-	top := out.Top()
-	var targets []string
-	for _, h := range e.Ledger().Hypotheses() {
-		if h.ID == top.ID {
-			targets = h.TargetEntityIDs
+// The path scored is the one the engine drew at its stop for the first supported hypothesis in
+// rank order or, when nothing is supported, for the top-ranked hypothesis (FR-059a). The harness draws
+// nothing of its own: a hypothesis whose path could not be drawn on the graph reports only the
+// cause the run named and the subject, with no mechanism between them, and `drawn` is false so
+// the scorer counts it among the undrawable paths and gives it no edge.
+func causalPathOf(e *engine.Engine, out *RunOutcome) (steps []PathStep, hypothesisID string, drawn bool) {
+	subject := e.Subject().EntityRef
+	// out.Ledger is in rank order. The open `no observed change` hypothesis can be the supported
+	// one; it has no path, and the run is then scored as having none rather than on the path of
+	// a hypothesis it did not conclude.
+	for _, h := range out.Ledger {
+		if h.Status == statusSupported {
+			hypothesisID = h.ID
 			break
 		}
 	}
-	steps := []PathStep{{Entity: out.Verdict, Via: "changed-by", Role: "cause"}}
-	subject := e.Subject().EntityRef
-	for _, target := range targets {
-		ref := e.Catalogue().RefFor(target)
-		if ref == "" {
-			ref = target
-		}
-		if ref == subject {
-			continue
-		}
-		steps = append(steps, PathStep{Entity: ref, Via: "calls", Role: "mechanism"})
+	if hypothesisID == "" {
+		hypothesisID = out.Top().ID
 	}
-	return append(steps, PathStep{Entity: subject, Role: "symptom"})
+	var chosen *engine.Path
+	paths := e.Paths()
+	for i := range paths {
+		if paths[i].HypothesisID == hypothesisID {
+			chosen = &paths[i]
+			break
+		}
+	}
+	if chosen == nil || !chosen.Drawable || len(chosen.Edges) == 0 {
+		if out.VerdictClass() == "change_induced" {
+			steps = append(steps, PathStep{Entity: out.Verdict, Role: "cause"})
+		}
+		// Even where no path is drawn, the subject localises the symptom — which is what SC-023
+		// grades, and what a culprit-deleted variant is checked on.
+		return append(steps, PathStep{Entity: subject, Role: "symptom"}), hypothesisID, false
+	}
+	for i, edge := range chosen.Edges {
+		role := "mechanism"
+		if i == 0 {
+			role = "cause"
+		}
+		steps = append(steps, PathStep{Entity: edge.Src, Via: viaOf(edge.Type), Role: role})
+	}
+	last := chosen.Edges[len(chosen.Edges)-1]
+	return append(steps, PathStep{Entity: last.Dst, Role: "symptom"}), hypothesisID, true
+}
+
+// viaOf spells a graph edge type the way a fixture's `causal_path` does: `changed-by`, `calls`.
+func viaOf(edgeType string) string {
+	return strings.ReplaceAll(edgeType, "_", "-")
 }
 
 // citationsOf reads every evidence item the run rested on, with the answer it addresses.
