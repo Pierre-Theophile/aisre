@@ -73,9 +73,16 @@ const HumanSourceID = event.HumanSourceID
 // nothing in order, and needs no reordering window.
 var humanSource = event.HumanSource()
 
+// PrincipalRecorder keeps the record of the individuals behind human decisions. The Postgres
+// store implements it; the handler never writes SQL itself.
+type PrincipalRecorder interface {
+	RecordPrincipal(ctx context.Context, principal, email, displayName string, roles []string) error
+}
+
 // ResolutionService implements sreagent.graph.v1.ResolutionService.
 type ResolutionService struct {
 	projector   *projector.Projector
+	principals  PrincipalRecorder
 	metrics     *telemetry.Metrics
 	logger      *slog.Logger
 	registered  sync.Once
@@ -90,7 +97,7 @@ func NewResolutionService(p *projector.Projector, metrics *telemetry.Metrics, lo
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ResolutionService{projector: p, metrics: metrics, logger: logger}
+	return &ResolutionService{projector: p, principals: p.Store(), metrics: metrics, logger: logger}
 }
 
 // Projector is the graph decisions are applied through.
@@ -307,17 +314,8 @@ func (s *ResolutionService) recordPrincipal(ctx context.Context, p *Principal) e
 	for _, role := range p.Roles {
 		roles = append(roles, string(role))
 	}
-	_, err := s.projector.Store().Pool().Exec(ctx, `
-		INSERT INTO graph.principals (principal, email, display_name, roles)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (principal) DO UPDATE SET
-			email = coalesce(nullif(EXCLUDED.email, ''), graph.principals.email),
-			display_name = coalesce(nullif(EXCLUDED.display_name, ''), graph.principals.display_name),
-			roles = EXCLUDED.roles,
-			last_seen = now()`,
-		p.Key(), p.Email, p.DisplayName, roles)
-	if err != nil {
-		return fmt.Errorf("server: record principal %s: %w", p.Key(), err)
+	if err := s.principals.RecordPrincipal(ctx, p.Key(), p.Email, p.DisplayName, roles); err != nil {
+		return fmt.Errorf("server: %w", err)
 	}
 	return nil
 }

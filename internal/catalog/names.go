@@ -15,11 +15,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	"github.com/Pierre-Theophile/aisre/internal/projector"
-	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 )
 
 // Signal kinds (research R3).
@@ -82,57 +78,33 @@ func IsSignalType(t graph.NodeType) bool {
 // signal's observed instant, which is what the decision is about; the log records the decision, so
 // nothing here runs during a replay.
 type Names struct {
-	store *postgres.Store
+	store Store
 }
 
 // NewNames reads through store.
-func NewNames(store *postgres.Store) *Names { return &Names{store: store} }
+func NewNames(store Store) *Names { return &Names{store: store} }
 
 // ErrNotSignal is returned for an entity that is not an alert, a document or a change.
 var ErrNotSignal = errors.New("catalog: not a signal")
 
 // Signal reads one signal by entity id, following merges.
 func (n *Names) Signal(ctx context.Context, entityID string) (Signal, error) {
-	var (
-		canonical, typ string
-		refNS, refVal  string
-	)
-	err := n.store.Pool().QueryRow(ctx, `
-		WITH RECURSIVE chain(id, depth) AS (
-			SELECT $1::text, 0
-			UNION ALL
-			SELECT e.merged_into, c.depth + 1 FROM graph.entities e JOIN chain c ON e.entity_id = c.id
-			WHERE e.merged_into IS NOT NULL AND c.depth < 64
-		)
-		SELECT e.entity_id, e.type, coalesce(c.namespace, ''), coalesce(c.value, '')
-		FROM chain JOIN graph.entities e ON e.entity_id = chain.id AND e.merged_into IS NULL
-		LEFT JOIN LATERAL (
-			SELECT namespace, value FROM graph.identity_claims
-			WHERE entity_id = e.entity_id ORDER BY observed_at, claim_id LIMIT 1
-		) c ON true
-		LIMIT 1`, entityID).Scan(&canonical, &typ, &refNS, &refVal)
+	canonical, typ, ref, found, err := n.store.ResolveEntity(ctx, entityID)
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return Signal{}, fmt.Errorf("catalog: entity %s: %w", entityID, ErrNotSignal)
 	case err != nil:
-		return Signal{}, fmt.Errorf("catalog: read entity %s: %w", entityID, err)
+		return Signal{}, err
+	case !found:
+		return Signal{}, fmt.Errorf("catalog: entity %s: %w", entityID, ErrNotSignal)
 	}
-	kind, ok := signalKinds[graph.NodeType(typ)]
+	kind, ok := signalKinds[typ]
 	if !ok {
 		return Signal{}, fmt.Errorf("catalog: entity %s is a %s: %w", entityID, typ, ErrNotSignal)
 	}
-	signal := Signal{EntityID: canonical, Ref: graph.Ref{Namespace: refNS, Value: refVal}, Kind: kind}
+	signal := Signal{EntityID: canonical, Ref: ref, Kind: kind}
 
-	var (
-		display string
-		props   []byte
-	)
-	err = n.store.Pool().QueryRow(ctx, `
-		SELECT display_name, props FROM graph.entity_versions
-		WHERE entity_id = $1 AND upper_inf(observed)
-		ORDER BY upper_inf(valid) DESC, lower(valid) DESC, version_id LIMIT 1`, canonical).Scan(&display, &props)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return Signal{}, fmt.Errorf("catalog: read %s: %w", canonical, err)
+	display, props, err := n.store.LatestVersion(ctx, canonical)
+	if err != nil {
+		return Signal{}, err
 	}
 	signal.Text = display
 	values := propValues(props)
@@ -140,7 +112,7 @@ func (n *Names) Signal(ctx context.Context, entityID string) (Signal, error) {
 	var names []Name
 	switch kind {
 	case KindAlert:
-		watched, err := n.targets(ctx, canonical, graph.EdgeTypeWatches, false)
+		watched, err := n.store.Targets(ctx, canonical, graph.EdgeTypeWatches, false)
 		if err != nil {
 			return Signal{}, err
 		}
@@ -148,12 +120,12 @@ func (n *Names) Signal(ctx context.Context, entityID string) (Signal, error) {
 		if signal.Related, signal.Owners, err = n.neighbourhood(ctx, canonical, graph.EdgeTypeWatches, false); err != nil {
 			return Signal{}, err
 		}
-		for _, spelled := range stringList(values[projector.AlertUnattachedWatchesProp]) {
+		for _, spelled := range stringList(values[graph.AlertUnattachedWatchesProp]) {
 			if ref, err := graph.ParseRef(spelled); err == nil {
 				names = append(names, Name{Ref: ref})
 			}
 		}
-		if s, _ := values[projector.AlertTransportProp].(string); s == "human_declared" {
+		if s, _ := values[graph.AlertTransportProp].(string); s == "human_declared" {
 			signal.Kind = KindDeclared
 			for _, token := range SlugTokens(display) {
 				names = append(names, Name{Ref: graph.Ref{Namespace: graph.SlackSlugNamespace, Value: token}})
@@ -167,7 +139,7 @@ func (n *Names) Signal(ctx context.Context, entityID string) (Signal, error) {
 			}
 		}
 	case KindChange:
-		targets, err := n.targets(ctx, canonical, graph.EdgeTypeChangedBy, true)
+		targets, err := n.store.Targets(ctx, canonical, graph.EdgeTypeChangedBy, true)
 		if err != nil {
 			return Signal{}, err
 		}
@@ -178,6 +150,16 @@ func (n *Names) Signal(ctx context.Context, entityID string) (Signal, error) {
 	}
 	signal.Names = sortNames(names)
 	return signal, nil
+}
+
+// neighbourhood reads what the probable rules P3 and P4 look at around a signal's watched or target
+// entities, sorted and deduplicated.
+func (n *Names) neighbourhood(ctx context.Context, signalID string, typ graph.EdgeType, inbound bool) ([]Name, []string, error) {
+	related, owners, err := n.store.Neighbourhood(ctx, signalID, typ, inbound)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sortNames(related), sortedUnique(owners), nil
 }
 
 // NotionValueRef names a Notion page by one value of its entity property (ADR-0015 item 7).
@@ -195,103 +177,6 @@ func SlugTokens(channel string) []string {
 	tokens := strings.FieldsFunc(slug, func(r rune) bool { return r == '-' || r == '_' })
 	slices.Sort(tokens)
 	return slices.Compact(tokens)
-}
-
-// targets reads the entities a signal's edges reach, and every identity claim and correlation
-// key of each with its environment: a Datadog service is named `<env>/<service>` and correlated by
-// the bare `datadog.log_service` name, which is the one an environment-free alias matches. inbound
-// reads edges INTO the signal (a change is the destination of `changed_by`), at any instant since a
-// change is one; otherwise current edges out of it.
-func (n *Names) targets(ctx context.Context, signalID string, typ graph.EdgeType, inbound bool) ([]Name, error) {
-	near, far := "src_id", "dst_id"
-	if inbound {
-		near, far = "dst_id", "src_id"
-	}
-	rows, err := n.store.Pool().Query(ctx, fmt.Sprintf(`
-		WITH ends AS (
-			SELECT DISTINCT coalesce(t.merged_into, e.%[2]s) AS id
-			FROM graph.edge_versions e
-			LEFT JOIN graph.entities t ON t.entity_id = e.%[2]s
-			WHERE e.%[1]s = $1 AND e.type = $2 AND upper_inf(e.observed) AND (upper_inf(e.valid) OR $4)
-		)
-		SELECT c.namespace, c.value, coalesce(c.attributes->>$3, '')
-		FROM ends JOIN graph.entities m ON m.entity_id = ends.id OR m.merged_into = ends.id
-		JOIN graph.identity_claims c ON c.entity_id = m.entity_id
-		UNION
-		SELECT k.namespace, k.value, coalesce(k.attributes->>$3, '')
-		FROM ends JOIN graph.entities m ON m.entity_id = ends.id OR m.merged_into = ends.id
-		JOIN graph.correlation_keys k ON k.entity_id = m.entity_id
-		ORDER BY 1, 2, 3`, near, far), signalID, string(typ), AttrEnvironment, inbound)
-	if err != nil {
-		return nil, fmt.Errorf("catalog: read %s targets of %s: %w", typ, signalID, err)
-	}
-	defer rows.Close()
-	var out []Name
-	for rows.Next() {
-		var name Name
-		if err := rows.Scan(&name.Ref.Namespace, &name.Ref.Value, &name.Environment); err != nil {
-			return nil, fmt.Errorf("catalog: scan target name: %w", err)
-		}
-		out = append(out, name)
-	}
-	return out, rows.Err()
-}
-
-// neighbourhood reads what the probable rules P3 and P4 look at around a signal's watched or target
-// entities: the names of the entities they run on, depend on or call, and the owners they are owned
-// by, both through edges valid and believed now.
-func (n *Names) neighbourhood(ctx context.Context, signalID string, typ graph.EdgeType, inbound bool) ([]Name, []string, error) {
-	near, far := "src_id", "dst_id"
-	if inbound {
-		near, far = "dst_id", "src_id"
-	}
-	rows, err := n.store.Pool().Query(ctx, fmt.Sprintf(`
-		WITH ends AS (
-			SELECT DISTINCT coalesce(t.merged_into, e.%[2]s) AS id
-			FROM graph.edge_versions e
-			LEFT JOIN graph.entities t ON t.entity_id = e.%[2]s
-			WHERE e.%[1]s = $1 AND e.type = $2 AND upper_inf(e.observed) AND (upper_inf(e.valid) OR $5)
-		), next AS (
-			SELECT DISTINCT o.type, coalesce(t.merged_into, o.dst_id) AS id
-			FROM ends JOIN graph.edge_versions o ON o.src_id = ends.id
-			LEFT JOIN graph.entities t ON t.entity_id = o.dst_id
-			WHERE o.type = ANY($3) AND upper_inf(o.observed) AND upper_inf(o.valid)
-		)
-		SELECT 'owner', '', next.id, '' FROM next WHERE next.type = $4
-		UNION
-		SELECT 'name', c.namespace, c.value, coalesce(c.attributes->>$6, '')
-		FROM next JOIN graph.entities m ON m.entity_id = next.id OR m.merged_into = next.id
-		JOIN graph.identity_claims c ON c.entity_id = m.entity_id
-		WHERE next.type <> $4
-		UNION
-		SELECT 'name', k.namespace, k.value, coalesce(k.attributes->>$6, '')
-		FROM next JOIN graph.entities m ON m.entity_id = next.id OR m.merged_into = next.id
-		JOIN graph.correlation_keys k ON k.entity_id = m.entity_id
-		WHERE next.type <> $4
-		ORDER BY 1, 2, 3, 4`, near, far), signalID, string(typ),
-		[]string{string(graph.EdgeTypeRunsOn), string(graph.EdgeTypeDependsOn), string(graph.EdgeTypeCalls), string(graph.EdgeTypeOwnedBy)},
-		string(graph.EdgeTypeOwnedBy), inbound, AttrEnvironment)
-	if err != nil {
-		return nil, nil, fmt.Errorf("catalog: read the neighbourhood of %s: %w", signalID, err)
-	}
-	defer rows.Close()
-	var (
-		related []Name
-		owners  []string
-	)
-	for rows.Next() {
-		var kind string
-		var name Name
-		if err := rows.Scan(&kind, &name.Ref.Namespace, &name.Ref.Value, &name.Environment); err != nil {
-			return nil, nil, fmt.Errorf("catalog: scan neighbour: %w", err)
-		}
-		if kind == "owner" {
-			owners = append(owners, name.Ref.Value)
-		} else {
-			related = append(related, name)
-		}
-	}
-	return sortNames(related), sortedUnique(owners), rows.Err()
 }
 
 func sortNames(names []Name) []Name {

@@ -6,13 +6,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"math"
 	"slices"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -236,16 +234,14 @@ func entryScore(a catalogEntry, aNames []Name, b catalogEntry, bNames []Name) (s
 func (a *Attributor) proposeAlias(ctx context.Context, name Name, slug, rule string, score float64,
 	evidence map[string]any,
 ) (bool, error) {
-	var exists bool
-	err := a.projector.Store().Pool().QueryRow(ctx, `SELECT true FROM graph.alias_proposals WHERE proposal_key = $1`,
-		graph.AliasKey(name.Ref, name.Environment, slug)).Scan(&exists)
+	exists, err := a.store.AliasProposed(ctx, graph.AliasKey(name.Ref, name.Environment, slug))
 	switch {
-	case err == nil:
+	case err != nil:
+		return false, err
+	case exists:
 		// Raised before: pending, or a person decided. Raising it again would not be a new
 		// proposal, and a rejected pair stays rejected (FR-011).
 		return false, nil
-	case !errors.Is(err, pgx.ErrNoRows):
-		return false, fmt.Errorf("catalog: read alias proposal: %w", err)
 	}
 	ev, err := structpb.NewStruct(evidence)
 	if err != nil {
@@ -273,7 +269,7 @@ func (a *Attributor) append(ctx context.Context, kind string, key []string, env 
 	env.IdempotencyKey = env.EventId
 	env.SourceId = graph.AttributorSourceID
 	env.SchemaVersion = SchemaVersion
-	result, err := a.projector.Apply(ctx, env, a.now())
+	result, err := a.events.Apply(ctx, env, a.now())
 	if err != nil {
 		return false, fmt.Errorf("catalog: append %s: %w", env.GetEventId(), err)
 	}
@@ -296,138 +292,56 @@ func aliased(names []Name, aliases []Alias) bool {
 
 // entries reads every catalog entry as it is now.
 func (a *Attributor) entries(ctx context.Context) (map[string]catalogEntry, error) {
-	rows, err := a.projector.Store().Pool().Query(ctx, `
-		SELECT c.value, coalesce(v.display_name, ''), v.props
-		FROM graph.identity_claims c
-		JOIN graph.entities e ON e.entity_id = c.entity_id AND e.merged_into IS NULL
-		JOIN LATERAL (
-			SELECT display_name, props FROM graph.entity_versions
-			WHERE entity_id = c.entity_id AND upper_inf(observed) AND upper_inf(valid)
-			ORDER BY version_id DESC LIMIT 1
-		) v ON true
-		WHERE c.namespace = $1`, graph.CatalogNamespace)
+	rows, err := a.store.Entries(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("catalog: read entries: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
-	out := map[string]catalogEntry{}
-	for rows.Next() {
-		var (
-			e     catalogEntry
-			props []byte
-		)
-		if err := rows.Scan(&e.slug, &e.display, &props); err != nil {
-			return nil, fmt.Errorf("catalog: scan entry: %w", err)
-		}
-		values := propValues(props)
+	out := make(map[string]catalogEntry, len(rows))
+	for _, row := range rows {
+		e := catalogEntry{slug: row.Slug, display: row.Display}
+		values := propValues(row.Props)
 		e.status, _ = values[graph.CatalogStatusProp].(string)
 		e.description, _ = values[graph.CatalogDescriptionProp].(string)
 		out[e.slug] = e
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // serviceCandidates are the current SERVICE entities, with their names.
 func (a *Attributor) serviceCandidates(ctx context.Context) ([]discoveryCandidate, error) {
-	rows, err := a.projector.Store().Pool().Query(ctx, `
-		SELECT e.entity_id, coalesce(v.display_name, '')
-		FROM graph.entities e
-		JOIN LATERAL (
-			SELECT display_name FROM graph.entity_versions
-			WHERE entity_id = e.entity_id AND upper_inf(observed) AND upper_inf(valid)
-			ORDER BY version_id DESC LIMIT 1
-		) v ON true
-		WHERE e.merged_into IS NULL AND e.type = $1
-		  AND NOT EXISTS (SELECT 1 FROM graph.identity_claims c WHERE c.entity_id = e.entity_id AND c.namespace = $2)
-		ORDER BY e.entity_id`, string(graph.NodeTypeService), graph.CatalogNamespace)
+	services, err := a.store.Services(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("catalog: list services: %w", err)
+		return nil, err
 	}
-	type service struct{ id, display string }
-	var services []service
-	for rows.Next() {
-		var s service
-		if err := rows.Scan(&s.id, &s.display); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("catalog: scan service: %w", err)
-		}
-		services = append(services, s)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("catalog: list services: %w", err)
-	}
-
 	out := make([]discoveryCandidate, 0, len(services))
 	for _, s := range services {
-		claims, names, err := a.entityNames(ctx, s.id)
+		claims, names, err := a.store.EntityNames(ctx, s.ID)
 		if err != nil {
 			return nil, err
 		}
 		if len(claims) == 0 {
 			continue
 		}
-		display := s.display
+		display := s.Display
 		if strings.TrimSpace(display) == "" {
 			display = NameText(claims[0])
 		}
 		out = append(out, discoveryCandidate{
-			slug: Slugify(display), display: display, aliases: claims, names: names,
+			slug: Slugify(display), display: display, aliases: claims, names: sortNames(names),
 		})
 	}
 	return out, nil
 }
 
-// entityNames reads an entity's identity claims, and every name it goes by (claims and correlation
-// keys, with their environment).
-func (a *Attributor) entityNames(ctx context.Context, entityID string) ([]graph.Ref, []Name, error) {
-	rows, err := a.projector.Store().Pool().Query(ctx, `
-		SELECT 'claim', namespace, value, coalesce(attributes->>$2, '') FROM graph.identity_claims
-		WHERE entity_id IN (SELECT entity_id FROM graph.entities WHERE entity_id = $1 OR merged_into = $1)
-		UNION
-		SELECT 'key', namespace, value, coalesce(attributes->>$2, '') FROM graph.correlation_keys
-		WHERE entity_id IN (SELECT entity_id FROM graph.entities WHERE entity_id = $1 OR merged_into = $1)
-		ORDER BY 1, 2, 3, 4`, entityID, AttrEnvironment)
-	if err != nil {
-		return nil, nil, fmt.Errorf("catalog: read names of %s: %w", entityID, err)
-	}
-	defer rows.Close()
-	var (
-		claims []graph.Ref
-		names  []Name
-	)
-	for rows.Next() {
-		var kind string
-		var n Name
-		if err := rows.Scan(&kind, &n.Ref.Namespace, &n.Ref.Value, &n.Environment); err != nil {
-			return nil, nil, fmt.Errorf("catalog: scan name: %w", err)
-		}
-		names = append(names, n)
-		if kind == "claim" && !slices.Contains(claims, n.Ref) {
-			claims = append(claims, n.Ref)
-		}
-	}
-	return claims, sortNames(names), rows.Err()
-}
-
 // notionCandidates are the Notion values current pages carry.
 func (a *Attributor) notionCandidates(ctx context.Context) ([]discoveryCandidate, error) {
-	rows, err := a.projector.Store().Pool().Query(ctx, `
-		SELECT v.props FROM graph.entities e
-		JOIN graph.entity_versions v ON v.entity_id = e.entity_id
-		WHERE e.merged_into IS NULL AND e.type = $1 AND upper_inf(v.observed) AND upper_inf(v.valid)
-		ORDER BY e.entity_id, v.version_id`, string(graph.NodeTypeKnowledgeDoc))
+	documents, err := a.store.DocumentProps(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("catalog: list documents: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
 	seen := map[graph.Ref]bool{}
 	var out []discoveryCandidate
-	for rows.Next() {
-		var props []byte
-		if err := rows.Scan(&props); err != nil {
-			return nil, fmt.Errorf("catalog: scan document: %w", err)
-		}
+	for _, props := range documents {
 		values := propValues(props)
 		database, _ := values[graph.NotionDatabaseProp].(string)
 		if database == "" {
@@ -444,5 +358,5 @@ func (a *Attributor) notionCandidates(ctx context.Context) ([]discoveryCandidate
 			})
 		}
 	}
-	return out, rows.Err()
+	return out, nil
 }

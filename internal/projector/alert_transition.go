@@ -50,15 +50,15 @@ const (
 	AlertPreviousStateProp     = "sre.alert.previous_state"
 	AlertGroupKeyProp          = "sre.alert.group_key"
 	AlertSeverityProp          = "sre.alert.severity"
-	AlertTransportProp         = "sre.alert.transport"
+	AlertTransportProp         = graph.AlertTransportProp
 	AlertOriginRefProp         = "sre.alert.origin_ref"
 	AlertActorKindProp         = "sre.alert.actor_kind"
 	AlertDeclaringIdentityProp = "sre.alert.declaring_identity"
 	AlertTransitionAtProp      = "sre.alert.transition_at"
 	// AlertUnattachedWatchesProp lists the refs this alert watches that the graph has not
-	// observed yet (003 FR-048). Its shape matches UnattachedTargetsProp so attach.go's
-	// machinery is shared rather than duplicated.
-	AlertUnattachedWatchesProp = "sre.alert.unattached_watches"
+	// observed yet (003 FR-048). It lives in internal/graph so the catalog reads it without
+	// importing the projector.
+	AlertUnattachedWatchesProp = graph.AlertUnattachedWatchesProp
 )
 
 // The alert lane (005): a transition is folded in a lane of its own, beside its source's other

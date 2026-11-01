@@ -135,3 +135,14 @@ func AliasVersionID(namespace, value, environment, eventID string) string {
 func AliasKey(name Ref, environment, slug string) string {
 	return name.String() + "|" + environment + "|" + slug
 }
+
+// Alert props the catalog reads back from an ALERT node (written by the projector, 005).
+const (
+	// AlertTransportProp is the transport an alert transition arrived over; "human_declared"
+	// marks a declared incident.
+	AlertTransportProp = "sre.alert.transport"
+	// AlertUnattachedWatchesProp lists the refs an alert watches that the graph has not observed
+	// yet (003 FR-048). Its shape matches the projector's UnattachedTargetsProp so attach.go's
+	// machinery is shared rather than duplicated.
+	AlertUnattachedWatchesProp = "sre.alert.unattached_watches"
+)

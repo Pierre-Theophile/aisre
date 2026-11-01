@@ -17,6 +17,7 @@ import (
 
 	"github.com/Pierre-Theophile/aisre/internal/catalog"
 	"github.com/Pierre-Theophile/aisre/internal/catalog/classify"
+	"github.com/Pierre-Theophile/aisre/internal/catalog/pgcatalog"
 	"github.com/Pierre-Theophile/aisre/internal/embedding"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/budget"
@@ -313,7 +314,7 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 			// FR-034: with no classifier block, attribution needs no network and no model.
 			logger.Info("attribution: no classifier; layers 0-2 decide", "ruleset", rules.Ruleset, "classifier", "none")
 		}
-		attributor := catalog.New(cfg.Projector, attributorOpts...)
+		attributor := pgcatalog.NewAttributor(cfg.Projector, attributorOpts...)
 		go attributor.Run(ctx)
 	}
 	srv, err := server.New(cfg)
