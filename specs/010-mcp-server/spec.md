@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-01
 
-**Status**: Draft, defaults Q1–Q8 awaiting the owner's approval
+**Status**: Approved by the owner 2026-11-01 (all eight defaults); planning
 
 **Input**: Roadmap decision ADR-0016 D3 ("Feature 010 is a read-only MCP server"), confirmed in its
 place by ADR-0019 D3, and required by ADR-0019 D6 (the simple-harness baseline reads the recorded world
@@ -34,10 +34,10 @@ step away from where they work:
 
 ## Clarifications
 
-### Session 2026-11-01 — defaults proposed to the owner
+### Session 2026-11-01 — defaults approved by the owner
 
-Each default is written into the requirements below. The owner approves or changes them on the spec
-pull request, as for 006–009 and 012.
+Each default is written into the requirements below. The owner approved all eight as written on
+2026-11-01 ("Go").
 
 - Q1: Where does the MCP server run, and what does it talk to? → **Default: a subcommand of the `aisre`
   binary (`aisre mcp`) that is a client of the existing API.** It holds no database connection and adds

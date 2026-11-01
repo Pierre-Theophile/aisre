@@ -36,6 +36,6 @@
   vocabulary (the query algebra, roles, `--output json`, the injection detector) because it exposes
   approved requirements of 001, 002 and 009 rather than adding new ones.
 - The eight forks (Q1–Q8) are written as defaults, not [NEEDS CLARIFICATION] markers, following
-  006–009 and 012: the owner approves or changes them on the spec PR.
+  006–009 and 012: the owner approves or changes them on the spec PR. The owner approved all eight on 2026-11-01.
 - No constitution amendment is needed: the only write is starting an investigation in aisre's own
   store, as `aisre investigate` already does (ADR-0016 D3), so Principle VII stands.
