@@ -5,6 +5,8 @@ package gcp
 import (
 	"context"
 
+	"github.com/Pierre-Theophile/aisre/internal/mask"
+
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 )
@@ -87,7 +89,7 @@ func (b *Backend) exemplars(ctx context.Context, term *investigationv1.Exemplars
 	exemplars := make([]*investigationv1.Exemplar, 0, limit)
 	seen := make(map[string]struct{}, limit)
 	for _, line := range linesOf(sample) {
-		masked := engine.MaskLine(line.Text)
+		masked := mask.Line(line.Text)
 		if payload.Group != "" && masked != payload.Group {
 			continue
 		}

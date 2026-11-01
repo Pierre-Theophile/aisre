@@ -11,6 +11,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"github.com/jackc/pgx/v5"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -319,7 +321,7 @@ func RunBench(ctx context.Context, newStore StoreFactory, opts BenchOptions) (*B
 
 // registerBenchSources declares the two synthetic feeders (FR-018).
 func registerBenchSources(ctx context.Context, p *projector.Projector) error {
-	for _, src := range []eventlog.Source{
+	for _, src := range []event.Source{
 		{SourceID: BenchSourceK8s, Kind: "k8s", Ordering: "per_source_sequence",
 			ReorderingWindow: 60 * time.Second, SchemaVersion: feeder.SchemaVersion},
 		{SourceID: BenchSourceOTel, Kind: "otel", Ordering: "none",

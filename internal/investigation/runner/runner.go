@@ -35,6 +35,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/Pierre-Theophile/aisre/internal/investigation/audit"
@@ -46,7 +48,6 @@ import (
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	graphworker "github.com/Pierre-Theophile/aisre/internal/investigation/workers/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
@@ -261,7 +262,7 @@ func (r *Runner) DAO() *investigationstore.InvestigationDAO { return r.dao }
 // the insert is ON CONFLICT DO NOTHING — so building two runners over one database is not an
 // error.
 func (r *Runner) registerDecisionSource(ctx context.Context) error {
-	err := r.proj.RegisterSource(ctx, eventlog.Source{
+	err := r.proj.RegisterSource(ctx, event.Source{
 		SourceID:      investigationstore.DecisionRecordSourceID,
 		Kind:          "investigation",
 		Ordering:      "none",

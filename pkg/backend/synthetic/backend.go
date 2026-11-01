@@ -10,6 +10,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/mask"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
@@ -847,7 +849,7 @@ func (b *Backend) exemplars(term *investigationv1.ExemplarsTerm) (engine.Outcome
 	// nothing a reader can use and costs the response's whole size budget.
 	seen := make(map[string]struct{}, limit)
 	for _, line := range lines {
-		masked := engine.MaskLine(line.Text)
+		masked := mask.Line(line.Text)
 		if payload.Group != "" && masked != payload.Group {
 			continue
 		}

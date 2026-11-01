@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package log_test
+package event_test
 
 import (
 	"strings"
@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
+	"github.com/Pierre-Theophile/aisre/internal/event"
 )
 
 // One rejected sample per reason the five investigation bodies can be refused for (ADR-0005
@@ -85,7 +85,7 @@ func decisionRecord() *graphv1.RecordInvestigation {
 func TestValidateInvestigationBodies(t *testing.T) {
 	t.Parallel()
 
-	accepted := eventlog.SchemaVersions{"1.0.0"}
+	accepted := event.SchemaVersions{"1.0.0"}
 
 	tests := []struct {
 		name       string
@@ -110,7 +110,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				})
 				return investigationEnvelope(body)
 			}(),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "numeric samples",
 		},
 		{
@@ -122,7 +122,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				})
 				return investigationEnvelope(body)
 			}(),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "value",
 		},
 		{
@@ -134,7 +134,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				})
 				return investigationEnvelope(body)
 			}(),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "above the 4096 byte property limit",
 		},
 		{
@@ -144,7 +144,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				body.Spend = mustStruct(map[string]any{"tokens": 12000})
 				return investigationEnvelope(body)
 			}(),
-			wantCode:   eventlog.ReasonPropNamespace,
+			wantCode:   event.ReasonPropNamespace,
 			wantDetail: "sre.investigation.",
 		},
 		{
@@ -154,7 +154,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				body.EndedAt = nil
 				return investigationEnvelope(body)
 			}(),
-			wantCode:   eventlog.ReasonMissingValidTime,
+			wantCode:   event.ReasonMissingValidTime,
 			wantDetail: "record_investigation.ended_at",
 		},
 		{
@@ -164,7 +164,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				body.Subjects = []*graphv1.Ref{{Namespace: "otel.service.name"}}
 				return investigationEnvelope(body)
 			}(),
-			wantCode:   eventlog.ReasonMissingRef,
+			wantCode:   event.ReasonMissingRef,
 			wantDetail: "record_investigation.subjects[0]",
 		},
 		{
@@ -187,7 +187,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 			}),
 			// FR-041's rule applied to the human channel: a fact nobody signed is not
 			// evidence, and it is refused rather than recorded unattributed.
-			wantCode:   eventlog.ReasonMissingPrincipal,
+			wantCode:   event.ReasonMissingPrincipal,
 			wantDetail: "submit_human_fact.author",
 		},
 		{
@@ -197,7 +197,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				Author:          "sre@example.com",
 				SubmittedAt:     ts("2026-09-01T14:40:00Z"),
 			}),
-			wantCode:   eventlog.ReasonMissingRef,
+			wantCode:   event.ReasonMissingRef,
 			wantDetail: "submit_human_fact.statement",
 		},
 		{
@@ -215,7 +215,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				ParentInvestigationId: "inv-0007",
 				ChildInvestigationId:  "inv-0007",
 			}),
-			wantCode:   eventlog.ReasonMissingRef,
+			wantCode:   event.ReasonMissingRef,
 			wantDetail: "a reopen is a NEW investigation",
 		},
 		{
@@ -233,7 +233,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				InvestigationId: "inv-0007",
 				LabelledAt:      ts("2026-09-01T15:02:00Z"),
 			}),
-			wantCode:   eventlog.ReasonMissingPrincipal,
+			wantCode:   event.ReasonMissingPrincipal,
 			wantDetail: "label_investigation.author",
 		},
 		{
@@ -245,8 +245,8 @@ func TestValidateInvestigationBodies(t *testing.T) {
 			env: func() *graphv1.EventEnvelope {
 				body := alertTransition()
 				body.GroupKey = ""
-				body.FromState = eventlog.AlertStateOK
-				body.ToState = eventlog.AlertStateDeclared
+				body.FromState = event.AlertStateOK
+				body.ToState = event.AlertStateDeclared
 				body.Transport = "human_declared"
 				body.ActorKind = graphv1.ActorKind_PERSON
 				body.DeclaringIdentity = "sre@example.com"
@@ -260,7 +260,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				body.Monitor = nil
 				return investigationEnvelope(body)
 			}(),
-			wantCode:   eventlog.ReasonMissingRef,
+			wantCode:   event.ReasonMissingRef,
 			wantDetail: "alert_transition.monitor",
 		},
 		{
@@ -270,7 +270,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				body.TransitionAt = nil
 				return investigationEnvelope(body)
 			}(),
-			wantCode:   eventlog.ReasonMissingValidTime,
+			wantCode:   event.ReasonMissingValidTime,
 			wantDetail: "alert_transition.transition_at",
 		},
 		{
@@ -280,7 +280,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 				body.ToState = ""
 				return investigationEnvelope(body)
 			}(),
-			wantCode:   eventlog.ReasonUnknownType,
+			wantCode:   event.ReasonUnknownType,
 			wantDetail: "alert_transition.to_state",
 		},
 	}
@@ -288,7 +288,7 @@ func TestValidateInvestigationBodies(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := eventlog.Validate(tc.env, accepted)
+			got := event.Validate(tc.env, accepted)
 			if tc.wantCode == "" {
 				if got != nil {
 					t.Fatalf("Validate() = %s, want accepted", got)
@@ -322,10 +322,10 @@ func TestInvestigationEventTypesAreNamed(t *testing.T) {
 		"alert_transition":     investigationEnvelope(alertTransition()),
 	}
 	for typ, env := range want {
-		if got := eventlog.EventType(env); got != typ {
+		if got := event.Type(env); got != typ {
 			t.Errorf("EventType = %q, want %q", got, typ)
 		}
-		if eventlog.BodyMessage(env) == nil {
+		if event.BodyMessage(env) == nil {
 			t.Errorf("BodyMessage(%s) = nil", typ)
 		}
 	}

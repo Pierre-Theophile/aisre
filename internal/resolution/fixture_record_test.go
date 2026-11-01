@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/fixture/graphquery"
+
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/fixture/fixturetest"
 	"github.com/Pierre-Theophile/aisre/internal/query"
@@ -38,7 +40,7 @@ var resolutionFixtures = []string{"ambiguous-identity-01"}
 func TestMain(m *testing.M) { pgtest.TestMain(m) }
 
 func newRunner(store *postgres.Store) fixture.QueryRunner {
-	return query.NewRunner(query.NewEngine(store))
+	return graphquery.NewRunner(query.NewEngine(store))
 }
 
 // TestRecordResolutionFixture rewrites this phase's goldens.

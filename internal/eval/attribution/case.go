@@ -11,6 +11,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"gopkg.in/yaml.v3"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -161,12 +163,12 @@ func Replay(ctx context.Context, store *postgres.Store, c *Case, opts ...catalog
 		return nil, nil, fmt.Errorf("attribution: %s: human decisions: %w", c.ID, err)
 	}
 	p := projector.New(store)
-	sources := []eventlog.Source{{SourceID: fixture.HumanSourceID, Kind: "human", Ordering: "none", SchemaVersion: m.SchemaVersion}}
+	sources := []event.Source{{SourceID: fixture.HumanSourceID, Kind: "human", Ordering: "none", SchemaVersion: m.SchemaVersion}}
 	for _, src := range m.Sources {
 		if src.SourceID == graph.AttributorSourceID || src.SourceID == fixture.HumanSourceID {
 			continue
 		}
-		sources = append(sources, eventlog.Source{SourceID: src.SourceID, Kind: src.Kind, Ordering: src.Ordering,
+		sources = append(sources, event.Source{SourceID: src.SourceID, Kind: src.Kind, Ordering: src.Ordering,
 			ReorderingWindow: src.ReorderingWindow, SchemaVersion: m.SchemaVersion})
 	}
 	for _, src := range sources {

@@ -17,9 +17,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
@@ -298,7 +299,7 @@ func (f *Feeder) observe(ctx context.Context, em feeder.Emitter, ch observedChan
 		Meta:              feeder.Meta{SourceObservedAt: at},
 		Monitor:           feeder.Ref(PlaceNamespace, ch.ID),
 		TransitionAt:      d.DeclaredAt,
-		ToState:           eventlog.AlertStateDeclared,
+		ToState:           event.AlertStateDeclared,
 		Watches:           d.Targets,
 		Transport:         feeder.TransportHumanDeclared,
 		OriginRef:         d.OriginRef,
@@ -412,7 +413,7 @@ func ChannelOf(originRef string) (team, channel string, ok bool) {
 // its stable id, an empty group, and the creation instant (FR-009). It is intake.DeclarationKey
 // spelled without importing the engine; a test asserts they agree byte for byte.
 func DeclarationKey(sourceID, channelID string, declaredAt time.Time) string {
-	return eventlog.AlertTransitionKeyParts(sourceID,
+	return event.AlertTransitionKeyParts(sourceID,
 		graph.Ref{Namespace: PlaceNamespace, Value: channelID}.String(), "",
 		declaredAt.UTC().Format(time.RFC3339Nano))
 }

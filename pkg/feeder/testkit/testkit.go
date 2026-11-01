@@ -61,7 +61,7 @@ type options struct {
 
 // WithEmitter adds a second Emitter beside the in-memory one.
 //
-// Pass emit.NewProjectorEmitter over a test database to make every check additionally prove
+// Pass inprocess.New over a test database to make every check additionally prove
 // that a real graph accepts, and deduplicates, what the feeder emits. Every event goes to both
 // emitters and the results reported are the extra emitter's, so the checks become strictly
 // stronger; nothing they already asserted is given up. The function is called once per replay,

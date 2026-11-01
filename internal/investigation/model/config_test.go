@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/embedding"
+
 	"gopkg.in/yaml.v3"
 
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
@@ -308,28 +310,28 @@ func TestConfigValidationRejections(t *testing.T) {
 		{
 			name: "an embedding provider nobody published",
 			mutate: func(c *model.Config) {
-				c.Embedding = &model.EmbeddingConfig{Provider: "pinecone", BaseURL: "http://localhost:8080/v1", Model: "m", Dimensions: 8}
+				c.Embedding = &embedding.Config{Provider: "pinecone", BaseURL: "http://localhost:8080/v1", Model: "m", Dimensions: 8}
 			},
 			mustSay: "the set is openai_compatible",
 		},
 		{
 			name: "an embedding block with no dimensions",
 			mutate: func(c *model.Config) {
-				c.Embedding = &model.EmbeddingConfig{Provider: "openai_compatible", BaseURL: "http://localhost:8080/v1", Model: "m"}
+				c.Embedding = &embedding.Config{Provider: "openai_compatible", BaseURL: "http://localhost:8080/v1", Model: "m"}
 			},
 			mustSay: "dimensions must be positive",
 		},
 		{
 			name: "an embedding base_url that is not a URL",
 			mutate: func(c *model.Config) {
-				c.Embedding = &model.EmbeddingConfig{Provider: "openai_compatible", BaseURL: "localhost:8080", Model: "m", Dimensions: 8}
+				c.Embedding = &embedding.Config{Provider: "openai_compatible", BaseURL: "localhost:8080", Model: "m", Dimensions: 8}
 			},
 			mustSay: "is not an http(s) URL",
 		},
 		{
 			name: "an embedding block with no model",
 			mutate: func(c *model.Config) {
-				c.Embedding = &model.EmbeddingConfig{Provider: "openai_compatible", BaseURL: "http://localhost:11434/v1", Dimensions: 8}
+				c.Embedding = &embedding.Config{Provider: "openai_compatible", BaseURL: "http://localhost:11434/v1", Dimensions: 8}
 			},
 			mustSay: "embedding: model is required",
 		},
@@ -435,7 +437,7 @@ func TestEmbeddingBlockIsOptional(t *testing.T) {
 	if got := cfg.Embedding.ModelID().String(); got != "openai_compatible:mistral-embed@1024" {
 		t.Errorf("production embedding model = %q", got)
 	}
-	block := model.EmbeddingConfig{Provider: "openai_compatible", BaseURL: "http://localhost:11434/v1", Model: "nomic-embed-text", Dimensions: 768}
+	block := embedding.Config{Provider: "openai_compatible", BaseURL: "http://localhost:11434/v1", Model: "nomic-embed-text", Dimensions: 768}
 	if _, ok := block.APIKey(); !ok {
 		t.Error("a block with no api_key_env is usable as it stands (a local server)")
 	}

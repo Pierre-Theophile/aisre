@@ -11,10 +11,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -42,7 +43,7 @@ import (
 // Log appends to and reads back log.events. It is safe for concurrent use.
 type Log struct {
 	store      *postgres.Store
-	accepted   SchemaVersions
+	accepted   event.SchemaVersions
 	migrations *migrate.Registry
 	now        func() time.Time
 }
@@ -51,7 +52,7 @@ type Log struct {
 type Option func(*Log)
 
 // WithSchemaVersions replaces the accepted event schema versions (FR-025).
-func WithSchemaVersions(versions SchemaVersions) Option {
+func WithSchemaVersions(versions event.SchemaVersions) Option {
 	return func(l *Log) { l.accepted = versions }
 }
 
@@ -70,7 +71,7 @@ func WithClock(now func() time.Time) Option {
 func New(store *postgres.Store, opts ...Option) *Log {
 	l := &Log{
 		store:      store,
-		accepted:   DefaultSchemaVersions,
+		accepted:   event.DefaultSchemaVersions,
 		migrations: migrate.Default(),
 		now:        func() time.Time { return time.Now().UTC() },
 	}
@@ -85,7 +86,7 @@ func New(store *postgres.Store, opts ...Option) *Log {
 func (l *Log) Store() *postgres.Store { return l.store }
 
 // SchemaVersions returns the accepted event schema versions.
-func (l *Log) SchemaVersions() SchemaVersions { return l.accepted }
+func (l *Log) SchemaVersions() event.SchemaVersions { return l.accepted }
 
 // Migrations returns the event-schema transformation registry the append path consults.
 func (l *Log) Migrations() *migrate.Registry { return l.migrations }
@@ -100,7 +101,7 @@ func (l *Log) Migrations() *migrate.Registry { return l.migrations }
 // (FR-023). An envelope at a version nothing can reach is refused with the published reason
 // code, and the detail names both what is accepted and what could be transformed, because a
 // feeder that is told only "rejected" cannot fix itself (FR-024).
-func (l *Log) migrate(env *graphv1.EventEnvelope) (*graphv1.EventEnvelope, *Rejection) {
+func (l *Log) migrate(env *graphv1.EventEnvelope) (*graphv1.EventEnvelope, *event.Rejection) {
 	version := env.GetSchemaVersion()
 	if version == "" || len(l.accepted) == 0 || l.accepted.Accepts(version) {
 		// Nothing to transform, or nothing to transform *from*: an envelope with no version at
@@ -109,12 +110,12 @@ func (l *Log) migrate(env *graphv1.EventEnvelope) (*graphv1.EventEnvelope, *Reje
 		return env, nil
 	}
 	if l.migrations == nil {
-		return env, reject(ReasonUnknownSchemaVersion,
+		return env, event.Reject(event.ReasonUnknownSchemaVersion,
 			"schema_version %q; accepted: %s", version, l.accepted)
 	}
 	chain, err := l.migrations.ChainToAny(version, l.accepted)
 	if err != nil {
-		return env, reject(ReasonUnknownSchemaVersion,
+		return env, event.Reject(event.ReasonUnknownSchemaVersion,
 			"schema_version %q; accepted: %s; no transformation reaches one of them (%v)",
 			version, l.accepted, err)
 	}
@@ -123,7 +124,7 @@ func (l *Log) migrate(env *graphv1.EventEnvelope) (*graphv1.EventEnvelope, *Reje
 	}
 	migrated, err := chain.Apply(env)
 	if err != nil {
-		return env, reject(ReasonUnknownSchemaVersion,
+		return env, event.Reject(event.ReasonUnknownSchemaVersion,
 			"schema_version %q; the transformation %s failed (%v)", version, chain.Steps(), err)
 	}
 	return migrated, nil
@@ -158,25 +159,10 @@ func (l *Log) querier(tx pgx.Tx) querier {
 	return l.store.Pool()
 }
 
-// Source is a feeder's declared contract, as registered in log.sources.
-type Source struct {
-	// SourceID is the feeder's identity, e.g. "k8s:prod-eu1".
-	SourceID string
-	// Kind is the connector family: "k8s", "otel", and later vendors.
-	Kind string
-	// Ordering is "per_source_sequence" when the feeder numbers its events, "none" otherwise.
-	Ordering string
-	// ReorderingWindow is how far out of order the feeder may deliver (research §5). The
-	// projector never reorders; this is what the shuffle check in FR-048 permutes within.
-	ReorderingWindow time.Duration
-	// SchemaVersion is the event schema version the feeder emits.
-	SchemaVersion string
-}
-
 // RegisterSource records a feeder and its declared guarantees. Registering a source that
 // already exists is a no-op: log.sources is append-only like everything else in the schema, so
 // changing a declaration means a new source id.
-func (l *Log) RegisterSource(ctx context.Context, src Source, tx pgx.Tx) error {
+func (l *Log) RegisterSource(ctx context.Context, src event.Source, tx pgx.Tx) error {
 	if src.SourceID == "" {
 		return errors.New("log: source_id is required")
 	}
@@ -198,7 +184,7 @@ func (l *Log) RegisterSource(ctx context.Context, src Source, tx pgx.Tx) error {
 }
 
 // Sources lists the registered feeders in id order.
-func (l *Log) Sources(ctx context.Context) ([]Source, error) {
+func (l *Log) Sources(ctx context.Context) ([]event.Source, error) {
 	rows, err := l.store.Pool().Query(ctx, `
 		SELECT source_id, kind, ordering, reordering_window, schema_version
 		FROM log.sources ORDER BY source_id`)
@@ -207,10 +193,10 @@ func (l *Log) Sources(ctx context.Context) ([]Source, error) {
 	}
 	defer rows.Close()
 
-	var sources []Source
+	var sources []event.Source
 	for rows.Next() {
 		var (
-			src    Source
+			src    event.Source
 			window time.Duration
 		)
 		if err := rows.Scan(&src.SourceID, &src.Kind, &src.Ordering, &window, &src.SchemaVersion); err != nil {
@@ -255,7 +241,7 @@ func (l *Log) Append(ctx context.Context, env *graphv1.EventEnvelope, opts Appen
 		return rejectedResult(received.GetEventId(), rejection), nil
 	}
 
-	if rejection := Validate(env, l.accepted); rejection != nil {
+	if rejection := event.Validate(env, l.accepted); rejection != nil {
 		if err := l.recordRejection(ctx, q, env, rejection); err != nil {
 			return nil, err
 		}
@@ -267,7 +253,7 @@ func (l *Log) Append(ctx context.Context, env *graphv1.EventEnvelope, opts Appen
 		return nil, err
 	}
 	if !registered {
-		rejection := reject(ReasonUnknownSource,
+		rejection := event.Reject(event.ReasonUnknownSource,
 			"source_id %q is not registered; call RegisterSource first", env.GetSourceId())
 		if err := l.recordRejection(ctx, q, env, rejection); err != nil {
 			return nil, err
@@ -348,7 +334,7 @@ func newRow(env *graphv1.EventEnvelope, opts AppendOptions, now func() time.Time
 		idempotencyKey:   idempotencyKey(env),
 		sourceID:         env.GetSourceId(),
 		schemaVersion:    env.GetSchemaVersion(),
-		eventType:        EventType(env),
+		eventType:        event.Type(env),
 		validAt:          times.validAt,
 		validEnd:         times.validEnd,
 		validFromUnknown: times.validFromUnknown,
@@ -384,149 +370,9 @@ func idempotencyKey(env *graphv1.EventEnvelope) string {
 		return key
 	}
 	if body, ok := env.GetBody().(*graphv1.EventEnvelope_AlertTransition); ok {
-		return AlertTransitionKey(env.GetSourceId(), body.AlertTransition)
+		return event.AlertTransitionKey(env.GetSourceId(), body.AlertTransition)
 	}
 	return env.GetEventId()
-}
-
-// EventType is the log.events.type value for an envelope: the snake_case name of the body
-// oneof field, which is exactly the vocabulary the events_type_check constraint allows.
-func EventType(env *graphv1.EventEnvelope) string {
-	switch env.GetBody().(type) {
-	case *graphv1.EventEnvelope_UpsertNode:
-		return "upsert_node"
-	case *graphv1.EventEnvelope_UpsertEdge:
-		return "upsert_edge"
-	case *graphv1.EventEnvelope_RetractNode:
-		return "retract_node"
-	case *graphv1.EventEnvelope_RetractEdge:
-		return "retract_edge"
-	case *graphv1.EventEnvelope_ObserveChange:
-		return "observe_change"
-	case *graphv1.EventEnvelope_IdentityClaim:
-		return "identity_claim"
-	case *graphv1.EventEnvelope_CorrelateEntity:
-		return "correlate_entity"
-	case *graphv1.EventEnvelope_ConfirmMerge:
-		return "confirm_merge"
-	case *graphv1.EventEnvelope_RejectMerge:
-		return "reject_merge"
-	case *graphv1.EventEnvelope_SplitEntity:
-		return "split_entity"
-	case *graphv1.EventEnvelope_ManualMerge:
-		return "manual_merge"
-	case *graphv1.EventEnvelope_SourceCheckpoint:
-		return "source_checkpoint"
-	// The feature 001 change package for 002 (ADR-0005 D2/D3). The vocabulary the
-	// events_type_check constraint accepts was widened to match in migration 0005.
-	case *graphv1.EventEnvelope_RecordInvestigation:
-		return "record_investigation"
-	case *graphv1.EventEnvelope_SubmitHumanFact:
-		return "submit_human_fact"
-	case *graphv1.EventEnvelope_ReopenInvestigation:
-		return "reopen_investigation"
-	case *graphv1.EventEnvelope_LabelInvestigation:
-		return "label_investigation"
-	case *graphv1.EventEnvelope_AlertTransition:
-		return "alert_transition"
-	// 003 plan item 2 (FR-029). The vocabulary events_type_check accepts was widened to match
-	// in migration 0009.
-	case *graphv1.EventEnvelope_ProposeDependency:
-		return "propose_dependency"
-	case *graphv1.EventEnvelope_ConfirmDependency:
-		return "confirm_dependency"
-	case *graphv1.EventEnvelope_RejectDependency:
-		return "reject_dependency"
-	// ADR-0015 (feature 009): the service catalog and attribution. Migration 0015 widens
-	// events_type_check to match.
-	case *graphv1.EventEnvelope_ProposeCatalogEntry:
-		return "propose_catalog_entry"
-	case *graphv1.EventEnvelope_DeclareCatalogEntry:
-		return "declare_catalog_entry"
-	case *graphv1.EventEnvelope_DeclareAlias:
-		return "declare_alias"
-	case *graphv1.EventEnvelope_RetractAlias:
-		return "retract_alias"
-	case *graphv1.EventEnvelope_ProposeAlias:
-		return "propose_alias"
-	case *graphv1.EventEnvelope_RejectAlias:
-		return "reject_alias"
-	case *graphv1.EventEnvelope_AttributeSignal:
-		return "attribute_signal"
-	case *graphv1.EventEnvelope_CorrectAttribution:
-		return "correct_attribution"
-	case *graphv1.EventEnvelope_RevertCorrection:
-		return "revert_correction"
-	default:
-		return ""
-	}
-}
-
-// BodyMessage returns the envelope's body as a protobuf message, or nil when the oneof is
-// unset. It is exported because every consumer of a log row needs the same switch.
-func BodyMessage(env *graphv1.EventEnvelope) proto.Message {
-	switch body := env.GetBody().(type) {
-	case *graphv1.EventEnvelope_UpsertNode:
-		return body.UpsertNode
-	case *graphv1.EventEnvelope_UpsertEdge:
-		return body.UpsertEdge
-	case *graphv1.EventEnvelope_RetractNode:
-		return body.RetractNode
-	case *graphv1.EventEnvelope_RetractEdge:
-		return body.RetractEdge
-	case *graphv1.EventEnvelope_ObserveChange:
-		return body.ObserveChange
-	case *graphv1.EventEnvelope_IdentityClaim:
-		return body.IdentityClaim
-	case *graphv1.EventEnvelope_CorrelateEntity:
-		return body.CorrelateEntity
-	case *graphv1.EventEnvelope_ConfirmMerge:
-		return body.ConfirmMerge
-	case *graphv1.EventEnvelope_RejectMerge:
-		return body.RejectMerge
-	case *graphv1.EventEnvelope_SplitEntity:
-		return body.SplitEntity
-	case *graphv1.EventEnvelope_ManualMerge:
-		return body.ManualMerge
-	case *graphv1.EventEnvelope_SourceCheckpoint:
-		return body.SourceCheckpoint
-	case *graphv1.EventEnvelope_RecordInvestigation:
-		return body.RecordInvestigation
-	case *graphv1.EventEnvelope_SubmitHumanFact:
-		return body.SubmitHumanFact
-	case *graphv1.EventEnvelope_ReopenInvestigation:
-		return body.ReopenInvestigation
-	case *graphv1.EventEnvelope_LabelInvestigation:
-		return body.LabelInvestigation
-	case *graphv1.EventEnvelope_AlertTransition:
-		return body.AlertTransition
-	case *graphv1.EventEnvelope_ProposeDependency:
-		return body.ProposeDependency
-	case *graphv1.EventEnvelope_ConfirmDependency:
-		return body.ConfirmDependency
-	case *graphv1.EventEnvelope_RejectDependency:
-		return body.RejectDependency
-	case *graphv1.EventEnvelope_ProposeCatalogEntry:
-		return body.ProposeCatalogEntry
-	case *graphv1.EventEnvelope_DeclareCatalogEntry:
-		return body.DeclareCatalogEntry
-	case *graphv1.EventEnvelope_DeclareAlias:
-		return body.DeclareAlias
-	case *graphv1.EventEnvelope_RetractAlias:
-		return body.RetractAlias
-	case *graphv1.EventEnvelope_ProposeAlias:
-		return body.ProposeAlias
-	case *graphv1.EventEnvelope_RejectAlias:
-		return body.RejectAlias
-	case *graphv1.EventEnvelope_AttributeSignal:
-		return body.AttributeSignal
-	case *graphv1.EventEnvelope_CorrectAttribution:
-		return body.CorrectAttribution
-	case *graphv1.EventEnvelope_RevertCorrection:
-		return body.RevertCorrection
-	default:
-		return nil
-	}
 }
 
 // canonicalBody renders the body as canonical JSON. Storing the body rather than the whole
@@ -534,7 +380,7 @@ func BodyMessage(env *graphv1.EventEnvelope) proto.Message {
 // canonical form is what makes "did this re-delivery carry a different payload?" a byte
 // comparison rather than a semantic one (FR-020).
 func canonicalBody(env *graphv1.EventEnvelope) ([]byte, error) {
-	body := BodyMessage(env)
+	body := event.BodyMessage(env)
 	if body == nil {
 		return []byte("{}"), nil
 	}
@@ -613,13 +459,13 @@ func (l *Log) sourceRegistered(ctx context.Context, q querier, sourceID string) 
 // RecordRejection stores a refusal decided outside Validate — a source that never registered,
 // a retraction whose ref does not resolve — so that every rejected event ends up in one place
 // whichever layer refused it (FR-024). tx may be nil.
-func (l *Log) RecordRejection(ctx context.Context, tx pgx.Tx, env *graphv1.EventEnvelope, rejection *Rejection) error {
+func (l *Log) RecordRejection(ctx context.Context, tx pgx.Tx, env *graphv1.EventEnvelope, rejection *event.Rejection) error {
 	return l.recordRejection(ctx, l.querier(tx), env, rejection)
 }
 
 // recordRejection keeps the refused event for an operator to look at. The raw envelope is
 // stored whole: the point of the table is to show what the feeder actually sent.
-func (l *Log) recordRejection(ctx context.Context, q querier, env *graphv1.EventEnvelope, rejection *Rejection) error {
+func (l *Log) recordRejection(ctx context.Context, q querier, env *graphv1.EventEnvelope, rejection *event.Rejection) error {
 	raw, err := graph.CanonicalJSON(env)
 	if err != nil {
 		raw = []byte("{}")
@@ -694,7 +540,7 @@ func equalJSON(stored, incoming []byte) bool {
 	return string(storedCanonical) == string(incomingCanonical)
 }
 
-func rejectedResult(eventID string, rejection *Rejection) *graphv1.IngestResult {
+func rejectedResult(eventID string, rejection *event.Rejection) *graphv1.IngestResult {
 	return &graphv1.IngestResult{
 		EventId:      eventID,
 		Status:       graphv1.IngestResult_REJECTED,

@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/Pierre-Theophile/aisre/internal/fixture/graphquery"
+
 	"github.com/spf13/cobra"
 
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
@@ -64,7 +66,7 @@ func newFixtureCommand(global *globalOptions) *cobra.Command {
 // with. It is one function so the two can never drift: a golden recorded by `fixture record`
 // and the answer `fixture verify` compares it against come from the same engine.
 func newQueryRunner(store *postgres.Store) fixture.QueryRunner {
-	return query.NewRunner(query.NewEngine(store))
+	return graphquery.NewRunner(query.NewEngine(store))
 }
 
 type fixtureLoadOptions struct {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package audit
+package store
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/audit"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 )
 
@@ -31,12 +32,12 @@ import (
 // than accumulating a second copy under a new id, so `audit coverage --db …` can be run as often
 // as the operator likes and the database always holds the current reading of that audit.
 
-// Persist writes an audit run to `investigation.coverage_audits` and
+// PersistAudit writes an audit run to `investigation.coverage_audits` and
 // `investigation.coverage_audit_items` in one transaction.
 //
 // A result with no items — a published aggregate — writes the audit row alone, which is the
 // honest record of an audit whose incident-level detail was deliberately not carried.
-func Persist(ctx context.Context, store *postgres.Store, result *Result) error {
+func PersistAudit(ctx context.Context, store *postgres.Store, result *audit.Result) error {
 	if store == nil {
 		return fmt.Errorf("audit: persist: no database")
 	}
@@ -94,7 +95,7 @@ func Persist(ctx context.Context, store *postgres.Store, result *Result) error {
 	})
 }
 
-func persistItem(ctx context.Context, tx pgx.Tx, auditID string, item Item) error {
+func persistItem(ctx context.Context, tx pgx.Tx, auditID string, item audit.Item) error {
 	var category any
 	if item.Category != "" {
 		category = string(item.Category)
@@ -131,7 +132,7 @@ func persistItem(ctx context.Context, tx pgx.Tx, auditID string, item Item) erro
 
 // feederSetJSON renders `coverage_audits.feeder_set`: the configuration the ceiling was measured
 // against, not merely its name, so the row stays readable when the ladder is rewritten.
-func feederSetJSON(result *Result) ([]byte, error) {
+func feederSetJSON(result *audit.Result) ([]byte, error) {
 	set, ok := result.FeederSet(result.FeederSetInForce)
 	if !ok {
 		return nil, fmt.Errorf("audit: persist: feeder set in force %q is not in the result",

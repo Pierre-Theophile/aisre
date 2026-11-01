@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/fixture/graphquery"
+
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/fixture/fixturetest"
 	"github.com/Pierre-Theophile/aisre/internal/query"
@@ -119,7 +121,7 @@ var shuffleExceptions = map[string]string{
 }
 
 func newRunner(store *postgres.Store) fixture.QueryRunner {
-	return query.NewRunner(query.NewEngine(store))
+	return graphquery.NewRunner(query.NewEngine(store))
 }
 
 // TestRecordShippedFixtures rewrites every shipped fixture's goldens.

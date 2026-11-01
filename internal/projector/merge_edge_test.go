@@ -11,12 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 )
@@ -50,7 +51,7 @@ func newMergeProjector(t *testing.T) (*projector.Projector, *postgres.Store) {
 		if strings.HasPrefix(id, "otel") {
 			kind = "otel"
 		}
-		if err := p.RegisterSource(context.Background(), eventlog.Source{
+		if err := p.RegisterSource(context.Background(), event.Source{
 			SourceID:         id,
 			Kind:             kind,
 			Ordering:         "none",

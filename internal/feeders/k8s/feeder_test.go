@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/projector/inprocess"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	k8sfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/k8s"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
@@ -19,7 +21,6 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
-	"github.com/Pierre-Theophile/aisre/pkg/feeder/emit"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/testkit"
 )
 
@@ -82,7 +83,7 @@ func TestConformanceKindShop(t *testing.T) {
 
 func TestConformanceKindShopAgainstAGraph(t *testing.T) {
 	withGraph := testkit.WithEmitter(func(t *testing.T, d feeder.Description) testkit.ResultEmitter {
-		return emit.NewProjectorEmitter(projector.New(pgtest.Open(t)), d)
+		return inprocess.New(projector.New(pgtest.Open(t)), d)
 	})
 	t.Run("run", func(t *testing.T) { testkit.Run(t, kindFeeder(t), kindShopDir, withGraph) })
 	t.Run("double-deliver", func(t *testing.T) { testkit.DoubleDeliver(t, kindFeeder(t), kindShopDir, withGraph) })
@@ -120,7 +121,7 @@ func TestConformanceBaselineShopAgainstAGraph(t *testing.T) {
 	testkit.Conformance(t, testFeeder(t), filepath.Join("testdata", "baseline-shop"),
 		testkit.WithShuffles(2),
 		testkit.WithEmitter(func(t *testing.T, d feeder.Description) testkit.ResultEmitter {
-			return emit.NewProjectorEmitter(projector.New(pgtest.Open(t)), d)
+			return inprocess.New(projector.New(pgtest.Open(t)), d)
 		}))
 }
 
@@ -136,7 +137,7 @@ func TestConformanceRolloutScaleConfigAgainstAGraph(t *testing.T) {
 	testkit.Conformance(t, testFeeder(t), filepath.Join("testdata", "rollout-scale-config"),
 		testkit.WithShuffles(2),
 		testkit.WithEmitter(func(t *testing.T, d feeder.Description) testkit.ResultEmitter {
-			return emit.NewProjectorEmitter(projector.New(pgtest.Open(t)), d)
+			return inprocess.New(projector.New(pgtest.Open(t)), d)
 		}))
 }
 

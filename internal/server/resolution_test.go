@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 )
 
 // ResolutionService over the wire (FR-040, FR-041, FR-041a, SC-011).
@@ -40,7 +41,7 @@ func (ts *graphServer) deciderToken(t *testing.T) string {
 func seedTwoServices(t *testing.T, ts *graphServer) {
 	t.Helper()
 	ctx := context.Background()
-	if err := ts.projector.RegisterSource(ctx, eventlog.Source{
+	if err := ts.projector.RegisterSource(ctx, event.Source{
 		SourceID: "otel:demo", Kind: "otel", Ordering: "none", SchemaVersion: "1.0.0",
 	}); err != nil {
 		t.Fatalf("register source: %v", err)

@@ -8,10 +8,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
@@ -42,17 +43,17 @@ type groupState struct {
 }
 
 // stateOf maps a Datadog group status onto the published vocabulary. A status with no mapping —
-// Ignored, Skipped, Unknown — is `no_data`, which the published filter drops (internal/log/alert.go).
+// Ignored, Skipped, Unknown — is `no_data`, which the published filter drops (internal/event/alert.go).
 func stateOf(status string) string {
 	switch status {
 	case "OK":
-		return eventlog.AlertStateOK
+		return event.AlertStateOK
 	case "Warn":
-		return eventlog.AlertStateWarn
+		return event.AlertStateWarn
 	case "Alert":
-		return eventlog.AlertStateAlert
+		return event.AlertStateAlert
 	default:
-		return eventlog.AlertStateNoData
+		return event.AlertStateNoData
 	}
 }
 
@@ -66,8 +67,8 @@ type stated struct {
 // that is alert or warn — Datadog's `last_triggered_ts` covers both — and alert otherwise.
 func statedInstants(g groupJSON) []stated {
 	triggered := stateOf(g.Status)
-	if triggered != eventlog.AlertStateWarn {
-		triggered = eventlog.AlertStateAlert
+	if triggered != event.AlertStateWarn {
+		triggered = event.AlertStateAlert
 	}
 	var out []stated
 	for _, s := range []struct {
@@ -75,8 +76,8 @@ func statedInstants(g groupJSON) []stated {
 		to string
 	}{
 		{g.LastTriggeredTS, triggered},
-		{g.LastResolvedTS, eventlog.AlertStateOK},
-		{g.LastNoDataTS, eventlog.AlertStateNoData},
+		{g.LastResolvedTS, event.AlertStateOK},
+		{g.LastNoDataTS, event.AlertStateNoData},
 	} {
 		if s.ts > 0 {
 			out = append(out, stated{at: time.Unix(s.ts, 0).UTC(), to: s.to})
@@ -110,7 +111,7 @@ func (f *Feeder) emitGroup(ctx context.Context, em feeder.Emitter, m monitorObse
 	f.mu.Unlock()
 
 	floor := at.Add(-f.opts.History)
-	from := eventlog.AlertStateOK
+	from := event.AlertStateOK
 	if seen {
 		floor = prev.newest
 		from = prev.from
@@ -144,7 +145,7 @@ func (f *Feeder) emitGroup(ctx context.Context, em feeder.Emitter, m monitorObse
 		}
 		// A spell of no data is a fact about the monitor, not the system: the next transition is from
 		// the state the group was in before it, so `alert → no data → ok` still delivers the recovery.
-		if reason != eventlog.SuppressNoData {
+		if reason != event.SuppressNoData {
 			from = s.to
 		}
 		newest = s.at
@@ -185,7 +186,7 @@ func (f *Feeder) emitTransition(ctx context.Context, em feeder.Emitter, m monito
 		return reason, nil
 	}
 	fact.Watches = f.watches(m, group)
-	if err := emit(ctx, em, feeder.ObserveAlertTransition(f.desc, eventlog.AlertTransitionKey(f.desc.SourceID, body), fact)); err != nil {
+	if err := emit(ctx, em, feeder.ObserveAlertTransition(f.desc, event.AlertTransitionKey(f.desc.SourceID, body), fact)); err != nil {
 		return "", err
 	}
 	f.mu.Lock()
@@ -200,15 +201,15 @@ func (f *Feeder) emitTransition(ctx context.Context, em feeder.Emitter, m monito
 }
 
 // suppress applies the published filter (flapping, no data) and advances the series. Recoveries are
-// kept: `alert → ok` bounds the outage (internal/log/alert.go).
+// kept: `alert → ok` bounds the outage (internal/event/alert.go).
 func (f *Feeder) suppress(entity string, body *graphv1.AlertTransition) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	prev := f.series[entity]
-	if reason := eventlog.SuppressAlertTransition(prev, body, 0); reason != "" {
+	if reason := event.SuppressAlertTransition(prev, body, 0); reason != "" {
 		return reason
 	}
-	next := &eventlog.AlertSeries{State: body.GetToState(), At: body.GetTransitionAt().AsTime(), PreviousState: body.GetFromState()}
+	next := &event.AlertSeries{State: body.GetToState(), At: body.GetTransitionAt().AsTime(), PreviousState: body.GetFromState()}
 	if prev != nil {
 		next.PreviousState = prev.State
 	}

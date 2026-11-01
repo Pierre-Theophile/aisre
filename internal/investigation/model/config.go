@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Pierre-Theophile/aisre/internal/embedding"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -112,7 +114,7 @@ type Config struct {
 	PriceTableVersion string `yaml:"price_table_version"`
 	// Embedding is the embedding model knowledge retrieval places sections and queries with
 	// (feature 008 FR-026, contracts §3). Optional: without it retrieval is lexical only.
-	Embedding *EmbeddingConfig `yaml:"embedding,omitempty"`
+	Embedding *embedding.Config `yaml:"embedding,omitempty"`
 	// Attribution is the service catalog's decision model (feature 009, contracts §6). Optional:
 	// without it the published ruleset runs with its published threshold and margin.
 	Attribution *AttributionConfig `yaml:"attribution,omitempty"`

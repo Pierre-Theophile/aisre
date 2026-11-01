@@ -14,8 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/versionstamp"
 )
@@ -157,7 +158,7 @@ type Feeder struct {
 	// what makes a change detectable, and what bounds the stated instants already emitted.
 	groups map[string]groupState
 	// series is the per-entity series the published suppression filter reads.
-	series map[string]*eventlog.AlertSeries
+	series map[string]*event.AlertSeries
 	// cycle is the monitors this poll has listed so far; listed is what the last COMPLETE poll
 	// listed. A monitor in listed and not in a complete cycle has been deleted or left scope.
 	cycle  map[string]monitorObservation
@@ -214,7 +215,7 @@ func New(opts Options) (*Feeder, error) {
 	}
 	return &Feeder{
 		opts: opts, desc: desc, log: log,
-		groups: map[string]groupState{}, series: map[string]*eventlog.AlertSeries{},
+		groups: map[string]groupState{}, series: map[string]*event.AlertSeries{},
 		cycle: map[string]monitorObservation{}, listed: map[string]monitorObservation{},
 		emittedGroups: map[string]map[string]bool{}, verdicts: map[string]string{},
 	}, nil

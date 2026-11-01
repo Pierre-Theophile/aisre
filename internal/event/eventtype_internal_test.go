@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package log
+package event
 
 import (
 	"testing"
@@ -62,7 +62,7 @@ func TestEveryEventBodyIsNamedMarshalledAndReadBack(t *testing.T) {
 
 			// 1. EventType names it, and names it exactly as the descriptor does — which is also exactly
 			//    what the migrations' events_type_check constraint lists.
-			got := EventType(env)
+			got := Type(env)
 			if got == "" {
 				t.Fatalf("EventType returned \"\" for a %s body, so the event cannot be stored at all "+
 					"(log.events.type is NOT NULL and constrained)", name)
@@ -87,14 +87,14 @@ func TestEveryEventBodyIsNamedMarshalledAndReadBack(t *testing.T) {
 			// 3. setBody reconstructs the SAME oneof case from the stored name and payload. This is the
 			//    step `correlate_entity` was missing, and the one a replay depends on.
 			read := &graphv1.EventEnvelope{EventId: env.GetEventId()}
-			if err := setBody(read, got, payload); err != nil {
+			if err := SetBody(read, got, payload); err != nil {
 				t.Fatalf("setBody refused the type it was just told to store: %v. A type the reader does "+
 					"not know is a type that cannot be replayed, which is the same thing as a type that "+
 					"cannot be stored (constitution III)", err)
 			}
-			if EventType(read) != got {
+			if Type(read) != got {
 				t.Errorf("a %s event read back as %q; the round trip changed the event's type",
-					name, EventType(read))
+					name, Type(read))
 			}
 		})
 	}

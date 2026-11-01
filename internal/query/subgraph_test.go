@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
@@ -55,7 +56,7 @@ func newBuilder(t *testing.T) *builder {
 	t.Helper()
 	store := pgtest.Open(t)
 	p := projector.New(store)
-	if err := p.RegisterSource(context.Background(), eventlog.Source{
+	if err := p.RegisterSource(context.Background(), event.Source{
 		SourceID:      testSource,
 		Kind:          "otel",
 		Ordering:      "none",
@@ -73,7 +74,7 @@ func (b *builder) engine() *query.Engine { return query.NewEngine(b.projector.St
 // opinion, not corroboration (research §10, rule C1).
 func (b *builder) source(sourceID, kind string) *builder {
 	b.t.Helper()
-	if err := b.projector.RegisterSource(context.Background(), eventlog.Source{
+	if err := b.projector.RegisterSource(context.Background(), event.Source{
 		SourceID:      sourceID,
 		Kind:          kind,
 		Ordering:      "none",

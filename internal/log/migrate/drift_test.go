@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
@@ -59,9 +61,9 @@ func TestFixtureDeclaringAnUnknownSchemaVersionIsRejected(t *testing.T) {
 		if result.GetStatus() != graphv1.IngestResult_REJECTED {
 			t.Fatalf("event %s: status = %s, want REJECTED", result.GetEventId(), result.GetStatus())
 		}
-		if result.GetReasonCode() != eventlog.ReasonUnknownSchemaVersion {
+		if result.GetReasonCode() != event.ReasonUnknownSchemaVersion {
 			t.Fatalf("event %s: reason = %q, want %q",
-				result.GetEventId(), result.GetReasonCode(), eventlog.ReasonUnknownSchemaVersion)
+				result.GetEventId(), result.GetReasonCode(), event.ReasonUnknownSchemaVersion)
 		}
 		// FR-024: the feeder has to be told which versions it could have sent.
 		if !strings.Contains(result.GetReasonDetail(), "1.0.0") {
@@ -84,7 +86,7 @@ func TestFixtureAtTheAcceptedSchemaVersionLoads(t *testing.T) {
 		t.Fatal("nothing was applied from a fixture at the accepted schema version")
 	}
 	for _, result := range report.Results {
-		if result.GetReasonCode() == eventlog.ReasonUnknownSchemaVersion {
+		if result.GetReasonCode() == event.ReasonUnknownSchemaVersion {
 			t.Fatalf("event %s was refused for its schema version at %s",
 				result.GetEventId(), migrate.CurrentVersion)
 		}
@@ -113,7 +115,7 @@ func TestRegisteredTransformerMakesTheDriftedFixtureLoad(t *testing.T) {
 		t.Fatal("the transformation was registered but nothing was applied")
 	}
 	for _, result := range report.Results {
-		if result.GetReasonCode() == eventlog.ReasonUnknownSchemaVersion {
+		if result.GetReasonCode() == event.ReasonUnknownSchemaVersion {
 			t.Fatalf("event %s still refused for its schema version despite a registered %s → %s transformation",
 				result.GetEventId(), driftVersion, migrate.CurrentVersion)
 		}

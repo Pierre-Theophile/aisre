@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 )
 
 // Intake normalisation (T076–T080, FR-001a, FR-002, FR-002a, FR-002b, FR-004, FR-004a, FR-008b,
@@ -35,8 +36,8 @@ func monitorBody() *graphv1.AlertTransition {
 		Monitor:      &graphv1.Ref{Namespace: "monitor", Value: "checkout-error-rate"},
 		GroupKey:     "prod",
 		TransitionAt: timestamppb.New(firedAt),
-		FromState:    eventlog.AlertStateOK,
-		ToState:      eventlog.AlertStateAlert,
+		FromState:    event.AlertStateOK,
+		ToState:      event.AlertStateAlert,
 		Watches: []*graphv1.Ref{
 			{Namespace: "k8s.service", Value: "shop/checkout"},
 		},
@@ -215,7 +216,7 @@ func TestDeclarationIdempotencyKeyIsThePublished4TupleWithAnEmptyGroup(t *testin
 	}
 	// ADR-0005 D2 / FR-008b: (source, stable place id, "", declared instant). Spelled out here
 	// rather than taken from the helper, so that a change to either spelling fails.
-	want := eventlog.AlertTransitionKeyParts("slack:acme", "incident=C0123STABLE", "",
+	want := event.AlertTransitionKeyParts("slack:acme", "incident=C0123STABLE", "",
 		declaredAt.Format(time.RFC3339Nano))
 	if got := in.IdempotencyKey(); got != want {
 		t.Errorf("idempotency key = %q, want %q", got, want)
@@ -329,7 +330,7 @@ func TestDeclarationBodyIsThePublishedAlertTransitionShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalise: %v", err)
 	}
-	if got, want := eventlog.AlertTransitionKey("slack:acme", body), in.IdempotencyKey(); got != want {
+	if got, want := event.AlertTransitionKey("slack:acme", body), in.IdempotencyKey(); got != want {
 		t.Errorf("body key %q and symptom key %q disagree", got, want)
 	}
 }

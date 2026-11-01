@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package log
+package event
 
 // The human source (001 FR-041, 002 FR-054, FR-055, FR-057a/b/e).
 //

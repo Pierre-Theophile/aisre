@@ -10,11 +10,12 @@ import (
 	"slices"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"github.com/jackc/pgx/v5"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 )
 
@@ -450,13 +451,13 @@ func (p *Projector) standingCorrection(ctx context.Context, tx pgx.Tx, signalID 
 }
 
 // checkAttribution refuses an attribution naming a signal or an entry the graph has never seen.
-func (p *Projector) checkAttribution(ctx context.Context, tx pgx.Tx, field string, signal *graphv1.Ref, slugs []string) (*eventlog.Rejection, error) {
+func (p *Projector) checkAttribution(ctx context.Context, tx pgx.Tx, field string, signal *graphv1.Ref, slugs []string) (*event.Rejection, error) {
 	ref := graph.RefFromProto(signal)
 	if _, found, err := p.lookupRef(ctx, tx, ref); err != nil {
 		return nil, err
 	} else if !found {
-		return &eventlog.Rejection{
-			ReasonCode: eventlog.ReasonRefUnresolvable,
+		return &event.Rejection{
+			ReasonCode: event.ReasonRefUnresolvable,
 			ReasonDetail: fmt.Sprintf("%s.signal %s names an entity the graph has never observed",
 				field, ref),
 		}, nil
@@ -466,20 +467,20 @@ func (p *Projector) checkAttribution(ctx context.Context, tx pgx.Tx, field strin
 
 // checkRevert refuses a revert of something that is not a standing correction. The revert that
 // already took it back is let through, so its re-delivery reaches the log as a duplicate.
-func (p *Projector) checkRevert(ctx context.Context, tx pgx.Tx, eventID string, body *graphv1.RevertCorrection) (*eventlog.Rejection, error) {
+func (p *Projector) checkRevert(ctx context.Context, tx pgx.Tx, eventID string, body *graphv1.RevertCorrection) (*event.Rejection, error) {
 	correction, found, err := p.attributionDecision(ctx, tx, body.GetCorrectionEventId())
 	if err != nil {
 		return nil, err
 	}
 	switch {
 	case !found || correction.kind != decisionCorrect:
-		return &eventlog.Rejection{
-			ReasonCode:   eventlog.ReasonRefUnresolvable,
+		return &event.Rejection{
+			ReasonCode:   event.ReasonRefUnresolvable,
 			ReasonDetail: fmt.Sprintf("revert_correction names %q, which is not a correction", body.GetCorrectionEventId()),
 		}, nil
 	case correction.revertedBy != "" && correction.revertedBy != eventID:
-		return &eventlog.Rejection{
-			ReasonCode:   eventlog.ReasonRefUnresolvable,
+		return &event.Rejection{
+			ReasonCode:   event.ReasonRefUnresolvable,
 			ReasonDetail: fmt.Sprintf("the correction %q was already reverted", body.GetCorrectionEventId()),
 		}, nil
 	}

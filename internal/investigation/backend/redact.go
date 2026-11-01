@@ -7,9 +7,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"regexp"
-	"sort"
 	"strings"
+
+	"github.com/Pierre-Theophile/aisre/internal/mask"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 )
@@ -170,7 +170,7 @@ func (r *Redactor) Apply(resp *Response) error {
 	case *investigationv1.Digest_Log:
 		for _, p := range body.Log.GetPatterns() {
 			if r.policy.GetLogBodiesAsTemplates() {
-				p.Template = MaskLine(p.GetTemplate())
+				p.Template = mask.Line(p.GetTemplate())
 			}
 			r.redactJoinKeys(p.GetJoinKeys())
 		}
@@ -188,13 +188,13 @@ func (r *Redactor) Apply(resp *Response) error {
 		}
 	case *investigationv1.Digest_Exemplars:
 		for _, ex := range body.Exemplars.GetExemplars() {
-			ex.Text = MaskLine(ex.GetText())
+			ex.Text = mask.Line(ex.GetText())
 			ex.RedactionApplied = r.policy.GetPolicyVersion()
 			r.redactJoinKeys(ex.GetJoinKeys())
 		}
 	case *investigationv1.Digest_Knowledge:
 		for _, item := range body.Knowledge.GetItems() {
-			item.Excerpt = MaskLine(item.GetExcerpt())
+			item.Excerpt = mask.Line(item.GetExcerpt())
 		}
 	case *investigationv1.Digest_Onset:
 		// An onset digest carries an instant, an uncertainty and the method's parameters.
@@ -265,7 +265,7 @@ func (r *Redactor) redactTags(tags map[string]string) map[string]string {
 		case "workload", "deployment":
 			out[key] = r.applyField(FieldJoinKeyWorkload, value)
 		default:
-			out[key] = MaskLine(value)
+			out[key] = mask.Line(value)
 		}
 	}
 	if len(out) == 0 {
@@ -303,7 +303,7 @@ func (r *Redactor) CheckDeclared(resp *Response) error {
 				"a log digest was produced under a policy that does not declare log_bodies_as_templates; a raw line has no route out of this process")
 		}
 		for _, p := range body.Log.GetPatterns() {
-			if unmasked := UnmaskedLiterals(p.GetTemplate()); unmasked != "" {
+			if unmasked := mask.UnmaskedLiterals(p.GetTemplate()); unmasked != "" {
 				return r.undeclared(FieldLogTemplate,
 					"template %q still carries an unmasked %s", p.GetTemplate(), unmasked)
 			}
@@ -313,7 +313,7 @@ func (r *Redactor) CheckDeclared(resp *Response) error {
 		}
 	case *investigationv1.Digest_Exemplars:
 		if _, declared := r.pseudonyms[FieldExemplarText]; !declared {
-			if unmasked := UnmaskedLiterals(exemplarText(body.Exemplars)); unmasked != "" {
+			if unmasked := mask.UnmaskedLiterals(exemplarText(body.Exemplars)); unmasked != "" {
 				return r.undeclared(FieldExemplarText,
 					"an exemplar still carries an unmasked %s", unmasked)
 			}
@@ -389,65 +389,4 @@ func IsPeopleAttribute(key string) bool {
 		}
 	}
 	return false
-}
-
-// The masking rules. They are the single definition of what a masked template is: the Drain
-// miner masks with them before it clusters, the exemplar path masks with them before it returns
-// a line, and CheckDeclared uses their inverse to catch anything that got through.
-//
-// Order matters: the most specific pattern first, so an email is an <email> rather than a
-// <word>@<word> and a UUID is a <uuid> rather than five <hex> runs.
-var maskRules = []struct {
-	name        string
-	pattern     *regexp.Regexp
-	placeholder string
-}{
-	{"email", regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`), "<email>"},
-	{"url", regexp.MustCompile(`\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s"']+`), "<url>"},
-	{"uuid", regexp.MustCompile(`\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b`), "<uuid>"},
-	{"ip", regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`), "<ip>"},
-	{"timestamp", regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:?\d{2})?`), "<ts>"},
-	{"hex", regexp.MustCompile(`\b(?:0x)?[0-9a-fA-F]{16,}\b`), "<hex>"},
-	{"duration", regexp.MustCompile(`\b\d+(?:\.\d+)?(?:ns|us|ms|s|m|h)\b`), "<dur>"},
-	{"path", regexp.MustCompile(`(?:^|\s)/(?:[A-Za-z0-9._\-]+/)+[A-Za-z0-9._\-]*`), " <path>"},
-	{"number", regexp.MustCompile(`\b\d+(?:\.\d+)?\b`), "<num>"},
-}
-
-// MaskLine reduces one line to its masked form: every variable the published rules recognise is
-// replaced by its placeholder. It is idempotent — masking a masked line changes nothing — which
-// is what lets the redactor run over a digest a miner already produced.
-func MaskLine(line string) string {
-	if line == "" {
-		return ""
-	}
-	out := line
-	for _, rule := range maskRules {
-		out = rule.pattern.ReplaceAllString(out, rule.placeholder)
-	}
-	return strings.TrimSpace(strings.Join(strings.Fields(out), " "))
-}
-
-// UnmaskedLiterals names the first class of unmasked variable it finds in text, or "" when the
-// text is fully masked. It is the inverse of MaskLine and the check CheckDeclared runs.
-func UnmaskedLiterals(text string) string {
-	if text == "" {
-		return ""
-	}
-	names := make([]string, 0, 2)
-	for _, rule := range maskRules {
-		if rule.name == "number" || rule.name == "path" {
-			// A masked template legitimately keeps small structural numbers in a status code
-			// or a field name, and <path> replacement leaves a leading space the round trip
-			// normalises; both are covered by re-masking rather than by refusal.
-			continue
-		}
-		if rule.pattern.MatchString(text) {
-			names = append(names, rule.name)
-		}
-	}
-	if len(names) == 0 {
-		return ""
-	}
-	sort.Strings(names)
-	return names[0]
 }

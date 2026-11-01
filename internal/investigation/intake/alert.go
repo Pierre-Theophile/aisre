@@ -7,10 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 )
 
 // The monitor front door (T076, FR-001, FR-002, FR-004, FR-005).
@@ -102,7 +103,7 @@ func NormaliseAlert(in MonitorIntake) (*Intake, error) {
 		Severity:         body.GetSeverity(),
 		Title:            body.GetTitle(),
 		TargetRefs:       targets,
-		IdempotencyKey:   eventlog.AlertTransitionKey(in.SourceID, body),
+		IdempotencyKey:   event.AlertTransitionKey(in.SourceID, body),
 	}
 
 	return &Intake{
@@ -156,7 +157,7 @@ func NormaliseReference(in ExplicitReference) (*Intake, error) {
 	// The key is the same 4-tuple: the source is the tool, the stable identifier is the node,
 	// the group is empty and the instant is the one asked about. Two people asking the same
 	// question about the same node at the same instant ask one question.
-	key := eventlog.AlertTransitionKeyParts("investigate", ref.String(), "",
+	key := event.AlertTransitionKeyParts("investigate", ref.String(), "",
 		validAt.Format(time.RFC3339Nano))
 
 	symptom := &investigationv1.Symptom{
@@ -190,7 +191,7 @@ func NormaliseReference(in ExplicitReference) (*Intake, error) {
 // which is already a hash of the 4-tuple: a symptom and its key are the same fact, so giving
 // them separate identities would only create a second way to be wrong.
 func SymptomID(sourceID string, body *graphv1.AlertTransition) string {
-	return eventlog.AlertTransitionKey(sourceID, body)
+	return event.AlertTransitionKey(sourceID, body)
 }
 
 // originRefOf retains the alert's own reference (FR-002). The event body carries an explicit

@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 )
@@ -30,7 +31,7 @@ func proposalProjector(t *testing.T) (*projector.Projector, *postgres.Store) {
 	t.Helper()
 	store := openStoreT(t)
 	p := projector.New(store)
-	if err := p.RegisterSource(context.Background(), eventlog.Source{
+	if err := p.RegisterSource(context.Background(), event.Source{
 		SourceID: proposalSource, Kind: "gcp", Ordering: "none", SchemaVersion: "1.0.0",
 	}); err != nil {
 		t.Fatalf("register source: %v", err)
@@ -320,8 +321,8 @@ func TestADependencyDecisionNeedsAPrincipalAndAProposal(t *testing.T) {
 	if result.GetStatus() != graphv1.IngestResult_REJECTED {
 		t.Errorf("confirming with no principal was %v, want REJECTED", result.GetStatus())
 	}
-	if result.GetReasonCode() != eventlog.ReasonMissingPrincipal {
-		t.Errorf("reason = %q, want %q", result.GetReasonCode(), eventlog.ReasonMissingPrincipal)
+	if result.GetReasonCode() != event.ReasonMissingPrincipal {
+		t.Errorf("reason = %q, want %q", result.GetReasonCode(), event.ReasonMissingPrincipal)
 	}
 }
 
@@ -335,8 +336,8 @@ func TestAProposalMayNotCreateItsEndpoints(t *testing.T) {
 		t.Errorf("a proposal about unknown entities was %v, want REJECTED — minting a placeholder "+
 			"would put a phantom in the review queue", result.GetStatus())
 	}
-	if result.GetReasonCode() != eventlog.ReasonRefUnresolvable {
-		t.Errorf("reason = %q, want %q", result.GetReasonCode(), eventlog.ReasonRefUnresolvable)
+	if result.GetReasonCode() != event.ReasonRefUnresolvable {
+		t.Errorf("reason = %q, want %q", result.GetReasonCode(), event.ReasonRefUnresolvable)
 	}
 	if _, _, found := proposalState(t, store); found {
 		t.Error("a refused proposal was filed anyway")

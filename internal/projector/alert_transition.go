@@ -38,7 +38,7 @@ import (
 // A human declaration is the same event, distinguished by `actor_kind = PERSON` and
 // `transport = human_declared`, never by a separate path (002 FR-002a). The monitor ref is then
 // the place the incident lives, on its stable identifier, and the "group" half of the
-// idempotency key is empty (internal/log/alert.go).
+// idempotency key is empty (internal/event/alert.go).
 //
 // What is deliberately absent: flapping and no-data filtering, which belong to the feeder
 // (log.SuppressAlertTransition), and any interpretation of the state vocabulary. A recovery is

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Pierre-Theophile/aisre/internal/investigation/backend"
+	"github.com/Pierre-Theophile/aisre/internal/mask"
 )
 
 // The applier: one policy, one key, one place every field goes through.
@@ -211,8 +211,8 @@ func (s *Sanitiser) Template(where, line string) (string, bool, error) {
 	if err := s.checkCanary(where, "logEntry.template", line); err != nil {
 		return "", false, err
 	}
-	masked := backend.MaskLine(line)
-	if unmasked := backend.UnmaskedLiterals(masked); unmasked != "" {
+	masked := mask.Line(line)
+	if unmasked := mask.UnmaskedLiterals(masked); unmasked != "" {
 		return "", false, fmt.Errorf("sanitise: a log line in %s still carries an unmasked %s after "+
 			"masking; a raw line has no route to disk (FR-136). This is a defect in the masking "+
 			"rules, not a property of the line", where, unmasked)

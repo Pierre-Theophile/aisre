@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Pierre-Theophile/aisre/internal/mask"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
@@ -190,7 +192,7 @@ func (w *Worker) label(ctx context.Context, digest *investigationv1.LogDigest) e
 // digest (FR-017).
 func sanitiseLabel(label string) string {
 	const maxLabel = 48
-	label = engine.MaskLine(label)
+	label = mask.Line(label)
 	if len(label) > maxLabel {
 		label = label[:maxLabel]
 	}

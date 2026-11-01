@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/projector/inprocess"
+
 	otelfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/otel"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
-	"github.com/Pierre-Theophile/aisre/pkg/feeder/emit"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder/testkit"
 )
 
@@ -66,7 +67,7 @@ func TestConformanceRecordedFixtureAgainstAGraph(t *testing.T) {
 	testkit.Conformance(t, kindFeeder(), recordedFixture,
 		testkit.WithShuffles(2),
 		testkit.WithEmitter(func(t *testing.T, d feeder.Description) testkit.ResultEmitter {
-			return emit.NewProjectorEmitter(projector.New(pgtest.Open(t)), d)
+			return inprocess.New(projector.New(pgtest.Open(t)), d)
 		}))
 }
 
@@ -81,7 +82,7 @@ func TestConformanceBaselineShopAgainstAGraph(t *testing.T) {
 	testkit.Conformance(t, baselineFeeder(), filepath.Join("testdata", "baseline-shop"),
 		testkit.WithShuffles(2),
 		testkit.WithEmitter(func(t *testing.T, d feeder.Description) testkit.ResultEmitter {
-			return emit.NewProjectorEmitter(projector.New(pgtest.Open(t)), d)
+			return inprocess.New(projector.New(pgtest.Open(t)), d)
 		}))
 }
 

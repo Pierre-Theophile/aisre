@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package log
+package event
 
 import (
 	"strings"
@@ -33,7 +33,7 @@ func checkCatalogReserved(env *graphv1.EventEnvelope) *Rejection {
 		if ref.GetNamespace() != graph.CatalogNamespace {
 			return nil
 		}
-		return reject(ReasonCatalogNamespaceReserved,
+		return Reject(ReasonCatalogNamespaceReserved,
 			"%s names the namespace %s, which only catalog decisions may write (ADR-0015 item 1)",
 			field, graph.CatalogNamespace)
 	}
@@ -42,7 +42,7 @@ func checkCatalogReserved(env *graphv1.EventEnvelope) *Rejection {
 		return reserved("upsert_node.ref", body.UpsertNode.GetRef())
 	case *graphv1.EventEnvelope_UpsertEdge:
 		if body.UpsertEdge.GetType() == graphv1.EdgeType_ATTRIBUTED_TO {
-			return reject(ReasonCatalogNamespaceReserved,
+			return Reject(ReasonCatalogNamespaceReserved,
 				"upsert_edge.type ATTRIBUTED_TO is written only by attribute_signal and correct_attribution")
 		}
 		if r := reserved("upsert_edge.src", body.UpsertEdge.GetSrc()); r != nil {
@@ -59,8 +59,8 @@ func checkCatalogReserved(env *graphv1.EventEnvelope) *Rejection {
 	case *graphv1.EventEnvelope_ProposeCatalogEntry, *graphv1.EventEnvelope_ProposeAlias,
 		*graphv1.EventEnvelope_AttributeSignal:
 		if env.GetSourceId() != graph.AttributorSourceID {
-			return reject(ReasonCatalogNamespaceReserved,
-				"%s is accepted only from the source %s, not %q", EventType(env),
+			return Reject(ReasonCatalogNamespaceReserved,
+				"%s is accepted only from the source %s, not %q", Type(env),
 				graph.AttributorSourceID, env.GetSourceId())
 		}
 	}
@@ -72,7 +72,7 @@ func validateProposeCatalogEntry(p *graphv1.ProposeCatalogEntry) *Rejection {
 		return r
 	}
 	if strings.TrimSpace(p.GetDisplayName()) == "" {
-		return reject(ReasonMissingRef, "propose_catalog_entry.display_name")
+		return Reject(ReasonMissingRef, "propose_catalog_entry.display_name")
 	}
 	return requireRefs("propose_catalog_entry.aliases", p.GetAliases())
 }
@@ -82,20 +82,20 @@ func validateDeclareCatalogEntry(d *graphv1.DeclareCatalogEntry) *Rejection {
 		return r
 	}
 	if strings.TrimSpace(d.GetDisplayName()) == "" {
-		return reject(ReasonMissingRef, "declare_catalog_entry.display_name")
+		return Reject(ReasonMissingRef, "declare_catalog_entry.display_name")
 	}
 	if err := graph.CheckCatalogKind(d.GetKind()); err != nil {
-		return reject(ReasonUnknownType, "declare_catalog_entry.kind: %v", err)
+		return Reject(ReasonUnknownType, "declare_catalog_entry.kind: %v", err)
 	}
 	switch d.GetStatus() {
 	case graph.CatalogStatusConfirmed, graph.CatalogStatusHidden:
 	default:
-		return reject(ReasonUnknownType, "declare_catalog_entry.status %q; a person declares an entry "+
+		return Reject(ReasonUnknownType, "declare_catalog_entry.status %q; a person declares an entry "+
 			"%s or %s (only the attributor proposes)", d.GetStatus(),
 			graph.CatalogStatusConfirmed, graph.CatalogStatusHidden)
 	}
 	if len(d.GetDisplayName()) > 120 || len(d.GetOwner()) > 120 || len(d.GetDescription()) > 1000 {
-		return reject(ReasonTelemetryPayload, "declare_catalog_entry: display_name and owner are at most "+
+		return Reject(ReasonTelemetryPayload, "declare_catalog_entry: display_name and owner are at most "+
 			"120 characters, description at most 1,000")
 	}
 	return nil
@@ -107,7 +107,7 @@ func validateAlias(field string, name *graphv1.Ref, slug string) *Rejection {
 		return r
 	}
 	if name.GetNamespace() == graph.CatalogNamespace {
-		return reject(ReasonCatalogNamespaceReserved, "%s.name: an entry is not an alias of another", field)
+		return Reject(ReasonCatalogNamespaceReserved, "%s.name: an entry is not an alias of another", field)
 	}
 	if slug == graph.HiddenEntrySlug {
 		return nil
@@ -120,13 +120,13 @@ func validateProposeAlias(p *graphv1.ProposeAlias) *Rejection {
 		return r
 	}
 	if p.GetEntrySlug() == graph.HiddenEntrySlug {
-		return reject(ReasonUnknownType, "propose_alias.entry_slug: only a person hides a name")
+		return Reject(ReasonUnknownType, "propose_alias.entry_slug: only a person hides a name")
 	}
 	if p.GetRuleId() == "" {
-		return reject(ReasonMissingRef, "propose_alias.rule_id (a proposal names the published rule that made it)")
+		return Reject(ReasonMissingRef, "propose_alias.rule_id (a proposal names the published rule that made it)")
 	}
 	if p.GetScore() <= 0 || p.GetScore() > 1 {
-		return reject(ReasonUnknownType, "propose_alias.score is %v; it must be in (0,1]", p.GetScore())
+		return Reject(ReasonUnknownType, "propose_alias.score is %v; it must be in (0,1]", p.GetScore())
 	}
 	return checkTelemetry("propose_alias.evidence", p.GetEvidence())
 }
@@ -136,7 +136,7 @@ func validateAttributeSignal(a *graphv1.AttributeSignal) *Rejection {
 		return r
 	}
 	if a.GetRuleset() == "" {
-		return reject(ReasonMissingRef, "attribute_signal.ruleset (every attribution records the ruleset it ran under)")
+		return Reject(ReasonMissingRef, "attribute_signal.ruleset (every attribution records the ruleset it ran under)")
 	}
 	for _, list := range []struct {
 		field string
@@ -147,10 +147,10 @@ func validateAttributeSignal(a *graphv1.AttributeSignal) *Rejection {
 				return r
 			}
 			if item.GetRuleId() == "" || item.GetLayer() == "" {
-				return reject(ReasonMissingRef, "%s: every entry names its layer and rule", list.field)
+				return Reject(ReasonMissingRef, "%s: every entry names its layer and rule", list.field)
 			}
 			if item.GetScore() < 0 || item.GetScore() > 1 {
-				return reject(ReasonUnknownType, "%s.score is %v; it must be in [0,1]", list.field, item.GetScore())
+				return Reject(ReasonUnknownType, "%s.score is %v; it must be in [0,1]", list.field, item.GetScore())
 			}
 		}
 	}
@@ -169,18 +169,18 @@ func validateCorrectAttribution(c *graphv1.CorrectAttribution) *Rejection {
 	switch c.GetScope() {
 	case graph.CorrectionScopeSignal:
 		if c.GetName() != nil {
-			return reject(ReasonUnknownType, "correct_attribution.name is set on a signal-level correction")
+			return Reject(ReasonUnknownType, "correct_attribution.name is set on a signal-level correction")
 		}
 	case graph.CorrectionScopeName:
 		if r := requireRef("correct_attribution.name", c.GetName()); r != nil {
 			return r
 		}
 		if len(c.GetEntrySlugs()) != 1 {
-			return reject(ReasonUnknownType, "correct_attribution: a name-level correction names exactly "+
+			return Reject(ReasonUnknownType, "correct_attribution: a name-level correction names exactly "+
 				"one entry, since a name is an alias of one entry")
 		}
 	default:
-		return reject(ReasonUnknownType, "correct_attribution.scope %q; it is %s or %s", c.GetScope(),
+		return Reject(ReasonUnknownType, "correct_attribution.scope %q; it is %s or %s", c.GetScope(),
 			graph.CorrectionScopeSignal, graph.CorrectionScopeName)
 	}
 	return nil
@@ -188,10 +188,10 @@ func validateCorrectAttribution(c *graphv1.CorrectAttribution) *Rejection {
 
 func checkSlug(field, slug string) *Rejection {
 	if slug == "" {
-		return reject(ReasonMissingRef, "%s", field)
+		return Reject(ReasonMissingRef, "%s", field)
 	}
 	if !graph.ValidSlug(slug) {
-		return reject(ReasonUnknownType, "%s %q; a slug is lowercase letters, digits and hyphens, "+
+		return Reject(ReasonUnknownType, "%s %q; a slug is lowercase letters, digits and hyphens, "+
 			"at most 63 characters", field, slug)
 	}
 	return nil

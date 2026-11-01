@@ -9,10 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	gcpfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/gcp"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
@@ -340,7 +341,7 @@ func TestATransitionCarriesGooglesInstantAndThePublishedKey(t *testing.T) {
 		t.Errorf("transition_at = %s, want Google's openTime %s — not the poll instant %s",
 			got, opened, polledAt)
 	}
-	if body.GetToState() != eventlog.AlertStateAlert || body.GetFromState() != eventlog.AlertStateOK {
+	if body.GetToState() != event.AlertStateAlert || body.GetFromState() != event.AlertStateOK {
 		t.Errorf("states = %q → %q", body.GetFromState(), body.GetToState())
 	}
 	if body.GetTransport() != feeder.TransportPoll {
@@ -357,7 +358,7 @@ func TestATransitionCarriesGooglesInstantAndThePublishedKey(t *testing.T) {
 	}
 
 	// The key is derived, not invented.
-	want := eventlog.AlertTransitionKey("gcp:nova", body)
+	want := event.AlertTransitionKey("gcp:nova", body)
 	if got := transitionEventIDs(em.events)[0]; got != want {
 		t.Errorf("event id = %q, want the published 4-tuple %q", got, want)
 	}
@@ -413,7 +414,7 @@ func TestAClosedIncidentEmitsItsRecovery(t *testing.T) {
 	if len(transitions) != 2 {
 		t.Fatalf("got %d transitions, want the open and the close", len(transitions))
 	}
-	if transitions[1].GetToState() != eventlog.AlertStateOK {
+	if transitions[1].GetToState() != event.AlertStateOK {
 		t.Errorf("the second transition is %q → %q, want a recovery",
 			transitions[1].GetFromState(), transitions[1].GetToState())
 	}
@@ -533,10 +534,10 @@ func TestFlappingIsSuppressedAndTheSuppressionIsStated(t *testing.T) {
 	if len(suppressed) != 1 {
 		t.Fatalf("got %d suppressions, want the flap: %v", len(suppressed), suppressed)
 	}
-	if suppressed[0].Reason != eventlog.SuppressFlapping {
-		t.Errorf("suppression reason = %q, want %q", suppressed[0].Reason, eventlog.SuppressFlapping)
+	if suppressed[0].Reason != event.SuppressFlapping {
+		t.Errorf("suppression reason = %q, want %q", suppressed[0].Reason, event.SuppressFlapping)
 	}
-	if !strings.Contains(suppressed[0].String(), eventlog.SuppressFlapping) {
+	if !strings.Contains(suppressed[0].String(), event.SuppressFlapping) {
 		t.Errorf("the suppression does not render its reason: %q", suppressed[0].String())
 	}
 }
@@ -682,7 +683,7 @@ func TestAGCPTransitionAndAHumanDeclarationShareTheConvention(t *testing.T) {
 		if body.GetTransitionAt() == nil {
 			t.Errorf("%s: no transition instant", name)
 		}
-		if key := eventlog.AlertTransitionKey("gcp:nova", body); !strings.HasPrefix(key, "alert:") {
+		if key := event.AlertTransitionKey("gcp:nova", body); !strings.HasPrefix(key, "alert:") {
 			t.Errorf("%s: the key is not the published shape: %q", name, key)
 		}
 	}

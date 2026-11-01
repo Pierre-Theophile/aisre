@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package emit
+// Package inprocess is the in-process feeder emitter.
+//
+// Emitter skips the network and applies a feeder's events to a graph in this process. Two
+// callers want that: the conformance testkit, which needs real DUPLICATE_NOOP answers to prove
+// a feeder is idempotent, and an offline run that replays a recording into a database directly
+// — `aisre fixture record` is that, without a server.
+//
+// It lives here rather than in pkg/feeder/emit because it holds the Postgres-backed projector:
+// keeping it out of the public emit package means a connector built on pkg/feeder never links a
+// database driver. An out-of-tree connector talks to a graph over its published RPC surface
+// (emit.ConnectEmitter), never to its storage layer.
+package inprocess
 
 import (
 	"context"
@@ -8,25 +19,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
-// The in-process path.
-//
-// ProjectorEmitter skips the network and applies events to a graph in this process. Two
-// callers want that: the conformance testkit, which needs real DUPLICATE_NOOP answers to prove
-// a feeder is idempotent, and an offline run that replays a recording into a database directly
-// — `aisre fixture record` is that, without a server.
-//
-// The projector it applies to is an internal type, so this constructor is usable from inside
-// this repository and from nothing else. That is deliberate: an out-of-tree connector talks to
-// a graph over its published RPC surface (ConnectEmitter), never to its storage layer.
-
-// ProjectorEmitter applies a feeder's events directly to a graph in this process.
-type ProjectorEmitter struct {
+// Emitter applies a feeder's events directly to a graph in this process.
+type Emitter struct {
 	desc feeder.Description
 	p    *projector.Projector
 	now  func() time.Time
@@ -37,22 +38,22 @@ type ProjectorEmitter struct {
 	rejected   []*graphv1.IngestResult
 }
 
-var _ feeder.Emitter = (*ProjectorEmitter)(nil)
+var _ feeder.Emitter = (*Emitter)(nil)
 
-// ProjectorOption configures a ProjectorEmitter.
-type ProjectorOption func(*ProjectorEmitter)
+// Option configures a Emitter.
+type Option func(*Emitter)
 
-// WithProjectorClock pins the observed time stamped on each event. The default leaves it to
+// WithClock pins the observed time stamped on each event. The default leaves it to
 // the graph, which is what a live feeder always wants; a recording pins it so that replaying
 // the recording reproduces the same observed intervals (FR-023).
-func WithProjectorClock(now func() time.Time) ProjectorOption {
-	return func(e *ProjectorEmitter) { e.now = now }
+func WithClock(now func() time.Time) Option {
+	return func(e *Emitter) { e.now = now }
 }
 
-// NewProjectorEmitter returns an emitter over p. The feeder's source is registered on the
+// New returns an emitter over p. The feeder's source is registered on the
 // first event.
-func NewProjectorEmitter(p *projector.Projector, desc feeder.Description, opts ...ProjectorOption) *ProjectorEmitter {
-	e := &ProjectorEmitter{desc: desc, p: p}
+func New(p *projector.Projector, desc feeder.Description, opts ...Option) *Emitter {
+	e := &Emitter{desc: desc, p: p}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -60,20 +61,20 @@ func NewProjectorEmitter(p *projector.Projector, desc feeder.Description, opts .
 }
 
 // Describe returns the description the emitter was built for.
-func (e *ProjectorEmitter) Describe() feeder.Description { return e.desc }
+func (e *Emitter) Describe() feeder.Description { return e.desc }
 
 // Register declares the feeder's contract to the graph (FR-018).
-func (e *ProjectorEmitter) Register(ctx context.Context) error {
+func (e *Emitter) Register(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.registerLocked(ctx)
 }
 
-func (e *ProjectorEmitter) registerLocked(ctx context.Context) error {
+func (e *Emitter) registerLocked(ctx context.Context) error {
 	if e.registered {
 		return nil
 	}
-	err := e.p.RegisterSource(ctx, eventlog.Source{
+	err := e.p.RegisterSource(ctx, event.Source{
 		SourceID:         e.desc.SourceID,
 		Kind:             e.desc.Kind,
 		Ordering:         e.desc.Ordering.String(),
@@ -88,7 +89,7 @@ func (e *ProjectorEmitter) registerLocked(ctx context.Context) error {
 }
 
 // Emit applies one event and returns the graph's real answer, rejections included.
-func (e *ProjectorEmitter) Emit(ctx context.Context, ev *graphv1.EventEnvelope) (*graphv1.IngestResult, error) {
+func (e *Emitter) Emit(ctx context.Context, ev *graphv1.EventEnvelope) (*graphv1.IngestResult, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if err := e.registerLocked(ctx); err != nil {
@@ -111,23 +112,23 @@ func (e *ProjectorEmitter) Emit(ctx context.Context, ev *graphv1.EventEnvelope) 
 }
 
 // Checkpoint records the feeder's observed extent as a source_checkpoint event (FR-032).
-func (e *ProjectorEmitter) Checkpoint(ctx context.Context, fact feeder.CheckpointFact) error {
+func (e *Emitter) Checkpoint(ctx context.Context, fact feeder.CheckpointFact) error {
 	_, err := e.Emit(ctx, feeder.SourceCheckpoint(e.desc, feeder.CheckpointID(e.desc, fact.ExtentTo), fact))
 	return err
 }
 
 // Flush is a no-op: every event was applied as it arrived, in its own transaction.
-func (e *ProjectorEmitter) Flush(context.Context) error { return nil }
+func (e *Emitter) Flush(context.Context) error { return nil }
 
 // Results returns one result per Emit call, in call order.
-func (e *ProjectorEmitter) Results() []*graphv1.IngestResult {
+func (e *Emitter) Results() []*graphv1.IngestResult {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return append([]*graphv1.IngestResult(nil), e.results...)
 }
 
 // Rejected returns the refused results.
-func (e *ProjectorEmitter) Rejected() []*graphv1.IngestResult {
+func (e *Emitter) Rejected() []*graphv1.IngestResult {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return append([]*graphv1.IngestResult(nil), e.rejected...)
@@ -135,7 +136,7 @@ func (e *ProjectorEmitter) Rejected() []*graphv1.IngestResult {
 
 // Reset forgets the recorded results, leaving the graph alone. A double-delivery check resets
 // between the two runs so that the second run's results stand on their own.
-func (e *ProjectorEmitter) Reset() {
+func (e *Emitter) Reset() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.results = nil

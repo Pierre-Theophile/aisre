@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/fixture/graphquery"
+
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/replay"
@@ -231,7 +233,7 @@ func TestTheInvestigationSchemaRebuildsFromTheEventLogAndARegenerableWorld(t *te
 	if err != nil {
 		t.Fatalf("manifest: %v", err)
 	}
-	runner := query.NewRunner(query.NewEngine(store))
+	runner := graphquery.NewRunner(query.NewEngine(store))
 	answered := 0
 	for _, q := range m.Queries {
 		if _, err := runner.Run(ctx, q); err != nil {

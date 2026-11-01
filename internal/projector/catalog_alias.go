@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"github.com/jackc/pgx/v5"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 )
 
 // Aliases (feature 009, ADR-0015 item 3, research R2, R9).
@@ -251,7 +252,7 @@ func (p *Projector) appendAliasProposalEvent(ctx context.Context, tx pgx.Tx, key
 
 // checkEntries refuses a catalog event naming an entry the graph has never seen. "-" (a hidden
 // name) has no node and is always known.
-func (p *Projector) checkEntries(ctx context.Context, tx pgx.Tx, field string, slugs ...string) (*eventlog.Rejection, error) {
+func (p *Projector) checkEntries(ctx context.Context, tx pgx.Tx, field string, slugs ...string) (*event.Rejection, error) {
 	for _, slug := range slugs {
 		if slug == graph.HiddenEntrySlug {
 			continue
@@ -259,8 +260,8 @@ func (p *Projector) checkEntries(ctx context.Context, tx pgx.Tx, field string, s
 		if _, found, err := p.lookupRef(ctx, tx, graph.CatalogRef(slug)); err != nil {
 			return nil, err
 		} else if !found {
-			return &eventlog.Rejection{
-				ReasonCode: eventlog.ReasonRefUnresolvable,
+			return &event.Rejection{
+				ReasonCode: event.ReasonRefUnresolvable,
 				ReasonDetail: fmt.Sprintf("%s names the catalog entry %q, which does not exist; declare it "+
 					"first", field, slug),
 			}, nil
@@ -270,15 +271,15 @@ func (p *Projector) checkEntries(ctx context.Context, tx pgx.Tx, field string, s
 }
 
 // checkRetractAlias refuses a retraction of an alias that is not current.
-func (p *Projector) checkRetractAlias(ctx context.Context, tx pgx.Tx, body *graphv1.RetractAlias) (*eventlog.Rejection, error) {
+func (p *Projector) checkRetractAlias(ctx context.Context, tx pgx.Tx, body *graphv1.RetractAlias) (*event.Rejection, error) {
 	name := graph.RefFromProto(body.GetName())
 	current, found, err := p.currentAlias(ctx, tx, name, body.GetEnvironment())
 	if err != nil {
 		return nil, err
 	}
 	if !found || current.entrySlug != body.GetEntrySlug() {
-		return &eventlog.Rejection{
-			ReasonCode: eventlog.ReasonRefUnresolvable,
+		return &event.Rejection{
+			ReasonCode: event.ReasonRefUnresolvable,
 			ReasonDetail: fmt.Sprintf("retract_alias: %s (environment %q) is not currently an alias of %q",
 				name, body.GetEnvironment(), body.GetEntrySlug()),
 		}, nil

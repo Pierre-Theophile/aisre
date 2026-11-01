@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package query
+package graphquery
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
+	"github.com/Pierre-Theophile/aisre/internal/query"
 )
 
 // The bridge from a fixture manifest to the query engine (FR-047, constitution VIII).
@@ -25,13 +26,13 @@ import (
 
 // Runner answers manifest queries against one engine. It implements fixture.QueryRunner.
 type Runner struct {
-	engine *Engine
+	engine *query.Engine
 }
 
 var _ fixture.QueryRunner = (*Runner)(nil)
 
 // NewRunner returns the manifest query runner for engine.
-func NewRunner(engine *Engine) *Runner { return &Runner{engine: engine} }
+func NewRunner(engine *query.Engine) *Runner { return &Runner{engine: engine} }
 
 // Run answers one manifest query. The returned message is the whole response message, which is
 // what the golden holds.
@@ -80,7 +81,7 @@ func (r *Runner) Run(ctx context.Context, q fixture.Query) (proto.Message, error
 		}
 		return r.engine.Suggestions(ctx, req)
 	case "extent":
-		return r.engine.log.Extent(ctx)
+		return r.engine.Extent(ctx)
 	case "catalog":
 		return r.engine.ListEntries(ctx, &graphv1.ListEntriesRequest{AsOf: catalogQueryAsOf(q), Status: q.Status})
 	case "proposals":
@@ -116,11 +117,11 @@ func SubgraphRequestFromQuery(q fixture.Query) (*graphv1.SubgraphRequest, error)
 	if err != nil {
 		return nil, err
 	}
-	direction, err := ParseDirection(q.Direction)
+	direction, err := query.ParseDirection(q.Direction)
 	if err != nil {
 		return nil, err
 	}
-	edgeTypes, err := ParseEdgeTypes(q.EdgeTypes)
+	edgeTypes, err := query.ParseEdgeTypes(q.EdgeTypes)
 	if err != nil {
 		return nil, err
 	}
@@ -302,44 +303,6 @@ func extraNumber(q fixture.Query, key string) (float64, bool, error) {
 	default:
 		return 0, false, fmt.Errorf("query: %q: %s = %v: want a number", q.Name, key, raw)
 	}
-}
-
-// ParseDirection accepts the spellings a manifest and the CLI use. An empty string means the
-// default, BOTH.
-func ParseDirection(s string) (graphv1.Direction, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "both":
-		return graphv1.Direction_BOTH, nil
-	case "up", "upstream":
-		return graphv1.Direction_UPSTREAM, nil
-	case "down", "downstream":
-		return graphv1.Direction_DOWNSTREAM, nil
-	default:
-		return graphv1.Direction_DIRECTION_UNSPECIFIED,
-			fmt.Errorf("query: direction %q: want up, down or both", s)
-	}
-}
-
-// ParseEdgeTypes converts edge type names to the published enum. Both the canonical spelling
-// (`depends_on`) and the hyphenated one used in prose and on the command line (`depends-on`)
-// are accepted.
-func ParseEdgeTypes(names []string) ([]graphv1.EdgeType, error) {
-	if len(names) == 0 {
-		return nil, nil
-	}
-	out := make([]graphv1.EdgeType, 0, len(names))
-	for _, name := range names {
-		normalized := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(name)), "-", "_")
-		if normalized == "" {
-			continue
-		}
-		edgeType, err := graph.ParseEdgeType(normalized)
-		if err != nil {
-			return nil, fmt.Errorf("query: edge type %q: want one of calls, depends_on, runs_on, deployed_by, owned_by, exposed_via, changed_by", name)
-		}
-		out = append(out, edgeType.Proto())
-	}
-	return out, nil
 }
 
 // ResolutionAuditRequestFromQuery builds a ResolutionAuditRequest from a manifest query
