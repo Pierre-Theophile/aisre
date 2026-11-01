@@ -40,6 +40,9 @@ import (
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 	kstore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
+
+	// The harness replays Anthropic-shaped trajectories, so it links the adapter.
+	_ "github.com/Pierre-Theophile/aisre/internal/investigation/model/anthropic"
 )
 
 // The harness (T107, T111; FR-042a, FR-061, FR-063, contracts/incident-format.md).

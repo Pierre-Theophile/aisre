@@ -1,0 +1,41 @@
+# A model configuration that runs every role on a self-hosted, OpenAI-compatible server.
+#
+# `provider: openai_compatible` speaks the chat-completions wire format at `{base_url}/chat/completions`,
+# which Ollama, vLLM, LocalAI, llama.cpp's server and TGI all serve, as does OpenAI itself. Each
+# role names its own server, so the investigator and the verifier can run on different machines
+# or different model families — the verifier is meant to be decorrelated from the investigator
+# (FR-022a). `base_url` is recorded with the rest of this file on every investigation (FR-061),
+# so a recording always says which server answered it.
+#
+# Two things to adapt before using it:
+#   - the model names to what your server serves (`ollama list`, vLLM's `--served-model-name`);
+#   - the price table: every model a role names must be priced (FR-048). For a self-hosted model,
+#     price it at your own compute cost per million tokens and give the table its own version.
+#
+# The model must support tool calling (function calling) and JSON-schema structured output; the
+# investigation loop relies on both.
+version: "selfhosted-1"
+
+roles:
+  investigator:
+    provider: openai_compatible
+    base_url: http://localhost:8000/v1   # vLLM's default
+    model: Qwen/Qwen3-32B
+    purpose: The investigation loop, on a self-hosted reasoning model with tool calling.
+    # Optional. Name the variable that holds a bearer token; leave it out for a local server
+    # that takes none.
+    api_key_env: VLLM_API_KEY
+
+  verifier:
+    provider: openai_compatible
+    base_url: http://localhost:11434/v1   # Ollama's default
+    model: mistral-small3.2
+    purpose: The fresh-context verification pass, on a different model family from the investigator.
+
+  logs_labeller:
+    provider: openai_compatible
+    base_url: http://localhost:11434/v1
+    model: llama3.2:3b
+    purpose: The optional labelling pass over mined log templates.
+
+price_table_version: "selfhosted-1"
