@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/projector/inprocess"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
@@ -315,7 +317,7 @@ func TestConformanceAgainstARealGraph(t *testing.T) {
 
 	withGraph := testkit.WithEmitter(func(t *testing.T, d feeder.Description) testkit.ResultEmitter {
 		t.Helper()
-		return emit.NewProjectorEmitter(projector.New(pgtest.Open(t)), d)
+		return inprocess.New(projector.New(pgtest.Open(t)), d)
 	})
 	testkit.Conformance(t, f, dir, withGraph, testkit.WithShuffles(2))
 }

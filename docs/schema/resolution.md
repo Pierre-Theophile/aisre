@@ -603,7 +603,7 @@ and `split`, they must not.
 | C1–C3 | `internal/resolution/certain.go` |
 | C8, P7 | `internal/resolution/deploy.go` |
 | the published correlation namespaces | `internal/graph/correlation.go` |
-| `correlation_as_identity` | `internal/log/validate.go` |
+| `correlation_as_identity` | `internal/event/validate.go` |
 | storing and re-pointing correlation keys | `internal/projector/refs.go` |
 | the C8 re-trigger queue | `internal/projector/retrigger.go`, migration `0012` |
 | P1–P3, normalization, type guard | `internal/resolution/probable.go` |

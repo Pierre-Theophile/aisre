@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -104,7 +106,7 @@ func New(p *projector.Projector, opts ...Option) *Attributor {
 
 // Register records the attributor's source, once; the log refuses events from an unknown one.
 func (a *Attributor) Register(ctx context.Context) error {
-	return a.projector.RegisterSource(ctx, eventlog.Source{
+	return a.projector.RegisterSource(ctx, event.Source{
 		SourceID: graph.AttributorSourceID, Kind: "attributor", Ordering: "none", SchemaVersion: SchemaVersion,
 	})
 }

@@ -133,36 +133,6 @@ func TestVersionSurvivesRedaction(t *testing.T) {
 	}
 }
 
-func TestMaskLine(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		line string
-		want string
-	}{
-		{"email", "login failed for alice@example.com", "login failed for <email>"},
-		{"ip", "connection refused from 10.1.2.3", "connection refused from <ip>"},
-		{"uuid", "request 3f2504e0-4f89-11d3-9a0c-0305e82c3301 failed", "request <uuid> failed"},
-		{"duration", "upstream took 251ms", "upstream took <dur>"},
-		{"number", "returned status 503 after 3 retries", "returned status <num> after <num> retries"},
-		{"url", "GET https://payments.internal/orders failed", "GET <url> failed"},
-		{"already masked", "upstream took <dur>", "upstream took <dur>"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := engine.MaskLine(tc.line)
-			if got != tc.want {
-				t.Errorf("MaskLine(%q) = %q, want %q", tc.line, got, tc.want)
-			}
-			if again := engine.MaskLine(got); again != got {
-				t.Errorf("masking is not idempotent: %q → %q", got, again)
-			}
-		})
-	}
-}
-
 // TestUndeclaredRedactionIsRejected: a backend that emits a field its declaration does not cover
 // is refused at the boundary, not in a corpus review months later.
 func TestUndeclaredRedactionIsRejected(t *testing.T) {

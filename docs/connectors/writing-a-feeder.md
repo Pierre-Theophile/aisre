@@ -777,7 +777,7 @@ database:
 ```go
 testkit.Conformance(t, f, dir, testkit.WithEmitter(
     func(t *testing.T, d feeder.Description) testkit.ResultEmitter {
-        return emit.NewProjectorEmitter(projector.New(pgtest.Open(t)), d)
+        return inprocess.New(projector.New(pgtest.Open(t)), d)
     }))
 ```
 

@@ -12,12 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"cloud.google.com/go/monitoring/apiv3/v2/monitoringpb"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
@@ -835,14 +836,14 @@ type AlertTransitionObservation struct {
 func (i AlertIncident) Transitions() []AlertTransitionObservation {
 	out := []AlertTransitionObservation{{
 		At:   i.OpenTime,
-		From: eventlog.AlertStateOK,
-		To:   eventlog.AlertStateAlert,
+		From: event.AlertStateOK,
+		To:   event.AlertStateAlert,
 	}}
 	if i.State == IncidentClosed && !i.CloseTime.IsZero() {
 		out = append(out, AlertTransitionObservation{
 			At:   i.CloseTime,
-			From: eventlog.AlertStateAlert,
-			To:   eventlog.AlertStateOK,
+			From: event.AlertStateAlert,
+			To:   event.AlertStateOK,
 		})
 	}
 	return out
@@ -1039,7 +1040,7 @@ func (f *Feeder) emitIncident(ctx context.Context, desc feeder.Description, em f
 		// The event id is the published 4-tuple, derived rather than invented: it is what makes
 		// the poll, the doorbell-triggered poll that follows it and a human declaration about the
 		// same alert one event (FR-046, FR-050).
-		eventID := eventlog.AlertTransitionKey(desc.SourceID, body)
+		eventID := event.AlertTransitionKey(desc.SourceID, body)
 		if err := emit(ctx, em, feeder.ObserveAlertTransition(desc, eventID, fact)); err != nil {
 			return err
 		}
@@ -1059,10 +1060,10 @@ func (f *Feeder) suppress(entity AlertGroup, fact *feeder.AlertFact) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	prev := f.alerts[entity.Value()]
-	if reason := eventlog.SuppressAlertTransition(prev, body, 0); reason != "" {
+	if reason := event.SuppressAlertTransition(prev, body, 0); reason != "" {
 		return reason
 	}
-	next := &eventlog.AlertSeries{State: fact.ToState, At: fact.TransitionAt.UTC()}
+	next := &event.AlertSeries{State: fact.ToState, At: fact.TransitionAt.UTC()}
 	if prev != nil {
 		next.PreviousState = prev.State
 	} else {
@@ -1179,7 +1180,7 @@ func (f *Feeder) Handoff(incident AlertIncident) AlertHandoff {
 		GroupKey:        group,
 		Watches:         incident.Watches(),
 		ReferenceAt:     incident.OpenTime,
-		State:           eventlog.AlertStateAlert,
+		State:           event.AlertStateAlert,
 		Severity:        incident.Severity,
 		Title:           incident.PolicyDisplayName,
 		OriginRef:       incident.ConsoleLink(),

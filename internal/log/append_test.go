@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -29,7 +31,7 @@ func newLog(t *testing.T) (*eventlog.Log, *postgres.Store) {
 	t.Helper()
 	store := pgtest.Open(t)
 	l := eventlog.New(store)
-	if err := l.RegisterSource(context.Background(), eventlog.Source{
+	if err := l.RegisterSource(context.Background(), event.Source{
 		SourceID:         "otel:demo",
 		Kind:             "otel",
 		Ordering:         "none",
@@ -131,9 +133,9 @@ func TestAppendRejections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Append: %v", err)
 	}
-	if result.GetStatus() != graphv1.IngestResult_REJECTED || result.GetReasonCode() != eventlog.ReasonUnknownSource {
+	if result.GetStatus() != graphv1.IngestResult_REJECTED || result.GetReasonCode() != event.ReasonUnknownSource {
 		t.Fatalf("status = %s reason = %q, want REJECTED/%s",
-			result.GetStatus(), result.GetReasonCode(), eventlog.ReasonUnknownSource)
+			result.GetStatus(), result.GetReasonCode(), event.ReasonUnknownSource)
 	}
 
 	// A validation failure is recorded and never reaches the log (FR-024).
@@ -146,9 +148,9 @@ func TestAppendRejections(t *testing.T) {
 		t.Fatalf("Append: %v", err)
 	}
 	if result.GetStatus() != graphv1.IngestResult_REJECTED ||
-		result.GetReasonCode() != eventlog.ReasonTelemetryPayload {
+		result.GetReasonCode() != event.ReasonTelemetryPayload {
 		t.Fatalf("status = %s reason = %q, want REJECTED/%s",
-			result.GetStatus(), result.GetReasonCode(), eventlog.ReasonTelemetryPayload)
+			result.GetStatus(), result.GetReasonCode(), event.ReasonTelemetryPayload)
 	}
 	if count := countRows(t, store, `SELECT count(*) FROM log.events`); count != 0 {
 		t.Errorf("log holds %d events, want 0: a rejected event never enters the log", count)

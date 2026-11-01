@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -36,7 +38,7 @@ func catalogProjectorOn(t *testing.T, store *postgres.Store) *projector.Projecto
 	t.Helper()
 	p := projector.New(store)
 	for _, src := range []string{catalogFeeder, catalogHuman, graph.AttributorSourceID} {
-		if err := p.RegisterSource(context.Background(), eventlog.Source{
+		if err := p.RegisterSource(context.Background(), event.Source{
 			SourceID: src, Kind: "test", Ordering: "none", SchemaVersion: "1.0.0",
 		}); err != nil {
 			t.Fatalf("register source %s: %v", src, err)
@@ -227,7 +229,7 @@ func TestCatalogEntryLifecycle(t *testing.T) {
 
 	// A person's decision without a person is refused (001 FR-041).
 	mustReject(t, p, declareEntry("d0", "candidate-view", "Candidate View", graph.CatalogStatusConfirmed),
-		"", "2026-10-19T09:00:00Z", eventlog.ReasonMissingPrincipal)
+		"", "2026-10-19T09:00:00Z", event.ReasonMissingPrincipal)
 
 	// The attributor proposes; the entry exists as proposed, with its entity's claims as aliases.
 	mustApply(t, p, proposeEntry("p1", "candidate-view", "candidate-api", ddService("candidate-api")),
@@ -278,16 +280,16 @@ func TestNoConnectorWritesTheCatalog(t *testing.T) {
 		Ref: graph.CatalogRef("candidate-view").Proto(), Type: graphv1.NodeType_SERVICE,
 		ValidAt: timestamppb.New(mustTime(at)),
 	}}
-	mustReject(t, p, node, "", at, eventlog.ReasonCatalogNamespaceReserved)
+	mustReject(t, p, node, "", at, event.ReasonCatalogNamespaceReserved)
 
 	feederProposal := proposeEntry("p1", "candidate-view", "x")
 	feederProposal.SourceId = catalogFeeder
-	mustReject(t, p, feederProposal, "", at, eventlog.ReasonCatalogNamespaceReserved)
+	mustReject(t, p, feederProposal, "", at, event.ReasonCatalogNamespaceReserved)
 	mustApply(t, p, alertNode("a1"), "", at)
 	mustApply(t, p, declareEntry("d1", "candidate-view", "Candidate View", graph.CatalogStatusConfirmed),
 		catalogPerson, "2026-10-19T09:00:01Z")
 	mustReject(t, p, attribute("x1", catalogFeeder, "candidate-view"), "", "2026-10-19T09:00:02Z",
-		eventlog.ReasonCatalogNamespaceReserved)
+		event.ReasonCatalogNamespaceReserved)
 }
 
 func TestAliasReassignmentAndRetraction(t *testing.T) {
@@ -299,7 +301,7 @@ func TestAliasReassignmentAndRetraction(t *testing.T) {
 		catalogPerson, "2026-10-19T09:00:01Z")
 
 	mustReject(t, p, declareAlias("x0", ddService("candidate-api"), "nowhere"), catalogPerson,
-		"2026-10-19T09:00:02Z", eventlog.ReasonRefUnresolvable)
+		"2026-10-19T09:00:02Z", event.ReasonRefUnresolvable)
 	mustApply(t, p, declareAlias("al1", ddService("candidate-api"), "infra"), catalogPerson, "2026-10-19T09:00:03Z")
 	mustApply(t, p, declareAlias("al2", ddService("candidate-api"), "candidate-view"), catalogPerson,
 		"2026-10-19T09:00:04Z")
@@ -313,7 +315,7 @@ func TestAliasReassignmentAndRetraction(t *testing.T) {
 	}
 
 	mustReject(t, p, retractAlias("r0", ddService("candidate-api"), "infra"), catalogPerson,
-		"2026-10-19T09:00:05Z", eventlog.ReasonRefUnresolvable)
+		"2026-10-19T09:00:05Z", event.ReasonRefUnresolvable)
 	mustApply(t, p, retractAlias("r1", ddService("candidate-api"), "candidate-view"), catalogPerson,
 		"2026-10-19T09:00:06Z")
 	if got := currentAliases(t, store); len(got) != 0 {
@@ -380,9 +382,9 @@ func TestAttributionCorrectionAndRevert(t *testing.T) {
 
 	// Refusals: no principal, an unknown correction, a revert twice.
 	mustReject(t, p, correct("c9", graph.CorrectionScopeSignal, nil, "infra"), "", "2026-10-19T09:00:09Z",
-		eventlog.ReasonMissingPrincipal)
-	mustReject(t, p, revert("v9", "nope"), catalogPerson, "2026-10-19T09:00:10Z", eventlog.ReasonRefUnresolvable)
-	mustReject(t, p, revert("v8", "c1"), catalogPerson, "2026-10-19T09:00:11Z", eventlog.ReasonRefUnresolvable)
+		event.ReasonMissingPrincipal)
+	mustReject(t, p, revert("v9", "nope"), catalogPerson, "2026-10-19T09:00:10Z", event.ReasonRefUnresolvable)
+	mustReject(t, p, revert("v8", "c1"), catalogPerson, "2026-10-19T09:00:11Z", event.ReasonRefUnresolvable)
 }
 
 func TestCatalogEventsSurviveReplay(t *testing.T) {

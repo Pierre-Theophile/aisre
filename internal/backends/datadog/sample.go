@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/mask"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
@@ -124,7 +126,7 @@ func versionOf(ev datadogx.LogEvent, facet string) string {
 // matches reports whether a line belongs to a mined template: the same tokens once masked, with the
 // template's wildcards matching any one token.
 func matches(template, line string) bool {
-	want, got := strings.Fields(template), strings.Fields(engine.MaskLine(line))
+	want, got := strings.Fields(template), strings.Fields(mask.Line(line))
 	if len(want) != len(got) {
 		return false
 	}

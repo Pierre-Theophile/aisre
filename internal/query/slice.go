@@ -1015,3 +1015,6 @@ func scanStrings(rows rowScanner, what string) ([]string, error) {
 	}
 	return out, nil
 }
+
+// Extent reports the time range the event log covers.
+func (e *Engine) Extent(ctx context.Context) (*graphv1.Extent, error) { return e.log.Extent(ctx) }

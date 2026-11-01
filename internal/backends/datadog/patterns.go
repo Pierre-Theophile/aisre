@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/mask"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
@@ -189,7 +191,7 @@ func (b *Backend) exemplars(ctx context.Context, term *investigationv1.Exemplars
 		if p.Kind == handlePattern && !matches(p.Group, line.Text) {
 			continue
 		}
-		fingerprint := engine.MaskLine(line.Text) + "\x00" + line.PodOrHost + "\x00" + line.Version
+		fingerprint := mask.Line(line.Text) + "\x00" + line.PodOrHost + "\x00" + line.Version
 		if seen[fingerprint] {
 			continue
 		}

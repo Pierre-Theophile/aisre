@@ -70,7 +70,7 @@ import "slices"
 // The correlation namespaces this schema publishes.
 //
 // Each is a value several entities legitimately share. They are refused as identity claims
-// (internal/log/validate.go), so the mistake of minting one as a name is caught at the event log
+// (internal/event/validate.go), so the mistake of minting one as a name is caught at the event log
 // rather than found later as an order-dependent graph.
 const (
 	// CorrelationDeployCommitSHA is the commit a rollout shipped. A monorepo run ships one commit to

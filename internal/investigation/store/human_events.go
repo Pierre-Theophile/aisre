@@ -11,13 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 )
 
@@ -57,7 +58,7 @@ import (
 const HumanActionSchemaVersion = DecisionRecordSchemaVersion
 
 // HumanActionSourceID is the source every human action against an investigation is logged under.
-const HumanActionSourceID = eventlog.HumanSourceID
+const HumanActionSourceID = event.HumanSourceID
 
 // HumanFactKey is the published idempotency key of a human fact:
 // `sha256(investigation_id, author, submitted_at, statement)`.
@@ -238,7 +239,7 @@ func (d *InvestigationDAO) emitHumanEvent(
 	if d == nil || d.proj == nil {
 		return nil
 	}
-	if err := d.proj.Log().RegisterSource(ctx, eventlog.HumanSource(), tx); err != nil {
+	if err := d.proj.Log().RegisterSource(ctx, event.HumanSource(), tx); err != nil {
 		return err
 	}
 	// No observed instant is passed, so the log stamps the append (FR-019). The action's own

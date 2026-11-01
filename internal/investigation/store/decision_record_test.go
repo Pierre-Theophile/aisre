@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/structpb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
 )
@@ -61,7 +62,7 @@ func TestDecisionRecordPassesTheValidator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build envelope: %v", err)
 	}
-	if rejection := eventlog.Validate(env, eventlog.DefaultSchemaVersions); rejection != nil {
+	if rejection := event.Validate(env, event.DefaultSchemaVersions); rejection != nil {
 		t.Fatalf("the decision record was rejected: %s", rejection.Error())
 	}
 
@@ -130,7 +131,7 @@ func TestDecisionRecordIsRejectedWhenASampleSneaksIn(t *testing.T) {
 					},
 				})
 			},
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "numeric samples",
 		},
 		{
@@ -140,7 +141,7 @@ func TestDecisionRecordIsRejectedWhenASampleSneaksIn(t *testing.T) {
 					"sre.investigation.model_config": map[string]any{"value": 12.5},
 				})
 			},
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "value",
 		},
 		{
@@ -148,7 +149,7 @@ func TestDecisionRecordIsRejectedWhenASampleSneaksIn(t *testing.T) {
 			mutate: func(body *graphv1.RecordInvestigation) {
 				body.Spend = mustStruct(t, map[string]any{"spend": map[string]any{"calls": 3}})
 			},
-			wantCode:   eventlog.ReasonPropNamespace,
+			wantCode:   event.ReasonPropNamespace,
 			wantDetail: "sre.investigation.",
 		},
 		{
@@ -158,7 +159,7 @@ func TestDecisionRecordIsRejectedWhenASampleSneaksIn(t *testing.T) {
 					"sre.investigation.hypotheses": strings.Repeat("x", 5<<10),
 				})
 			},
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "above the 4096 byte property limit",
 		},
 	}
@@ -173,7 +174,7 @@ func TestDecisionRecordIsRejectedWhenASampleSneaksIn(t *testing.T) {
 			body := env.GetBody().(*graphv1.EventEnvelope_RecordInvestigation).RecordInvestigation
 			tc.mutate(body)
 
-			rejection := eventlog.Validate(env, eventlog.DefaultSchemaVersions)
+			rejection := event.Validate(env, event.DefaultSchemaVersions)
 			if rejection == nil {
 				t.Fatalf("the tampered decision record was accepted; want %s", tc.wantCode)
 			}
@@ -210,7 +211,7 @@ func TestDecisionRecordStaysInsideThePropertyCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build envelope: %v", err)
 	}
-	if rejection := eventlog.Validate(env, eventlog.DefaultSchemaVersions); rejection != nil {
+	if rejection := event.Validate(env, event.DefaultSchemaVersions); rejection != nil {
 		t.Fatalf("a wide investigation's record was rejected: %s", rejection.Error())
 	}
 
@@ -242,7 +243,7 @@ func TestEmitDecisionRecordWritesExactlyOneEvent(t *testing.T) {
 	seedInvestigation(ctx, t, store)
 
 	proj := projector.New(store)
-	if err := proj.RegisterSource(ctx, eventlog.Source{
+	if err := proj.RegisterSource(ctx, event.Source{
 		SourceID:      investigationstore.DecisionRecordSourceID,
 		Kind:          "investigation",
 		Ordering:      "none",
@@ -312,7 +313,7 @@ func TestEmitDecisionRecordReportsARejectionRatherThanFailing(t *testing.T) {
 	seedInvestigation(ctx, t, store)
 
 	proj := projector.New(store)
-	if err := proj.RegisterSource(ctx, eventlog.Source{
+	if err := proj.RegisterSource(ctx, event.Source{
 		SourceID:      investigationstore.DecisionRecordSourceID,
 		Kind:          "investigation",
 		Ordering:      "none",
@@ -331,10 +332,10 @@ func TestEmitDecisionRecordReportsARejectionRatherThanFailing(t *testing.T) {
 	if result.GetStatus() != graphv1.IngestResult_REJECTED {
 		t.Fatalf("emit = %s, want REJECTED", result.GetStatus())
 	}
-	if result.GetReasonCode() != eventlog.ReasonPropNamespace &&
-		result.GetReasonCode() != eventlog.ReasonTelemetryPayload {
+	if result.GetReasonCode() != event.ReasonPropNamespace &&
+		result.GetReasonCode() != event.ReasonTelemetryPayload {
 		t.Errorf("reason code = %s, want %s or %s", result.GetReasonCode(),
-			eventlog.ReasonPropNamespace, eventlog.ReasonTelemetryPayload)
+			event.ReasonPropNamespace, event.ReasonTelemetryPayload)
 	}
 
 	var rejected int

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package log_test
+package event_test
 
 import (
 	"os"
@@ -13,7 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
+	"github.com/Pierre-Theophile/aisre/internal/event"
 )
 
 // One rejected sample per published reason code (FR-024, data-model.md "Validation rules"), plus
@@ -62,7 +62,7 @@ func serviceNode() *graphv1.UpsertNode {
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	accepted := eventlog.SchemaVersions{"1.0.0"}
+	accepted := event.SchemaVersions{"1.0.0"}
 
 	tests := []struct {
 		name       string
@@ -78,7 +78,7 @@ func TestValidate(t *testing.T) {
 			name: "no body is untyped",
 			env:  envelope(nil),
 			// FR-017: sources communicate only in typed events; a bare envelope is not one.
-			wantCode:   eventlog.ReasonUntyped,
+			wantCode:   event.ReasonUntyped,
 			wantDetail: "body",
 		},
 		{
@@ -88,7 +88,7 @@ func TestValidate(t *testing.T) {
 				env.EventId = ""
 				return env
 			}(),
-			wantCode:   eventlog.ReasonMissingEventID,
+			wantCode:   event.ReasonMissingEventID,
 			wantDetail: "event_id",
 		},
 		{
@@ -98,7 +98,7 @@ func TestValidate(t *testing.T) {
 				env.SourceId = ""
 				return env
 			}(),
-			wantCode:   eventlog.ReasonMissingSource,
+			wantCode:   event.ReasonMissingSource,
 			wantDetail: "source_id",
 		},
 		{
@@ -108,7 +108,7 @@ func TestValidate(t *testing.T) {
 				env.SchemaVersion = "0.9.0"
 				return env
 			}(),
-			wantCode:   eventlog.ReasonUnknownSchemaVersion,
+			wantCode:   event.ReasonUnknownSchemaVersion,
 			wantDetail: "1.0.0",
 		},
 		{
@@ -118,7 +118,7 @@ func TestValidate(t *testing.T) {
 				node.ValidAt = nil
 				return envelope(node)
 			}(),
-			wantCode:   eventlog.ReasonMissingValidTime,
+			wantCode:   event.ReasonMissingValidTime,
 			wantDetail: "upsert_node.valid_at",
 		},
 		{
@@ -137,7 +137,7 @@ func TestValidate(t *testing.T) {
 				node.Type = graphv1.NodeType_NODE_TYPE_UNSPECIFIED
 				return envelope(node)
 			}(),
-			wantCode:   eventlog.ReasonUnknownType,
+			wantCode:   event.ReasonUnknownType,
 			wantDetail: "upsert_node.type",
 		},
 		{
@@ -147,7 +147,7 @@ func TestValidate(t *testing.T) {
 				node.Ref = &graphv1.Ref{Namespace: "otel.service.name"}
 				return envelope(node)
 			}(),
-			wantCode:   eventlog.ReasonMissingRef,
+			wantCode:   event.ReasonMissingRef,
 			wantDetail: "upsert_node.ref",
 		},
 		{
@@ -157,7 +157,7 @@ func TestValidate(t *testing.T) {
 				node.Props = mustStruct(map[string]any{"span_id": "0123456789abcdef"})
 				return envelope(node)
 			}(),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "span_id",
 		},
 		{
@@ -169,7 +169,7 @@ func TestValidate(t *testing.T) {
 				})
 				return envelope(node)
 			}(),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "sre.sample.metric_value",
 		},
 		{
@@ -179,7 +179,7 @@ func TestValidate(t *testing.T) {
 				node.Props = mustStruct(map[string]any{"latency_samples": []any{1.0, 2.0, 3.0}})
 				return envelope(node)
 			}(),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "latency_samples",
 		},
 		{
@@ -189,7 +189,7 @@ func TestValidate(t *testing.T) {
 				node.Props = mustStruct(map[string]any{"sre.note": strings.Repeat("x", 5000)})
 				return envelope(node)
 			}(),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "sre.note",
 		},
 		{
@@ -215,7 +215,7 @@ func TestValidate(t *testing.T) {
 				}
 				return envelope(node)
 			}(),
-			wantCode:   eventlog.ReasonSecretValue,
+			wantCode:   event.ReasonSecretValue,
 			wantDetail: "data",
 		},
 		{
@@ -238,7 +238,7 @@ func TestValidate(t *testing.T) {
 			env: envelope(&graphv1.RetractNode{
 				Ref: &graphv1.Ref{Namespace: "otel.service.name", Value: "legacy-cart"},
 			}),
-			wantCode:   eventlog.ReasonMissingValidTime,
+			wantCode:   event.ReasonMissingValidTime,
 			wantDetail: "retract_node.valid_end",
 		},
 		{
@@ -246,7 +246,7 @@ func TestValidate(t *testing.T) {
 			env: envelope(&graphv1.IdentityClaim{
 				Subject: &graphv1.Ref{Namespace: "otel.service.name", Value: "checkout"},
 			}),
-			wantCode:   eventlog.ReasonMissingRef,
+			wantCode:   event.ReasonMissingRef,
 			wantDetail: "identity_claim.claim",
 		},
 		{
@@ -256,7 +256,7 @@ func TestValidate(t *testing.T) {
 				Dst:     &graphv1.Ref{Namespace: "otel.service.name", Value: "payments"},
 				ValidAt: validAt(),
 			}),
-			wantCode:   eventlog.ReasonUnknownType,
+			wantCode:   event.ReasonUnknownType,
 			wantDetail: "upsert_edge.type",
 		},
 	}
@@ -264,7 +264,7 @@ func TestValidate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := eventlog.Validate(tc.env, accepted)
+			got := event.Validate(tc.env, accepted)
 			if tc.wantCode == "" {
 				if got != nil {
 					t.Fatalf("Validate() = %s, want accepted", got)
@@ -300,12 +300,12 @@ func TestValidateFixtureRejection(t *testing.T) {
 		if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal([]byte(line), env); err != nil {
 			t.Fatalf("unmarshal rejected fixture line: %v", err)
 		}
-		rejection := eventlog.Validate(env, eventlog.DefaultSchemaVersions)
+		rejection := event.Validate(env, event.DefaultSchemaVersions)
 		if rejection == nil {
 			t.Fatalf("event %s was accepted, the fixture requires a rejection", env.GetEventId())
 		}
-		if rejection.ReasonCode != eventlog.ReasonTelemetryPayload {
-			t.Errorf("reason_code = %q, want %q", rejection.ReasonCode, eventlog.ReasonTelemetryPayload)
+		if rejection.ReasonCode != event.ReasonTelemetryPayload {
+			t.Errorf("reason_code = %q, want %q", rejection.ReasonCode, event.ReasonTelemetryPayload)
 		}
 		if !strings.Contains(rejection.ReasonDetail, "latency_samples") {
 			t.Errorf("reason_detail = %q, want it to name latency_samples", rejection.ReasonDetail)
@@ -344,7 +344,7 @@ func TestValidateChangeTelemetry(t *testing.T) {
 		{
 			name:       "numeric series",
 			env:        rollout(map[string]any{"sre.github.canary_error_rate": []any{0.2, 3.1}}),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "observe_change.props.sre.github.canary_error_rate",
 		},
 		{
@@ -352,13 +352,13 @@ func TestValidateChangeTelemetry(t *testing.T) {
 			env: rollout(map[string]any{
 				"sre.github.failed_step": map[string]any{"log_body": "502 upstream connect error"},
 			}),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "observe_change.props.sre.github.failed_step.log_body",
 		},
 		{
 			name:       "oversized property",
 			env:        rollout(map[string]any{"sre.github.deployment_payload": strings.Repeat("x", 5000)}),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "observe_change.props.sre.github.deployment_payload",
 		},
 		{
@@ -370,13 +370,13 @@ func TestValidateChangeTelemetry(t *testing.T) {
 				}}
 				return env
 			}(),
-			wantCode:   eventlog.ReasonTelemetryPayload,
+			wantCode:   event.ReasonTelemetryPayload,
 			wantDetail: "observe_change.pointers[0].selector",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rejection := eventlog.Validate(tc.env, nil)
+			rejection := event.Validate(tc.env, nil)
 			if tc.wantCode == "" {
 				if rejection != nil {
 					t.Fatalf("rejected %s: %s", rejection.ReasonCode, rejection.ReasonDetail)

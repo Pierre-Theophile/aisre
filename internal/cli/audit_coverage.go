@@ -12,6 +12,7 @@ import (
 
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/audit"
+	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 )
 
@@ -141,7 +142,7 @@ func runAuditCoverage(cmd *cobra.Command, global *globalOptions, opts *auditCove
 			return storeError("open database", err)
 		}
 		defer store.Close()
-		if err := audit.Persist(cmd.Context(), store, result); err != nil {
+		if err := investigationstore.PersistAudit(cmd.Context(), store, result); err != nil {
 			return storeError("record the audit", err)
 		}
 	}

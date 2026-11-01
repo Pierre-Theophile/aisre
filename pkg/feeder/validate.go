@@ -4,7 +4,7 @@ package feeder
 
 import (
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
+	"github.com/Pierre-Theophile/aisre/internal/event"
 )
 
 // Local validation (FR-024, constitution IV).
@@ -13,7 +13,7 @@ import (
 // process. Running it twice is not duplication: a feeder that learns at build time that its
 // props carry a telemetry payload fixes it in an afternoon, while one that learns from a
 // REJECTED result in production has already shipped. The rules — and in particular the
-// telemetry denylist — live in exactly one place, internal/log/validate.go, and are reached
+// telemetry denylist — live in exactly one place, internal/event/validate.go, and are reached
 // from here rather than copied.
 //
 // The reason codes below are aliases of that package's constants, re-exported because the
@@ -24,37 +24,37 @@ import (
 // IngestResult.reason_code.
 const (
 	// ReasonUntyped is an envelope with no body: there is no event.
-	ReasonUntyped = eventlog.ReasonUntyped
+	ReasonUntyped = event.ReasonUntyped
 	// ReasonUnknownSchemaVersion is an envelope whose schema_version this build does not
 	// accept. The detail names the versions that are accepted.
-	ReasonUnknownSchemaVersion = eventlog.ReasonUnknownSchemaVersion
+	ReasonUnknownSchemaVersion = event.ReasonUnknownSchemaVersion
 	// ReasonMissingValidTime is an assertion with no source-asserted valid time. Set
 	// ValidFromUnknown to assert an unknown start; never guess one (FR-011).
-	ReasonMissingValidTime = eventlog.ReasonMissingValidTime
+	ReasonMissingValidTime = event.ReasonMissingValidTime
 	// ReasonTelemetryPayload is a property carrying telemetry rather than a pointer to it:
 	// a denylisted key at any depth, a series of two or more numbers, or a value above the
 	// property size limit (constitution IV, FR-009).
-	ReasonTelemetryPayload = eventlog.ReasonTelemetryPayload
+	ReasonTelemetryPayload = event.ReasonTelemetryPayload
 	// ReasonSecretValue is a config node of kind secret carrying the secret's material
 	// instead of only its version identifier.
-	ReasonSecretValue = eventlog.ReasonSecretValue
+	ReasonSecretValue = event.ReasonSecretValue
 	// ReasonUnknownType is a node or edge type left unspecified, or a change with no kind.
-	ReasonUnknownType = eventlog.ReasonUnknownType
+	ReasonUnknownType = event.ReasonUnknownType
 	// ReasonMissingRef is a body omitting an identity it needs: the subject of an upsert, an
 	// endpoint of an edge, the claim of an identity assertion.
-	ReasonMissingRef = eventlog.ReasonMissingRef
+	ReasonMissingRef = event.ReasonMissingRef
 	// ReasonMissingSource is an envelope with no source_id.
-	ReasonMissingSource = eventlog.ReasonMissingSource
+	ReasonMissingSource = event.ReasonMissingSource
 	// ReasonMissingEventID is an envelope with no event_id; without one nothing can be
 	// idempotent (FR-018).
-	ReasonMissingEventID = eventlog.ReasonMissingEventID
+	ReasonMissingEventID = event.ReasonMissingEventID
 	// ReasonUnknownSource is an envelope from a source that never registered. Only the graph
 	// can decide it, so Validate never returns it; it is published here because a feeder that
 	// forgot to register sees it on the wire.
-	ReasonUnknownSource = eventlog.ReasonUnknownSource
+	ReasonUnknownSource = event.ReasonUnknownSource
 	// ReasonRefUnresolvable is a retraction naming an entity the graph has never seen. Only
 	// the graph can decide it, for the same reason as ReasonUnknownSource.
-	ReasonRefUnresolvable = eventlog.ReasonRefUnresolvable
+	ReasonRefUnresolvable = event.ReasonRefUnresolvable
 )
 
 // Rejection is a machine-readable refusal: the published reason code plus the field that
@@ -83,7 +83,7 @@ func (r *Rejection) Error() string {
 // feeder whose Description.SchemaVersion is not among them will have every event refused with
 // ReasonUnknownSchemaVersion.
 func AcceptedSchemaVersions() []string {
-	return append([]string(nil), eventlog.DefaultSchemaVersions...)
+	return append([]string(nil), event.DefaultSchemaVersions...)
 }
 
 // Validate checks an envelope against the published contract and returns nil when the graph
@@ -94,12 +94,12 @@ func AcceptedSchemaVersions() []string {
 // graph, not about an event. Those come back from the Emitter as REJECTED results carrying
 // ReasonUnknownSource or ReasonRefUnresolvable.
 func Validate(ev *graphv1.EventEnvelope) *Rejection {
-	return convertRejection(eventlog.Validate(ev, eventlog.DefaultSchemaVersions))
+	return convertRejection(event.Validate(ev, event.DefaultSchemaVersions))
 }
 
 // convertRejection lifts the internal refusal into the published one, so that the SDK's public
 // surface never names an internal type.
-func convertRejection(r *eventlog.Rejection) *Rejection {
+func convertRejection(r *event.Rejection) *Rejection {
 	if r == nil {
 		return nil
 	}

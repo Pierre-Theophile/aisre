@@ -14,12 +14,13 @@ import (
 	"testing"
 	"time"
 
+	eventrules "github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/encoding/protojson"
 	"gopkg.in/yaml.v3"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
@@ -137,7 +138,7 @@ func newProjector(t *testing.T, m manifest) (*projector.Projector, *postgres.Sto
 		if err != nil && src.ReorderingWindow != "" {
 			t.Fatalf("source %s: reordering_window %q: %v", src.SourceID, src.ReorderingWindow, err)
 		}
-		if err := p.RegisterSource(context.Background(), eventlog.Source{
+		if err := p.RegisterSource(context.Background(), eventrules.Source{
 			SourceID:         src.SourceID,
 			Kind:             src.Kind,
 			Ordering:         src.Ordering,
@@ -322,8 +323,8 @@ func assertBaseline(t *testing.T, store *postgres.Store, dir string, m manifest,
 		if result.GetStatus() != graphv1.IngestResult_REJECTED {
 			t.Fatalf("rejected fixture event %s: status %s, want REJECTED", event.env.GetEventId(), result.GetStatus())
 		}
-		if result.GetReasonCode() != eventlog.ReasonTelemetryPayload {
-			t.Errorf("reason_code = %q, want %q", result.GetReasonCode(), eventlog.ReasonTelemetryPayload)
+		if result.GetReasonCode() != eventrules.ReasonTelemetryPayload {
+			t.Errorf("reason_code = %q, want %q", result.GetReasonCode(), eventrules.ReasonTelemetryPayload)
 		}
 		if !strings.Contains(result.GetReasonDetail(), "latency_samples") {
 			t.Errorf("reason_detail = %q, want it to name latency_samples", result.GetReasonDetail())

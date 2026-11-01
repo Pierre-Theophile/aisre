@@ -8,13 +8,14 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"connectrpc.com/connect"
 	"go.opentelemetry.io/otel/attribute"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
 )
@@ -66,11 +67,11 @@ import (
 // own constant rather than a second spelling of it: the investigation's human channel registers
 // the same source for a fact, a reopen and a label (FR-057a/b/e), and two constants that must
 // agree are one constant.
-const HumanSourceID = eventlog.HumanSourceID
+const HumanSourceID = event.HumanSourceID
 
 // humanSource is the source declaration registered for it: a person is not a feeder, delivers
 // nothing in order, and needs no reordering window.
-var humanSource = eventlog.HumanSource()
+var humanSource = event.HumanSource()
 
 // ResolutionService implements sreagent.graph.v1.ResolutionService.
 type ResolutionService struct {

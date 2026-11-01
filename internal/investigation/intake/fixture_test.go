@@ -11,13 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/encoding/protojson"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 )
 
 // Intake against the corpus fixtures (T076–T078, fixtures `declared-incident-01` and
@@ -420,7 +421,7 @@ func TestFixtureKeysAreThePublished4Tuple(t *testing.T) {
 		if err != nil {
 			t.Fatalf("normalise %s: %v", alert.EventID, err)
 		}
-		want := eventlog.AlertTransitionKeyParts(
+		want := event.AlertTransitionKeyParts(
 			alert.SourceID,
 			graph.RefFromProto(alert.Body.GetMonitor()).String(),
 			alert.Body.GetGroupKey(),

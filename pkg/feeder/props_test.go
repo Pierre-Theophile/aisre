@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
@@ -136,7 +137,7 @@ func TestPropsDenylistParity(t *testing.T) {
 			t.Parallel()
 
 			// What the graph itself would say about exactly these properties.
-			want := eventlog.Validate(probeEnvelope(tc.props), nil)
+			want := event.Validate(probeEnvelope(tc.props), nil)
 			if want == nil {
 				t.Fatalf("internal/log accepted %s; this test's premise is wrong", tc.name)
 			}

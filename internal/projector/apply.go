@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -83,7 +85,7 @@ func (p *Projector) Store() *postgres.Store { return p.store }
 func (p *Projector) Metrics() *telemetry.Metrics { return p.metrics }
 
 // RegisterSource records a feeder before it may append (FR-018).
-func (p *Projector) RegisterSource(ctx context.Context, src eventlog.Source) error {
+func (p *Projector) RegisterSource(ctx context.Context, src event.Source) error {
 	return p.log.RegisterSource(ctx, src, nil)
 }
 
@@ -143,7 +145,7 @@ func (p *Projector) ApplyInTx(ctx context.Context, tx pgx.Tx, env *graphv1.Event
 
 func (p *Projector) applyInTx(ctx context.Context, tx pgx.Tx, env *graphv1.EventEnvelope, opts ApplyOptions) (*graphv1.IngestResult, error) {
 	// One span and one latency sample per event, whatever called us (plan.md §Observability).
-	eventType := eventlog.EventType(env)
+	eventType := event.Type(env)
 	sourceID := env.GetSourceId()
 	ctx, span := telemetry.StartSpan(ctx, telemetry.SpanProjectorApply,
 		attribute.String(telemetry.SpanAttrEventID, env.GetEventId()),
@@ -292,10 +294,10 @@ func (p *Projector) project(ctx context.Context, tx pgx.Tx, env *graphv1.EventEn
 // The check has to happen here rather than in the handler because a refused event must not be
 // in log.events at all (data-model.md "Validation rules", FR-024). A decision recorded without
 // a principal is precisely what SC-011 counts as a failure, so it is refused, not stored.
-func (p *Projector) checkResolvable(ctx context.Context, tx pgx.Tx, env *graphv1.EventEnvelope, principal string) (*eventlog.Rejection, error) {
-	unresolvable := func(field string, ref graph.Ref) *eventlog.Rejection {
-		return &eventlog.Rejection{
-			ReasonCode: eventlog.ReasonRefUnresolvable,
+func (p *Projector) checkResolvable(ctx context.Context, tx pgx.Tx, env *graphv1.EventEnvelope, principal string) (*event.Rejection, error) {
+	unresolvable := func(field string, ref graph.Ref) *event.Rejection {
+		return &event.Rejection{
+			ReasonCode: event.ReasonRefUnresolvable,
 			ReasonDetail: fmt.Sprintf("%s %s names an entity the graph has never observed; "+
 				"a retraction may not create one", field, ref),
 		}
@@ -389,18 +391,18 @@ func (p *Projector) checkResolvable(ctx context.Context, tx pgx.Tx, env *graphv1
 }
 
 // checkDecision enforces FR-041 and resolvability for one human decision.
-func (p *Projector) checkDecision(ctx context.Context, tx pgx.Tx, principal, field string, refs ...string) (*eventlog.Rejection, error) {
+func (p *Projector) checkDecision(ctx context.Context, tx pgx.Tx, principal, field string, refs ...string) (*event.Rejection, error) {
 	if strings.TrimSpace(principal) == "" {
-		return &eventlog.Rejection{
-			ReasonCode: eventlog.ReasonMissingPrincipal,
+		return &event.Rejection{
+			ReasonCode: event.ReasonMissingPrincipal,
 			ReasonDetail: field + " carries no authenticated individual; the graph does not accept a " +
 				"resolution decision from an anonymous or shared credential (FR-041)",
 		}, nil
 	}
 	for i, raw := range refs {
 		if strings.TrimSpace(raw) == "" {
-			return &eventlog.Rejection{
-				ReasonCode:   eventlog.ReasonMissingRef,
+			return &event.Rejection{
+				ReasonCode:   event.ReasonMissingRef,
 				ReasonDetail: fmt.Sprintf("%s names no entity in position %d", field, i+1),
 			}, nil
 		}
@@ -409,8 +411,8 @@ func (p *Projector) checkDecision(ctx context.Context, tx pgx.Tx, principal, fie
 			return nil, err
 		}
 		if !found {
-			return &eventlog.Rejection{
-				ReasonCode: eventlog.ReasonRefUnresolvable,
+			return &event.Rejection{
+				ReasonCode: event.ReasonRefUnresolvable,
 				ReasonDetail: fmt.Sprintf("%s names %q, which the graph has never observed; a decision "+
 					"may not create an entity", field, raw),
 			}, nil

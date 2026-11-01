@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package audit_test
+package store_test
 
 import (
 	"context"
+	"math"
+	"path/filepath"
 	"testing"
 
 	"github.com/Pierre-Theophile/aisre/internal/investigation/audit"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
 )
-
-func TestMain(m *testing.M) { pgtest.TestMain(m) }
 
 // TestPersistWritesTheAuditAndItsItems: the published JSON is the artifact, but a confidence
 // recorded in a ledger years from now is only interpretable if the ceiling it came from is still
@@ -19,10 +20,10 @@ func TestMain(m *testing.M) { pgtest.TestMain(m) }
 func TestPersistWritesTheAuditAndItsItems(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store := pgtest.Open(t)
+	db := pgtest.Open(t)
 
-	result := runFixture(t, "synthetic-01", audit.Options{})
-	if err := audit.Persist(ctx, store, result); err != nil {
+	result := auditFixture(t, "synthetic-01", audit.Options{})
+	if err := store.PersistAudit(ctx, db, result); err != nil {
 		t.Fatalf("Persist: %v", err)
 	}
 
@@ -32,7 +33,7 @@ func TestPersistWritesTheAuditAndItsItems(t *testing.T) {
 		inputDigest   string
 		author        string
 	)
-	if err := store.Pool().QueryRow(ctx, `
+	if err := db.Pool().QueryRow(ctx, `
 		SELECT incident_count, ceiling, input_digest, author
 		FROM investigation.coverage_audits WHERE audit_id = $1`, result.AuditID,
 	).Scan(&incidentCount, &ceiling, &inputDigest, &author); err != nil {
@@ -52,7 +53,7 @@ func TestPersistWritesTheAuditAndItsItems(t *testing.T) {
 	}
 
 	var items int
-	if err := store.Pool().QueryRow(ctx,
+	if err := db.Pool().QueryRow(ctx,
 		`SELECT count(*) FROM investigation.coverage_audit_items WHERE audit_id = $1`,
 		result.AuditID,
 	).Scan(&items); err != nil {
@@ -65,7 +66,7 @@ func TestPersistWritesTheAuditAndItsItems(t *testing.T) {
 	// The three classifications the column accepts must all be writable, and the stated cause
 	// must be present on every row (the column is NOT NULL because the audit never infers).
 	var absent int
-	if err := store.Pool().QueryRow(ctx, `
+	if err := db.Pool().QueryRow(ctx, `
 		SELECT count(*) FROM investigation.coverage_audit_items
 		WHERE audit_id = $1 AND classification = 'cause_absent' AND stated_cause <> ''`,
 		result.AuditID,
@@ -82,21 +83,21 @@ func TestPersistWritesTheAuditAndItsItems(t *testing.T) {
 func TestPersistIsIdempotent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store := pgtest.Open(t)
+	db := pgtest.Open(t)
 
-	result := runFixture(t, "synthetic-01", audit.Options{})
+	result := auditFixture(t, "synthetic-01", audit.Options{})
 	for range 3 {
-		if err := audit.Persist(ctx, store, result); err != nil {
+		if err := store.PersistAudit(ctx, db, result); err != nil {
 			t.Fatalf("Persist: %v", err)
 		}
 	}
 
 	var audits, items int
-	if err := store.Pool().QueryRow(ctx,
+	if err := db.Pool().QueryRow(ctx,
 		`SELECT count(*) FROM investigation.coverage_audits`).Scan(&audits); err != nil {
 		t.Fatalf("count audits: %v", err)
 	}
-	if err := store.Pool().QueryRow(ctx,
+	if err := db.Pool().QueryRow(ctx,
 		`SELECT count(*) FROM investigation.coverage_audit_items`).Scan(&items); err != nil {
 		t.Fatalf("count items: %v", err)
 	}
@@ -111,19 +112,19 @@ func TestPersistIsIdempotent(t *testing.T) {
 func TestPersistRewritesWhenTheFeederSetInForceChanges(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store := pgtest.Open(t)
+	db := pgtest.Open(t)
 
-	best := runFixture(t, "synthetic-01", audit.Options{})
-	if err := audit.Persist(ctx, store, best); err != nil {
+	best := auditFixture(t, "synthetic-01", audit.Options{})
+	if err := store.PersistAudit(ctx, db, best); err != nil {
 		t.Fatalf("Persist: %v", err)
 	}
-	weakest := runFixture(t, "synthetic-01", audit.Options{FeederSet: "feature-001"})
-	if err := audit.Persist(ctx, store, weakest); err != nil {
+	weakest := auditFixture(t, "synthetic-01", audit.Options{FeederSet: "feature-001"})
+	if err := store.PersistAudit(ctx, db, weakest); err != nil {
 		t.Fatalf("Persist: %v", err)
 	}
 
 	var items, present int
-	if err := store.Pool().QueryRow(ctx,
+	if err := db.Pool().QueryRow(ctx,
 		`SELECT count(*) FROM investigation.coverage_audit_items WHERE audit_id = $1`,
 		best.AuditID).Scan(&items); err != nil {
 		t.Fatalf("count items: %v", err)
@@ -131,7 +132,7 @@ func TestPersistRewritesWhenTheFeederSetInForceChanges(t *testing.T) {
 	if items != 13 {
 		t.Errorf("items = %d, want 13", items)
 	}
-	if err := store.Pool().QueryRow(ctx, `
+	if err := db.Pool().QueryRow(ctx, `
 		SELECT count(*) FROM investigation.coverage_audit_items
 		WHERE audit_id = $1 AND classification = 'cause_present'`,
 		best.AuditID).Scan(&present); err != nil {
@@ -142,7 +143,7 @@ func TestPersistRewritesWhenTheFeederSetInForceChanges(t *testing.T) {
 	}
 
 	var ceiling float64
-	if err := store.Pool().QueryRow(ctx,
+	if err := db.Pool().QueryRow(ctx,
 		`SELECT ceiling FROM investigation.coverage_audits WHERE audit_id = $1`,
 		best.AuditID).Scan(&ceiling); err != nil {
 		t.Fatalf("read ceiling: %v", err)
@@ -157,19 +158,19 @@ func TestPersistRewritesWhenTheFeederSetInForceChanges(t *testing.T) {
 func TestPersistAnAggregateWritesTheAuditRowAlone(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store := pgtest.Open(t)
+	db := pgtest.Open(t)
 
-	result := runFixture(t, "synthetic-01", audit.Options{AggregateOnly: true})
-	if err := audit.Persist(ctx, store, result); err != nil {
+	result := auditFixture(t, "synthetic-01", audit.Options{AggregateOnly: true})
+	if err := store.PersistAudit(ctx, db, result); err != nil {
 		t.Fatalf("Persist: %v", err)
 	}
 
 	var audits, items int
-	if err := store.Pool().QueryRow(ctx,
+	if err := db.Pool().QueryRow(ctx,
 		`SELECT count(*) FROM investigation.coverage_audits`).Scan(&audits); err != nil {
 		t.Fatalf("count audits: %v", err)
 	}
-	if err := store.Pool().QueryRow(ctx,
+	if err := db.Pool().QueryRow(ctx,
 		`SELECT count(*) FROM investigation.coverage_audit_items`).Scan(&items); err != nil {
 		t.Fatalf("count items: %v", err)
 	}
@@ -182,15 +183,15 @@ func TestPersistAnAggregateWritesTheAuditRowAlone(t *testing.T) {
 func TestPersistTwoRunsCoexist(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	store := pgtest.Open(t)
+	db := pgtest.Open(t)
 
 	for _, name := range []string{"synthetic-01", "synthetic-02"} {
-		if err := audit.Persist(ctx, store, runFixture(t, name, audit.Options{})); err != nil {
+		if err := store.PersistAudit(ctx, db, auditFixture(t, name, audit.Options{})); err != nil {
 			t.Fatalf("Persist(%s): %v", name, err)
 		}
 	}
 
-	rows, err := store.Pool().Query(ctx,
+	rows, err := db.Pool().Query(ctx,
 		`SELECT audit_id, ceiling FROM investigation.coverage_audits ORDER BY audit_id`)
 	if err != nil {
 		t.Fatalf("query audits: %v", err)
@@ -221,28 +222,47 @@ func TestPersistRefusals(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	result := runFixture(t, "synthetic-01", audit.Options{AggregateOnly: true})
-	if err := audit.Persist(ctx, nil, result); err == nil {
+	result := auditFixture(t, "synthetic-01", audit.Options{AggregateOnly: true})
+	if err := store.PersistAudit(ctx, nil, result); err == nil {
 		t.Error("Persist accepted a nil store")
 	}
 
-	store := pgtest.Open(t)
-	if err := audit.Persist(ctx, store, nil); err == nil {
+	db := pgtest.Open(t)
+	if err := store.PersistAudit(ctx, db, nil); err == nil {
 		t.Error("Persist accepted a nil result")
 	}
 
 	unsigned := *result
 	unsigned.Author = ""
-	if err := audit.Persist(ctx, store, &unsigned); err == nil {
+	if err := store.PersistAudit(ctx, db, &unsigned); err == nil {
 		t.Error("Persist accepted an audit nobody signed")
 	}
 
 	anonymous := *result
 	anonymous.AuditID = ""
-	if err := audit.Persist(ctx, store, &anonymous); err == nil {
+	if err := store.PersistAudit(ctx, db, &anonymous); err == nil {
 		t.Error("Persist accepted an audit with no id")
 	}
 }
 
 // storeCompiles keeps the postgres import honest if the tests above are ever trimmed.
 var _ = (*postgres.Store)(nil)
+
+// auditFixture runs the coverage audit over one of the checked-in synthetic lists.
+func auditFixture(t *testing.T, name string, opts audit.Options) *audit.Result {
+	t.Helper()
+	list, err := audit.LoadList(filepath.Join("..", "..", "..", "fixtures", "audits", name, "incidents.yaml"))
+	if err != nil {
+		t.Fatalf("load %s: %v", name, err)
+	}
+	result, err := audit.Run(list, opts)
+	if err != nil {
+		t.Fatalf("Run(%s): %v", name, err)
+	}
+	return result
+}
+
+// wantCeiling is synthetic-01's published ceiling, 8 of 13 (see audit's report tests).
+const wantCeiling = 0.615385
+
+func closeTo(got, want float64) bool { return math.Abs(got-want) < 5e-7 }

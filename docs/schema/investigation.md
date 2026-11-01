@@ -93,7 +93,7 @@ the one event per investigation and has nothing to collide with.
 
 The three human events are emitted by `internal/investigation/store/human_events.go`, **in the
 transaction that writes the row**, under source `human` — the same source a merge decision is
-logged under (`internal/log/human_source.go`), because a person is one source whatever surface
+logged under (`internal/event/human_source.go`), because a person is one source whatever surface
 they act through. The authenticated individual is in the body (`author`) and in the apply
 principal, never in the source id. None of the three carries a property, so the
 `sre.investigation.*` allow-list and the 4 KiB cap hold trivially. The observed instant is the
@@ -204,7 +204,7 @@ rebuild, and the rebuild is the whole justification for the second schema.
 ¹ `internal/store/postgres/migrations/0006_investigation.sql`, header; `specs/002-investigation-engine/data-model.md`
 §"What this feature writes into the graph".
 
-² `internal/log/alert.go` (`AlertTransitionKey`, `AlertTransitionKeyParts`);
+² `internal/event/alert.go` (`AlertTransitionKey`, `AlertTransitionKeyParts`);
 `internal/log/append.go` (`idempotencyKey` defaults to the event id; duplicate deliveries are
 recorded with whether the payload differed).
 

@@ -14,12 +14,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	sqladmin "google.golang.org/api/sqladmin/v1"
 
 	compute "google.golang.org/api/compute/v1"
 
 	"github.com/Pierre-Theophile/aisre/internal/gcpx"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
@@ -230,7 +231,7 @@ type Feeder struct {
 	// alerts is the little per-alerting-entity series the published suppression filter reads. It
 	// is deliberately not persisted: losing it costs at most one redundant event, and a redundant
 	// event is a DUPLICATE_NOOP.
-	alerts map[string]*eventlog.AlertSeries
+	alerts map[string]*event.AlertSeries
 	// incidents is the latest incident per alerting entity, which is what HandoffFor answers from.
 	incidents map[string]AlertIncident
 	// suppressed are the transitions the filter dropped this run. They reach the checkpoint,
@@ -319,7 +320,7 @@ func New(opts Options) (*Feeder, error) {
 		identities:  map[string]Identity{},
 		audit:       audit,
 		policies:    map[string]AlertPolicyObservation{},
-		alerts:      map[string]*eventlog.AlertSeries{},
+		alerts:      map[string]*event.AlertSeries{},
 		incidents:   map[string]AlertIncident{},
 		instances:   map[string]InstanceObservation{},
 		configs:     map[string]ConfigObservation{},

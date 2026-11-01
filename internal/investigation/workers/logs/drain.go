@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	backend "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
+	"github.com/Pierre-Theophile/aisre/internal/mask"
 )
 
 // A Drain-style fixed-depth parse tree, in-repo (tasks.md T048, research §5, plan §Design
@@ -120,7 +120,7 @@ func (m *Miner) Add(line Line) {
 	if m.buckets == nil {
 		m.buckets = make(map[bucketKey]*bucket)
 	}
-	masked := backend.MaskLine(line.Text)
+	masked := mask.Line(line.Text)
 	if masked == "" {
 		return
 	}

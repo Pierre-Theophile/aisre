@@ -7,10 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 )
 
 // The declaration front door (T077, FR-001a, FR-002a, FR-002b, FR-004a, FR-008b).
@@ -44,7 +45,7 @@ import (
 
 // DeclaredSourceKind is the transition state a declaration carries (ADR-0005 D2's published
 // vocabulary). A declaration is a transition into `declared`, from nothing.
-const DeclaredSourceKind = eventlog.AlertStateDeclared
+const DeclaredSourceKind = event.AlertStateDeclared
 
 // TargetProvenanceParsed and TargetProvenanceSupplied are the two provenances a declared
 // target may carry, spelled as strings for the row and mapped to the wire enum on the symptom.
@@ -252,11 +253,11 @@ func PlaceRef(placeID string) graph.Ref {
 // stable identifier of the place, an EMPTY group, and the declared instant (FR-008b, ADR-0005
 // D2). Re-delivery under this key is a no-op that returns the existing investigation.
 //
-// It agrees byte for byte with what eventlog.AlertTransitionKey derives from the event body
+// It agrees byte for byte with what event.AlertTransitionKey derives from the event body
 // DeclarationBody builds, which is the property that makes a declaration observed by a connector
 // and a declaration made with `investigate declare` one fact rather than two.
 func DeclarationKey(sourceID, placeID string, declaredAt time.Time) string {
-	return eventlog.AlertTransitionKeyParts(sourceID, PlaceRef(placeID).String(), "",
+	return event.AlertTransitionKeyParts(sourceID, PlaceRef(placeID).String(), "",
 		declaredAt.UTC().Format(time.RFC3339Nano))
 }
 

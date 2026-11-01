@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"connectrpc.com/connect"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -18,7 +20,6 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
 )
@@ -123,7 +124,7 @@ func (s *IngestService) RegisterSource(ctx context.Context, req *connect.Request
 			errors.New("register_source: reordering_window_seconds may not be negative"))
 	}
 
-	src := eventlog.Source{
+	src := event.Source{
 		SourceID:         msg.GetSourceId(),
 		Kind:             msg.GetKind(),
 		Ordering:         msg.GetOrdering(),
@@ -148,7 +149,7 @@ func (s *IngestService) apply(ctx context.Context, env *graphv1.EventEnvelope) (
 		// The one rejection the projector never sees, so it is the one this service counts:
 		// an envelope with nothing in it cannot be applied, appended or audited, and without
 		// this line a feeder sending a stream of them would show up nowhere (FR-051).
-		s.metrics.EventRejected(ctx, eventlog.ReasonUntyped)
+		s.metrics.EventRejected(ctx, event.ReasonUntyped)
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("ingest: empty envelope"))
 	}
 	// FR-046: the token's source scope is checked before anything is written, and before the
@@ -157,7 +158,7 @@ func (s *IngestService) apply(ctx context.Context, env *graphv1.EventEnvelope) (
 		return nil, err
 	}
 
-	eventType := eventlog.EventType(env)
+	eventType := event.Type(env)
 	ctx, span := s.tracer.Start(ctx, "ingest.apply", trace.WithAttributes(
 		attribute.String(telemetry.SpanAttrEventID, env.GetEventId()),
 		attribute.String(telemetry.SpanAttrEventType, eventType),

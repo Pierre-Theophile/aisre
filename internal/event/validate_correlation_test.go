@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package log_test
+package event_test
 
 import (
 	"strings"
 	"testing"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
+	"github.com/Pierre-Theophile/aisre/internal/event"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
 
@@ -56,15 +56,15 @@ func TestEveryCorrelationNamespaceIsRefusedAsAnIdentityClaim(t *testing.T) {
 		t.Fatal("the SDK publishes no correlation namespaces, so this test asserts nothing")
 	}
 	for _, namespace := range feeder.CorrelationNamespaces {
-		got := eventlog.Validate(claimEnvelope(namespace, "some-shared-value"), nil)
+		got := event.Validate(claimEnvelope(namespace, "some-shared-value"), nil)
 		if got == nil {
 			t.Errorf("a claim in %q was accepted; a value several entities share, stored as a name, "+
 				"lands on whichever entity was processed first", namespace)
 			continue
 		}
-		if got.ReasonCode != eventlog.ReasonCorrelationAsIdentity {
+		if got.ReasonCode != event.ReasonCorrelationAsIdentity {
 			t.Errorf("a claim in %q was refused as %q, want %q", namespace,
-				got.ReasonCode, eventlog.ReasonCorrelationAsIdentity)
+				got.ReasonCode, event.ReasonCorrelationAsIdentity)
 		}
 		if !strings.Contains(got.ReasonDetail, namespace) {
 			t.Errorf("the refusal of %q does not name the namespace: %q", namespace, got.ReasonDetail)
@@ -83,7 +83,7 @@ func TestAnIdentifyingNamespaceIsStillAcceptedAsAClaim(t *testing.T) {
 		feeder.NSGitHubChange,
 		"k8s.deployment",
 	} {
-		if got := eventlog.Validate(claimEnvelope(namespace, "checkout"), nil); got != nil {
+		if got := event.Validate(claimEnvelope(namespace, "checkout"), nil); got != nil {
 			t.Errorf("a claim in %q was refused as %s: %s; a name is what identity_claims is for",
 				namespace, got.ReasonCode, got.ReasonDetail)
 		}
@@ -99,7 +99,7 @@ func TestADeployValueIsAcceptedAsACorrelation(t *testing.T) {
 		Subject: &graphv1.Ref{Namespace: feeder.NSGitHubChange, Value: "repositories/1/deployments/2"},
 		Key:     &graphv1.Ref{Namespace: feeder.NSDeployCommitSHA, Value: strings.Repeat("a", 40)},
 	})
-	if got := eventlog.Validate(env, nil); got != nil {
+	if got := event.Validate(env, nil); got != nil {
 		t.Fatalf("the correlation was refused as %s: %s", got.ReasonCode, got.ReasonDetail)
 	}
 }
@@ -118,7 +118,7 @@ func TestACorrelationInAnUnregisteredNamespaceIsAccepted(t *testing.T) {
 		Subject: &graphv1.Ref{Namespace: feeder.NSGitHubChange, Value: "repositories/1/deployments/2"},
 		Key:     &graphv1.Ref{Namespace: "buildkite.build", Value: "42"},
 	})
-	if got := eventlog.Validate(env, nil); got != nil {
+	if got := event.Validate(env, nil); got != nil {
 		t.Fatalf("a correlation in an unregistered namespace was refused as %s: %s; the registry is a "+
 			"published vocabulary, not an allowlist", got.ReasonCode, got.ReasonDetail)
 	}
@@ -140,14 +140,14 @@ func TestACorrelationNeedsBothRefs(t *testing.T) {
 		"correlate_entity.subject": {Key: key},
 		"correlate_entity.key":     {Subject: subject},
 	} {
-		got := eventlog.Validate(correlationEnvelope(body), nil)
+		got := event.Validate(correlationEnvelope(body), nil)
 		if got == nil {
 			t.Errorf("a correlation missing %s was accepted", field)
 			continue
 		}
-		if got.ReasonCode != eventlog.ReasonMissingRef {
+		if got.ReasonCode != event.ReasonMissingRef {
 			t.Errorf("a correlation missing %s was refused as %q, want %q",
-				field, got.ReasonCode, eventlog.ReasonMissingRef)
+				field, got.ReasonCode, event.ReasonMissingRef)
 		}
 		if !strings.Contains(got.ReasonDetail, field) {
 			t.Errorf("the refusal does not name %s: %q", field, got.ReasonDetail)

@@ -7,10 +7,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
@@ -102,7 +103,7 @@ func TestAnonymousDecisionIsRefused(t *testing.T) {
 	_, p := loadAmbiguousIdentity(t)
 	ctx := context.Background()
 
-	if err := p.RegisterSource(ctx, eventlog.Source{
+	if err := p.RegisterSource(ctx, event.Source{
 		SourceID: "human", Kind: "human", Ordering: "none", SchemaVersion: "1.0.0",
 	}); err != nil {
 		t.Fatalf("register the human source: %v", err)
@@ -127,8 +128,8 @@ func TestAnonymousDecisionIsRefused(t *testing.T) {
 		t.Fatalf("status = %s, want REJECTED: FR-041 forbids an anonymous resolution decision",
 			result.GetStatus())
 	}
-	if result.GetReasonCode() != eventlog.ReasonMissingPrincipal {
-		t.Errorf("reason_code = %q, want %q", result.GetReasonCode(), eventlog.ReasonMissingPrincipal)
+	if result.GetReasonCode() != event.ReasonMissingPrincipal {
+		t.Errorf("reason_code = %q, want %q", result.GetReasonCode(), event.ReasonMissingPrincipal)
 	}
 }
 
@@ -136,7 +137,7 @@ func TestDecisionNamingAnUnknownEntityIsRefused(t *testing.T) {
 	_, p := loadAmbiguousIdentity(t)
 	ctx := context.Background()
 
-	if err := p.RegisterSource(ctx, eventlog.Source{
+	if err := p.RegisterSource(ctx, event.Source{
 		SourceID: "human", Kind: "human", Ordering: "none", SchemaVersion: "1.0.0",
 	}); err != nil {
 		t.Fatalf("register the human source: %v", err)
@@ -160,8 +161,8 @@ func TestDecisionNamingAnUnknownEntityIsRefused(t *testing.T) {
 	if result.GetStatus() != graphv1.IngestResult_REJECTED {
 		t.Fatalf("status = %s, want REJECTED", result.GetStatus())
 	}
-	if result.GetReasonCode() != eventlog.ReasonRefUnresolvable {
-		t.Errorf("reason_code = %q, want %q", result.GetReasonCode(), eventlog.ReasonRefUnresolvable)
+	if result.GetReasonCode() != event.ReasonRefUnresolvable {
+		t.Errorf("reason_code = %q, want %q", result.GetReasonCode(), event.ReasonRefUnresolvable)
 	}
 }
 
@@ -169,7 +170,7 @@ func TestRepeatingADecisionIsANoop(t *testing.T) {
 	_, p := loadAmbiguousIdentity(t)
 	ctx := context.Background()
 
-	if err := p.RegisterSource(ctx, eventlog.Source{
+	if err := p.RegisterSource(ctx, event.Source{
 		SourceID: "human", Kind: "human", Ordering: "none", SchemaVersion: "1.0.0",
 	}); err != nil {
 		t.Fatalf("register the human source: %v", err)

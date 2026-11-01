@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package model
+package embedding
 
 import (
 	"fmt"
@@ -21,14 +21,11 @@ import (
 // (Mistral, OpenAI, Ollama, vLLM, Hugging Face TEI, LocalAI, llama.cpp). A Go program embedding
 // the agent plugs any other provider in by implementing knowledge.Embedder.
 
-// EmbeddingProviderOpenAICompatible is the one published embedding provider.
-const EmbeddingProviderOpenAICompatible = "openai_compatible"
+// Providers is the published embedding provider set.
+var Providers = []string{ProviderOpenAICompatible}
 
-// EmbeddingProviders is the published set.
-var EmbeddingProviders = []string{EmbeddingProviderOpenAICompatible}
-
-// EmbeddingConfig is the `embedding:` block.
-type EmbeddingConfig struct {
+// Config is the `embedding:` block.
+type Config struct {
 	// Provider is the adapter: `openai_compatible`.
 	Provider string `yaml:"provider"`
 	// BaseURL is the server's API root; vectors are asked of `POST {base_url}/embeddings`.
@@ -47,16 +44,16 @@ type EmbeddingConfig struct {
 }
 
 // Validate refuses a block that would fail on the first section it embedded.
-func (e EmbeddingConfig) Validate() error {
+func (e Config) Validate() error {
 	known := false
-	for _, p := range EmbeddingProviders {
+	for _, p := range Providers {
 		if e.Provider == p {
 			known = true
 		}
 	}
 	if !known {
 		return fmt.Errorf("embedding: provider %q is not published; the set is %s (a Go program embedding the agent may register another knowledge.Embedder)",
-			e.Provider, strings.Join(EmbeddingProviders, ", "))
+			e.Provider, strings.Join(Providers, ", "))
 	}
 	if e.BaseURL == "" {
 		return fmt.Errorf("embedding: base_url is required; vectors are asked of POST {base_url}/embeddings")
@@ -75,13 +72,13 @@ func (e EmbeddingConfig) Validate() error {
 }
 
 // ModelID is the id every vector this block produces is stored under.
-func (e EmbeddingConfig) ModelID() knowledge.ModelID {
+func (e Config) ModelID() knowledge.ModelID {
 	return knowledge.ModelID{Provider: e.Provider, Model: e.Model, Dimensions: e.Dimensions}
 }
 
 // APIKey resolves the bearer token, and reports whether the block can be used: false when it names
 // a key variable that is unset, which means lexical only (FR-027), not an error.
-func (e EmbeddingConfig) APIKey() (string, bool) {
+func (e Config) APIKey() (string, bool) {
 	if e.APIKeyEnv == "" {
 		return "", true
 	}

@@ -419,7 +419,7 @@ func timestampOrNil(t time.Time) *timestamppb.Timestamp {
 // field here, because a connector that had to compute it could compute it differently. Set
 // Meta.IdempotencyKey only to override; leaving it empty is the normal case and the right one.
 //
-// Two rules a connector must apply before it calls this, both published in internal/log/alert.go
+// Two rules a connector must apply before it calls this, both published in internal/event/alert.go
 // so that every connector applies the same one:
 //
 //   - **filter flapping and no_data** with SuppressAlertTransition. A monitor oscillating on its

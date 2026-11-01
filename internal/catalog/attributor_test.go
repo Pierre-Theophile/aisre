@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/catalog"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
@@ -41,7 +42,7 @@ func newWorld(t *testing.T, opts ...catalog.Option) *world {
 	t.Helper()
 	p := projector.New(pgtest.Open(t))
 	for _, src := range []string{"datadog:test", "human"} {
-		if err := p.RegisterSource(context.Background(), eventlog.Source{
+		if err := p.RegisterSource(context.Background(), event.Source{
 			SourceID: src, Kind: "test", Ordering: "none", SchemaVersion: "1.0.0",
 		}); err != nil {
 			t.Fatalf("register %s: %v", src, err)

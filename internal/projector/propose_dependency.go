@@ -9,13 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 )
 
 // The proposed dependency, which is not an edge (003 FR-029, FR-122; data-model.md §4.2).
@@ -349,7 +350,7 @@ func marshalEvidence(evidence *structpb.Struct) ([]byte, error) {
 // event never reaches log.events at all (FR-024).
 func (p *Projector) checkProposalRefs(ctx context.Context, tx pgx.Tx, field string,
 	src, dst *graphv1.Ref,
-) (*eventlog.Rejection, error) {
+) (*event.Rejection, error) {
 	for _, end := range []struct {
 		name string
 		ref  graph.Ref
@@ -358,16 +359,16 @@ func (p *Projector) checkProposalRefs(ctx context.Context, tx pgx.Tx, field stri
 		{field + ".dst", graph.RefFromProto(dst)},
 	} {
 		if strings.TrimSpace(end.ref.Namespace) == "" || strings.TrimSpace(end.ref.Value) == "" {
-			return &eventlog.Rejection{
-				ReasonCode:   eventlog.ReasonMissingRef,
+			return &event.Rejection{
+				ReasonCode:   event.ReasonMissingRef,
 				ReasonDetail: end.name + " names no entity",
 			}, nil
 		}
 		if _, found, err := p.lookupRef(ctx, tx, end.ref); err != nil {
 			return nil, err
 		} else if !found {
-			return &eventlog.Rejection{
-				ReasonCode: eventlog.ReasonRefUnresolvable,
+			return &event.Rejection{
+				ReasonCode: event.ReasonRefUnresolvable,
 				ReasonDetail: fmt.Sprintf("%s names %s, which the graph has never observed; a "+
 					"proposed dependency is a question about two known things and may not create "+
 					"either", end.name, end.ref),
@@ -387,10 +388,10 @@ func (p *Projector) checkProposalRefs(ctx context.Context, tx pgx.Tx, field stri
 // upsert_edge is for.
 func (p *Projector) checkProposalDecision(ctx context.Context, tx pgx.Tx, principal, field string,
 	src, dst *graphv1.Ref, typ graphv1.EdgeType,
-) (*eventlog.Rejection, error) {
+) (*event.Rejection, error) {
 	if strings.TrimSpace(principal) == "" {
-		return &eventlog.Rejection{
-			ReasonCode: eventlog.ReasonMissingPrincipal,
+		return &event.Rejection{
+			ReasonCode: event.ReasonMissingPrincipal,
 			ReasonDetail: field + " carries no authenticated individual; the graph does not accept a " +
 				"dependency decision from an anonymous or shared credential (FR-041)",
 		}, nil
@@ -407,8 +408,8 @@ func (p *Projector) checkProposalDecision(ctx context.Context, tx pgx.Tx, princi
 	if _, found, err := p.proposal(ctx, tx, key); err != nil {
 		return nil, err
 	} else if !found {
-		return &eventlog.Rejection{
-			ReasonCode: eventlog.ReasonRefUnresolvable,
+		return &event.Rejection{
+			ReasonCode: event.ReasonRefUnresolvable,
 			ReasonDetail: fmt.Sprintf("%s names the dependency %s, which nothing has proposed; a "+
 				"decision may not invent the proposal it decides. To assert this edge on your own "+
 				"authority, use upsert_edge", field, key),

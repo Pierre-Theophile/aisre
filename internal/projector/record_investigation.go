@@ -34,7 +34,7 @@ import (
 // updates, model calls. Those are rebuildable from the recording and they are not facts about
 // production; putting them in the log would make the log a debugging trace (constitution III).
 // Nor does any telemetry: the props carry identifiers, parameters, statuses, confidences and
-// digests, under the allow-listed `sre.investigation.*` namespace, and internal/log/validate.go
+// digests, under the allow-listed `sre.investigation.*` namespace, and internal/event/validate.go
 // refuses the rest before this file ever sees it (002 SC-010).
 //
 // This file also holds the small amount of machinery the other four investigation handlers
@@ -307,7 +307,7 @@ func setBoolProp(props propSet, env *graphv1.EventEnvelope, key string, value bo
 
 // setStructProp records a structured property. Validation has already refused anything in it
 // that is not an identifier, a parameter, a status, a confidence or a digest
-// (internal/log/validate.go, InvestigationPropNamespace).
+// (internal/event/validate.go, InvestigationPropNamespace).
 func setStructProp(props propSet, env *graphv1.EventEnvelope, key string, value *structpb.Struct) {
 	if value == nil || len(value.GetFields()) == 0 {
 		return

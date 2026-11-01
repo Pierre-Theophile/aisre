@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package log_test
+package event_test
 
 import (
 	"os"
@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
+	"github.com/Pierre-Theophile/aisre/internal/event"
 )
 
 // The sixth event body (003 FR-029, plan item 2).
@@ -39,10 +39,10 @@ func TestProposeDependencyIsNamedAndCarried(t *testing.T) {
 		Type: graphv1.EdgeType_DEPENDS_ON,
 	})
 
-	if got := eventlog.EventType(env); got != "propose_dependency" {
+	if got := event.Type(env); got != "propose_dependency" {
 		t.Errorf("EventType = %q, want propose_dependency", got)
 	}
-	if eventlog.BodyMessage(env) == nil {
+	if event.BodyMessage(env) == nil {
 		t.Error("BodyMessage = nil; the body would be stored empty")
 	}
 }
@@ -88,7 +88,7 @@ func TestProposeDependencyIsAcceptedByTheStoredVocabulary(t *testing.T) {
 		{Body: &graphv1.EventEnvelope_ObserveChange{ObserveChange: &graphv1.ObserveChange{}}},
 		{Body: &graphv1.EventEnvelope_SourceCheckpoint{SourceCheckpoint: &graphv1.SourceCheckpoint{}}},
 	} {
-		typ := eventlog.EventType(env)
+		typ := event.Type(env)
 		if typ == "" {
 			t.Errorf("EventType returned \"\" for %T", env.GetBody())
 			continue

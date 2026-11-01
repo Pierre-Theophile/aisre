@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 )
 
 // Property names and the builder that refuses telemetry (FR-007, FR-009, constitution IV).
@@ -27,7 +28,7 @@ import (
 // Second, the builder has typed setters and no `Set(key string, value any)`. There is no way
 // to attach a slice of numbers, an arbitrary nested document or a struct that happens to hold
 // a metric — the shapes telemetry arrives in — without going out of your way. What still gets
-// through is caught by Build, which runs the graph's own validator (internal/log/validate.go)
+// through is caught by Build, which runs the graph's own validator (internal/event/validate.go)
 // over the finished struct and returns the same reason code and the same wording the server
 // would have returned. There is exactly one denylist in this repository and this is not a copy
 // of it.
@@ -359,7 +360,7 @@ func ValidateProps(props *structpb.Struct) *Rejection {
 	}
 	// The probe declares no accepted-version set, so the schema-version check is skipped and
 	// the only refusals that can come back are about the properties themselves.
-	r := convertRejection(eventlog.Validate(probe, nil))
+	r := convertRejection(event.Validate(probe, nil))
 	if r == nil {
 		return nil
 	}

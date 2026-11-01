@@ -8,11 +8,12 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"github.com/jackc/pgx/v5"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 )
 
@@ -287,7 +288,7 @@ func (e Event) principalOr(fallback string) string {
 // loaded.
 func registerSources(ctx context.Context, p *projector.Projector, m *Manifest) error {
 	if len(m.HumanDecisions) > 0 {
-		if err := p.RegisterSource(ctx, eventlog.Source{
+		if err := p.RegisterSource(ctx, event.Source{
 			SourceID:      HumanSourceID,
 			Kind:          "human",
 			Ordering:      "none",
@@ -297,7 +298,7 @@ func registerSources(ctx context.Context, p *projector.Projector, m *Manifest) e
 		}
 	}
 	for _, src := range m.Sources {
-		if err := p.RegisterSource(ctx, eventlog.Source{
+		if err := p.RegisterSource(ctx, event.Source{
 			SourceID:         src.SourceID,
 			Kind:             src.Kind,
 			Ordering:         src.Ordering,

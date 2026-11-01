@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/mask"
+
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	gcpbackend "github.com/Pierre-Theophile/aisre/internal/backends/gcp"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/backend"
@@ -76,7 +78,7 @@ func TestALiveLogDigestIsMaskedBeforeItLeavesTheProcess(t *testing.T) {
 	if strings.Contains(patterns[0].GetTemplate(), "10.4.2.19") {
 		t.Fatalf("a live template still carries an address: %q", patterns[0].GetTemplate())
 	}
-	if patterns[0].GetTemplate() != backend.MaskLine("payment failed for 10.4.2.19 after 1200ms") {
+	if patterns[0].GetTemplate() != mask.Line("payment failed for 10.4.2.19 after 1200ms") {
 		t.Fatalf("the live template is not feature 002's masking: %q", patterns[0].GetTemplate())
 	}
 	// And the join key was pseudonymised by 002's redactor, so the answer still joins.

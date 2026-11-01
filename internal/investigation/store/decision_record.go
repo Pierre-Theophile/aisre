@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/event"
+
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 )
 
@@ -127,7 +128,7 @@ func (in DecisionInput) Body() (*graphv1.RecordInvestigation, error) {
 		return nil, errors.New("investigation store: decision record: an investigation is about at least one subject")
 	case in.Requester == "":
 		return nil, fmt.Errorf("investigation store: decision record: no requester; an investigation with no "+
-			"authenticated identity is refused (%s, FR-066)", eventlog.ReasonMissingPrincipal)
+			"authenticated identity is refused (%s, FR-066)", event.ReasonMissingPrincipal)
 	}
 
 	hypotheses, err := hypothesesProp(in.Ledger)

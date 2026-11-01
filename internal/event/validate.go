@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package log
+package event
 
 import (
 	"fmt"
@@ -101,7 +101,8 @@ func (r *Rejection) Error() string {
 	return r.ReasonCode + ": " + r.ReasonDetail
 }
 
-func reject(code, detailFormat string, args ...any) *Rejection {
+// Reject builds a rejection with a formatted detail.
+func Reject(code, detailFormat string, args ...any) *Rejection {
 	return &Rejection{ReasonCode: code, ReasonDetail: fmt.Sprintf(detailFormat, args...)}
 }
 
@@ -154,19 +155,19 @@ const (
 // otherwise trip.
 func Validate(env *graphv1.EventEnvelope, accepted SchemaVersions) *Rejection {
 	if env == nil {
-		return reject(ReasonUntyped, "envelope")
+		return Reject(ReasonUntyped, "envelope")
 	}
 	if env.GetEventId() == "" {
-		return reject(ReasonMissingEventID, "event_id")
+		return Reject(ReasonMissingEventID, "event_id")
 	}
 	if env.GetSourceId() == "" {
-		return reject(ReasonMissingSource, "source_id")
+		return Reject(ReasonMissingSource, "source_id")
 	}
 	if env.GetBody() == nil {
-		return reject(ReasonUntyped, "body")
+		return Reject(ReasonUntyped, "body")
 	}
 	if len(accepted) > 0 && !accepted.Accepts(env.GetSchemaVersion()) {
-		return reject(ReasonUnknownSchemaVersion,
+		return Reject(ReasonUnknownSchemaVersion,
 			"schema_version %q; accepted: %s", env.GetSchemaVersion(), accepted)
 	}
 
@@ -241,11 +242,11 @@ func Validate(env *graphv1.EventEnvelope, accepted SchemaVersions) *Rejection {
 		return validateCorrectAttribution(body.CorrectAttribution)
 	case *graphv1.EventEnvelope_RevertCorrection:
 		if body.RevertCorrection.GetCorrectionEventId() == "" {
-			return reject(ReasonMissingRef, "revert_correction.correction_event_id")
+			return Reject(ReasonMissingRef, "revert_correction.correction_event_id")
 		}
 		return nil
 	default:
-		return reject(ReasonUntyped, "body")
+		return Reject(ReasonUntyped, "body")
 	}
 }
 
@@ -260,11 +261,11 @@ func validateProposeDependency(p *graphv1.ProposeDependency) *Rejection {
 		return r
 	}
 	if p.GetRuleId() == "" {
-		return reject(ReasonMissingRef, "propose_dependency.rule_id (a proposal names the "+
+		return Reject(ReasonMissingRef, "propose_dependency.rule_id (a proposal names the "+
 			"published rule that made it, so a reviewer can see what it matched on)")
 	}
 	if p.GetScore() <= 0 || p.GetScore() > 1 {
-		return reject(ReasonUnknownType, "propose_dependency.score is %v; a proposal "+
+		return Reject(ReasonUnknownType, "propose_dependency.score is %v; a proposal "+
 			"is ranked for review by its score, so it must be in (0,1]", p.GetScore())
 	}
 	return nil
@@ -283,10 +284,10 @@ func validateDependencyEnds(field string, src, dst *graphv1.Ref, typ graphv1.Edg
 		return r
 	}
 	if typ == graphv1.EdgeType_EDGE_TYPE_UNSPECIFIED {
-		return reject(ReasonUnknownType, "%s.type", field)
+		return Reject(ReasonUnknownType, "%s.type", field)
 	}
 	if src.GetNamespace() == dst.GetNamespace() && src.GetValue() == dst.GetValue() {
-		return reject(ReasonMissingRef, "%s names one entity at both ends; a self-dependency "+
+		return Reject(ReasonMissingRef, "%s names one entity at both ends; a self-dependency "+
 			"carries no information", field)
 	}
 	return nil
@@ -297,10 +298,10 @@ func validateUpsertNode(n *graphv1.UpsertNode) *Rejection {
 		return r
 	}
 	if n.GetType() == graphv1.NodeType_NODE_TYPE_UNSPECIFIED {
-		return reject(ReasonUnknownType, "upsert_node.type")
+		return Reject(ReasonUnknownType, "upsert_node.type")
 	}
 	if n.GetValidAt() == nil && !n.GetValidFromUnknown() {
-		return reject(ReasonMissingValidTime,
+		return Reject(ReasonMissingValidTime,
 			"upsert_node.valid_at (set valid_from_unknown to assert an unknown start, never a guessed one)")
 	}
 	if r := checkSecretValue("upsert_node", n.GetType(), n.GetProps()); r != nil {
@@ -320,10 +321,10 @@ func validateUpsertEdge(e *graphv1.UpsertEdge) *Rejection {
 		return r
 	}
 	if e.GetType() == graphv1.EdgeType_EDGE_TYPE_UNSPECIFIED {
-		return reject(ReasonUnknownType, "upsert_edge.type")
+		return Reject(ReasonUnknownType, "upsert_edge.type")
 	}
 	if e.GetValidAt() == nil && !e.GetValidFromUnknown() {
-		return reject(ReasonMissingValidTime, "upsert_edge.valid_at")
+		return Reject(ReasonMissingValidTime, "upsert_edge.valid_at")
 	}
 	return checkTelemetry("upsert_edge.props", e.GetProps())
 }
@@ -333,7 +334,7 @@ func validateRetractNode(n *graphv1.RetractNode) *Rejection {
 		return r
 	}
 	if n.GetValidEnd() == nil {
-		return reject(ReasonMissingValidTime, "retract_node.valid_end")
+		return Reject(ReasonMissingValidTime, "retract_node.valid_end")
 	}
 	return nil
 }
@@ -346,10 +347,10 @@ func validateRetractEdge(e *graphv1.RetractEdge) *Rejection {
 		return r
 	}
 	if e.GetType() == graphv1.EdgeType_EDGE_TYPE_UNSPECIFIED {
-		return reject(ReasonUnknownType, "retract_edge.type")
+		return Reject(ReasonUnknownType, "retract_edge.type")
 	}
 	if e.GetValidEnd() == nil {
-		return reject(ReasonMissingValidTime, "retract_edge.valid_end")
+		return Reject(ReasonMissingValidTime, "retract_edge.valid_end")
 	}
 	return nil
 }
@@ -360,10 +361,10 @@ func validateObserveChange(c *graphv1.ObserveChange) *Rejection {
 	}
 	kind := c.GetChange().GetKind()
 	if kind == graphv1.ChangeKind_CHANGE_KIND_UNSPECIFIED {
-		return reject(ReasonUnknownType, "observe_change.change.kind")
+		return Reject(ReasonUnknownType, "observe_change.change.kind")
 	}
 	if kind == graphv1.ChangeKind_CHANGE_KIND_OTHER && c.GetChange().GetKindOther() == "" {
-		return reject(ReasonUnknownType,
+		return Reject(ReasonUnknownType,
 			"observe_change.change.kind_other (required when kind is CHANGE_KIND_OTHER)")
 	}
 	// `valid_from_unknown` is honoured here exactly as it is for a node and an edge, and it had not
@@ -376,7 +377,7 @@ func validateObserveChange(c *graphv1.ObserveChange) *Rejection {
 	// reads as a fact about when production moved, and an operator diffing the window would see a
 	// rollout at the moment we noticed rather than at the moment it happened.
 	if c.GetValidAt() == nil && !c.GetValidFromUnknown() {
-		return reject(ReasonMissingValidTime,
+		return Reject(ReasonMissingValidTime,
 			"observe_change.valid_at (set valid_from_unknown to assert an unknown start, never a guessed one)")
 	}
 	for i, target := range c.GetTargets() {
@@ -427,13 +428,13 @@ const InvestigationPropNamespace = "sre.investigation."
 
 func validateRecordInvestigation(r *graphv1.RecordInvestigation) *Rejection {
 	if r.GetInvestigationId() == "" {
-		return reject(ReasonMissingRef, "record_investigation.investigation_id")
+		return Reject(ReasonMissingRef, "record_investigation.investigation_id")
 	}
 	if r.GetStartedAt() == nil {
-		return reject(ReasonMissingValidTime, "record_investigation.started_at")
+		return Reject(ReasonMissingValidTime, "record_investigation.started_at")
 	}
 	if r.GetEndedAt() == nil {
-		return reject(ReasonMissingValidTime, "record_investigation.ended_at")
+		return Reject(ReasonMissingValidTime, "record_investigation.ended_at")
 	}
 	for field, refs := range map[string][]*graphv1.Ref{
 		"record_investigation.subjects":        r.GetSubjects(),
@@ -457,32 +458,32 @@ func validateRecordInvestigation(r *graphv1.RecordInvestigation) *Rejection {
 
 func validateSubmitHumanFact(f *graphv1.SubmitHumanFact) *Rejection {
 	if f.GetInvestigationId() == "" {
-		return reject(ReasonMissingRef, "submit_human_fact.investigation_id")
+		return Reject(ReasonMissingRef, "submit_human_fact.investigation_id")
 	}
 	if strings.TrimSpace(f.GetAuthor()) == "" {
 		// FR-041's rule, applied to the human channel: a fact nobody signed is not evidence,
 		// and the graph refuses it rather than recording it unattributed.
-		return reject(ReasonMissingPrincipal,
+		return Reject(ReasonMissingPrincipal,
 			"submit_human_fact.author (a human fact carries the authenticated individual who pushed it)")
 	}
 	if f.GetSubmittedAt() == nil {
-		return reject(ReasonMissingValidTime, "submit_human_fact.submitted_at")
+		return Reject(ReasonMissingValidTime, "submit_human_fact.submitted_at")
 	}
 	if strings.TrimSpace(f.GetStatement()) == "" {
-		return reject(ReasonMissingRef, "submit_human_fact.statement")
+		return Reject(ReasonMissingRef, "submit_human_fact.statement")
 	}
 	return requireRefs("submit_human_fact.entities", f.GetEntities())
 }
 
 func validateReopenInvestigation(r *graphv1.ReopenInvestigation) *Rejection {
 	if r.GetParentInvestigationId() == "" {
-		return reject(ReasonMissingRef, "reopen_investigation.parent_investigation_id")
+		return Reject(ReasonMissingRef, "reopen_investigation.parent_investigation_id")
 	}
 	if r.GetChildInvestigationId() == "" {
-		return reject(ReasonMissingRef, "reopen_investigation.child_investigation_id")
+		return Reject(ReasonMissingRef, "reopen_investigation.child_investigation_id")
 	}
 	if r.GetChildInvestigationId() == r.GetParentInvestigationId() {
-		return reject(ReasonMissingRef,
+		return Reject(ReasonMissingRef,
 			"reopen_investigation.child_investigation_id equals the parent; a reopen is a NEW investigation")
 	}
 	return nil
@@ -490,14 +491,14 @@ func validateReopenInvestigation(r *graphv1.ReopenInvestigation) *Rejection {
 
 func validateLabelInvestigation(l *graphv1.LabelInvestigation) *Rejection {
 	if l.GetInvestigationId() == "" {
-		return reject(ReasonMissingRef, "label_investigation.investigation_id")
+		return Reject(ReasonMissingRef, "label_investigation.investigation_id")
 	}
 	if strings.TrimSpace(l.GetAuthor()) == "" {
-		return reject(ReasonMissingPrincipal,
+		return Reject(ReasonMissingPrincipal,
 			"label_investigation.author (a label is a human judgement and carries the individual who made it)")
 	}
 	if l.GetLabelledAt() == nil {
-		return reject(ReasonMissingValidTime, "label_investigation.labelled_at")
+		return Reject(ReasonMissingValidTime, "label_investigation.labelled_at")
 	}
 	return nil
 }
@@ -507,10 +508,10 @@ func validateAlertTransition(a *graphv1.AlertTransition) *Rejection {
 		return r
 	}
 	if a.GetTransitionAt() == nil {
-		return reject(ReasonMissingValidTime, "alert_transition.transition_at")
+		return Reject(ReasonMissingValidTime, "alert_transition.transition_at")
 	}
 	if a.GetToState() == "" {
-		return reject(ReasonUnknownType, "alert_transition.to_state")
+		return Reject(ReasonUnknownType, "alert_transition.to_state")
 	}
 	return requireRefs("alert_transition.watches", a.GetWatches())
 }
@@ -530,7 +531,7 @@ func requireRefs(field string, refs []*graphv1.Ref) *Rejection {
 func checkInvestigationProps(path string, props *structpb.Struct) *Rejection {
 	for _, key := range sortedKeys(props.GetFields()) {
 		if !strings.HasPrefix(key, InvestigationPropNamespace) {
-			return reject(ReasonPropNamespace,
+			return Reject(ReasonPropNamespace,
 				"%s.%s is outside the allow-listed %s* namespace; an investigation event carries "+
 					"only properties under it", path, key, InvestigationPropNamespace)
 		}
@@ -551,7 +552,7 @@ func validateIdentityClaim(c *graphv1.IdentityClaim) *Rejection {
 	// entities share on whichever entity was processed first, and C1 would then merge on it
 	// (004 T148, internal/graph/correlation.go).
 	if ns := c.GetClaim().GetNamespace(); graph.IsCorrelationNamespace(ns) {
-		return reject(ReasonCorrelationAsIdentity,
+		return Reject(ReasonCorrelationAsIdentity,
 			"identity_claim.claim.namespace %q is published as a correlation key, not a name: "+
 				"several entities share one of its values, so emit CorrelateEntity instead", ns)
 	}
@@ -578,20 +579,20 @@ func validateCorrelateEntity(c *graphv1.CorrelateEntity) *Rejection {
 
 func validatePair(field, a, b string) *Rejection {
 	if a == "" {
-		return reject(ReasonMissingRef, "%s.entity_a", field)
+		return Reject(ReasonMissingRef, "%s.entity_a", field)
 	}
 	if b == "" {
-		return reject(ReasonMissingRef, "%s.entity_b", field)
+		return Reject(ReasonMissingRef, "%s.entity_b", field)
 	}
 	return nil
 }
 
 func validateSplit(s *graphv1.SplitEntity) *Rejection {
 	if s.GetEntityId() == "" {
-		return reject(ReasonMissingRef, "split_entity.entity_id")
+		return Reject(ReasonMissingRef, "split_entity.entity_id")
 	}
 	if len(s.GetDetachClaims()) == 0 {
-		return reject(ReasonMissingRef, "split_entity.detach_claims")
+		return Reject(ReasonMissingRef, "split_entity.detach_claims")
 	}
 	for i, ref := range s.GetDetachClaims() {
 		if r := requireRef(fmt.Sprintf("split_entity.detach_claims[%d]", i), ref); r != nil {
@@ -603,7 +604,7 @@ func validateSplit(s *graphv1.SplitEntity) *Rejection {
 
 func requireRef(field string, ref *graphv1.Ref) *Rejection {
 	if ref.GetNamespace() == "" || ref.GetValue() == "" {
-		return reject(ReasonMissingRef, "%s (namespace and value are both required)", field)
+		return Reject(ReasonMissingRef, "%s (namespace and value are both required)", field)
 	}
 	return nil
 }
@@ -624,7 +625,7 @@ func checkSecretValue(prefix string, typ graphv1.NodeType, props *structpb.Struc
 	for key := range props.GetFields() {
 		switch base := key[strings.LastIndex(key, ".")+1:]; base {
 		case "data", "value":
-			return reject(ReasonSecretValue,
+			return Reject(ReasonSecretValue,
 				"%s.props.%s (a secret node carries only its version identifier)", prefix, key)
 		default:
 		}
@@ -653,7 +654,7 @@ func checkTelemetry(path string, props *structpb.Struct) *Rejection {
 			return r
 		}
 		if size := valueSize(value); size > maxPropBytes {
-			return reject(ReasonTelemetryPayload,
+			return Reject(ReasonTelemetryPayload,
 				"%s is %d bytes, above the %d byte property limit; store a pointer, not the payload",
 				child, size, maxPropBytes)
 		}
@@ -667,7 +668,7 @@ func checkTelemetry(path string, props *structpb.Struct) *Rejection {
 func checkDeniedKey(path, key string) *Rejection {
 	base := key[strings.LastIndex(key, ".")+1:]
 	if slices.Contains(deniedPropKeys, base) || slices.Contains(deniedPropKeys, key) {
-		return reject(ReasonTelemetryPayload,
+		return Reject(ReasonTelemetryPayload,
 			"%s is a telemetry payload key; the graph stores pointers, not samples", path)
 	}
 	return nil
@@ -697,7 +698,7 @@ func checkTelemetryValue(path string, value *structpb.Value) *Rejection {
 			}
 		}
 		if numbers >= minNumericListLen && numbers == len(items) {
-			return reject(ReasonTelemetryPayload,
+			return Reject(ReasonTelemetryPayload,
 				"%s is a list of %d numeric samples; the graph stores pointers, not samples",
 				path, numbers)
 		}
@@ -716,7 +717,7 @@ func checkTelemetryValue(path string, value *structpb.Value) *Rejection {
 func checkPointers(path string, pointers []*graphv1.Pointer) *Rejection {
 	for i, p := range pointers {
 		if len(p.GetSelector()) > maxPropBytes {
-			return reject(ReasonTelemetryPayload,
+			return Reject(ReasonTelemetryPayload,
 				"%s[%d].selector is %d bytes, above the %d byte limit",
 				path, i, len(p.GetSelector()), maxPropBytes)
 		}

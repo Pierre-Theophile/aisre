@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/mask"
+
 	gcpfeeder "github.com/Pierre-Theophile/aisre/internal/feeders/gcp"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/sanitise"
@@ -362,11 +364,11 @@ func TestLogContentReducesToMaskedTemplatesBeforeLeavingTheProcess(t *testing.T)
 			t.Fatalf("the template %q still carries %q", template, leaked)
 		}
 	}
-	if template != backend.MaskLine(raw) {
+	if template != mask.Line(raw) {
 		t.Fatalf("the template is not feature 002's masking of the line: %q vs %q",
-			template, backend.MaskLine(raw))
+			template, mask.Line(raw))
 	}
-	if unmasked := backend.UnmaskedLiterals(template); unmasked != "" {
+	if unmasked := mask.UnmaskedLiterals(template); unmasked != "" {
 		t.Fatalf("the template %q still carries an unmasked %s", template, unmasked)
 	}
 
