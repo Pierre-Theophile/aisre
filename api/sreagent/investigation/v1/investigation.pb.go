@@ -6785,6 +6785,206 @@ func (x *ExaminationReport) GetOmissions() uint32 {
 	return 0
 }
 
+// One edge of a propagation path (FR-019b), in the direction the fault travelled: from the entity
+// nearer the cause to the entity nearer the alerting one.
+type PathEdge struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Src           string                 `protobuf:"bytes,1,opt,name=src,proto3" json:"src,omitempty"` // a reference, or the change's reference for `changed_by`
+	Dst           string                 `protobuf:"bytes,2,opt,name=dst,proto3" json:"dst,omitempty"`
+	EdgeType      string                 `protobuf:"bytes,3,opt,name=edge_type,json=edgeType,proto3" json:"edge_type,omitempty"`           // the graph's edge type, lower-case: changed_by, calls, depends_on
+	AgainstEdge   bool                   `protobuf:"varint,4,opt,name=against_edge,json=againstEdge,proto3" json:"against_edge,omitempty"` // the fault travelled against the edge (a callee's fault reaching its caller)
+	EvidenceIds   []string               `protobuf:"bytes,5,rep,name=evidence_ids,json=evidenceIds,proto3" json:"evidence_ids,omitempty"`  // the evidence that shows the fault crossed it; empty when unverified
+	Unverified    bool                   `protobuf:"varint,6,opt,name=unverified,proto3" json:"unverified,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PathEdge) Reset() {
+	*x = PathEdge{}
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PathEdge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PathEdge) ProtoMessage() {}
+
+func (x *PathEdge) ProtoReflect() protoreflect.Message {
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PathEdge.ProtoReflect.Descriptor instead.
+func (*PathEdge) Descriptor() ([]byte, []int) {
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *PathEdge) GetSrc() string {
+	if x != nil {
+		return x.Src
+	}
+	return ""
+}
+
+func (x *PathEdge) GetDst() string {
+	if x != nil {
+		return x.Dst
+	}
+	return ""
+}
+
+func (x *PathEdge) GetEdgeType() string {
+	if x != nil {
+		return x.EdgeType
+	}
+	return ""
+}
+
+func (x *PathEdge) GetAgainstEdge() bool {
+	if x != nil {
+		return x.AgainstEdge
+	}
+	return false
+}
+
+func (x *PathEdge) GetEvidenceIds() []string {
+	if x != nil {
+		return x.EvidenceIds
+	}
+	return nil
+}
+
+func (x *PathEdge) GetUnverified() bool {
+	if x != nil {
+		return x.Unverified
+	}
+	return false
+}
+
+// A hypothesis's propagation path: an ordered chain of typed graph edges from the candidate cause to
+// the alerting entity, as of the pinned instants (FR-019b).
+type PropagationPath struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	HypothesisId  string                 `protobuf:"bytes,1,opt,name=hypothesis_id,json=hypothesisId,proto3" json:"hypothesis_id,omitempty"`
+	Edges         []*PathEdge            `protobuf:"bytes,2,rep,name=edges,proto3" json:"edges,omitempty"`
+	Drawable      bool                   `protobuf:"varint,3,opt,name=drawable,proto3" json:"drawable,omitempty"`                         // false when no chain of edges on the graph links the cause to the subject
+	MissingLink   *Resolution            `protobuf:"bytes,4,opt,name=missing_link,json=missingLink,proto3" json:"missing_link,omitempty"` // set when not drawable: the link the graph lacks, as a resolving action
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PropagationPath) Reset() {
+	*x = PropagationPath{}
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PropagationPath) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PropagationPath) ProtoMessage() {}
+
+func (x *PropagationPath) ProtoReflect() protoreflect.Message {
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PropagationPath.ProtoReflect.Descriptor instead.
+func (*PropagationPath) Descriptor() ([]byte, []int) {
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *PropagationPath) GetHypothesisId() string {
+	if x != nil {
+		return x.HypothesisId
+	}
+	return ""
+}
+
+func (x *PropagationPath) GetEdges() []*PathEdge {
+	if x != nil {
+		return x.Edges
+	}
+	return nil
+}
+
+func (x *PropagationPath) GetDrawable() bool {
+	if x != nil {
+		return x.Drawable
+	}
+	return false
+}
+
+func (x *PropagationPath) GetMissingLink() *Resolution {
+	if x != nil {
+		return x.MissingLink
+	}
+	return nil
+}
+
+type PropagationPaths struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Paths         []*PropagationPath     `protobuf:"bytes,1,rep,name=paths,proto3" json:"paths,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PropagationPaths) Reset() {
+	*x = PropagationPaths{}
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PropagationPaths) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PropagationPaths) ProtoMessage() {}
+
+func (x *PropagationPaths) ProtoReflect() protoreflect.Message {
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PropagationPaths.ProtoReflect.Descriptor instead.
+func (*PropagationPaths) Descriptor() ([]byte, []int) {
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *PropagationPaths) GetPaths() []*PropagationPath {
+	if x != nil {
+		return x.Paths
+	}
+	return nil
+}
+
 type VerifierFinding struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	ClaimRef        string                 `protobuf:"bytes,1,opt,name=claim_ref,json=claimRef,proto3" json:"claim_ref,omitempty"`
@@ -6798,7 +6998,7 @@ type VerifierFinding struct {
 
 func (x *VerifierFinding) Reset() {
 	*x = VerifierFinding{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[62]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6810,7 +7010,7 @@ func (x *VerifierFinding) String() string {
 func (*VerifierFinding) ProtoMessage() {}
 
 func (x *VerifierFinding) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[62]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6823,7 +7023,7 @@ func (x *VerifierFinding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifierFinding.ProtoReflect.Descriptor instead.
 func (*VerifierFinding) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{62}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *VerifierFinding) GetClaimRef() string {
@@ -6874,7 +7074,7 @@ type Resolution struct {
 
 func (x *Resolution) Reset() {
 	*x = Resolution{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[63]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6886,7 +7086,7 @@ func (x *Resolution) String() string {
 func (*Resolution) ProtoMessage() {}
 
 func (x *Resolution) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[63]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6899,7 +7099,7 @@ func (x *Resolution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resolution.ProtoReflect.Descriptor instead.
 func (*Resolution) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{63}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *Resolution) GetStatement() string {
@@ -6978,13 +7178,14 @@ type Investigation struct {
 	VerificationDetail      string                 `protobuf:"bytes,37,opt,name=verification_detail,json=verificationDetail,proto3" json:"verification_detail,omitempty"`                                                    // why, in a sentence: counts kept/demoted/removed, or the reason
 	SearchSpaceProfile      string                 `protobuf:"bytes,38,opt,name=search_space_profile,json=searchSpaceProfile,proto3" json:"search_space_profile,omitempty"`                                                  // FR-012a: the profile the first brief carried; empty on runs concluded before it
 	Examination             *ExaminationReport     `protobuf:"bytes,39,opt,name=examination,proto3" json:"examination,omitempty"`                                                                                            // FR-022b; unset on runs concluded before it
+	PropagationPaths        *PropagationPaths      `protobuf:"bytes,40,opt,name=propagation_paths,json=propagationPaths,proto3" json:"propagation_paths,omitempty"`                                                          // FR-019b; unset on runs concluded before it
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
 
 func (x *Investigation) Reset() {
 	*x = Investigation{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[64]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6996,7 +7197,7 @@ func (x *Investigation) String() string {
 func (*Investigation) ProtoMessage() {}
 
 func (x *Investigation) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[64]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7009,7 +7210,7 @@ func (x *Investigation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Investigation.ProtoReflect.Descriptor instead.
 func (*Investigation) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{64}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *Investigation) GetInvestigationId() string {
@@ -7285,6 +7486,13 @@ func (x *Investigation) GetExamination() *ExaminationReport {
 	return nil
 }
 
+func (x *Investigation) GetPropagationPaths() *PropagationPaths {
+	if x != nil {
+		return x.PropagationPaths
+	}
+	return nil
+}
+
 type DeclareRequest struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Declaration *Symptom               `protobuf:"bytes,1,opt,name=declaration,proto3" json:"declaration,omitempty"` // origin = INTAKE_ORIGIN_DECLARED; severity, title, declaring
@@ -7297,7 +7505,7 @@ type DeclareRequest struct {
 
 func (x *DeclareRequest) Reset() {
 	*x = DeclareRequest{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[65]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7309,7 +7517,7 @@ func (x *DeclareRequest) String() string {
 func (*DeclareRequest) ProtoMessage() {}
 
 func (x *DeclareRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[65]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7322,7 +7530,7 @@ func (x *DeclareRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeclareRequest.ProtoReflect.Descriptor instead.
 func (*DeclareRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{65}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *DeclareRequest) GetDeclaration() *Symptom {
@@ -7361,7 +7569,7 @@ type InvestigateRequest struct {
 
 func (x *InvestigateRequest) Reset() {
 	*x = InvestigateRequest{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[66]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7373,7 +7581,7 @@ func (x *InvestigateRequest) String() string {
 func (*InvestigateRequest) ProtoMessage() {}
 
 func (x *InvestigateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[66]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7386,7 +7594,7 @@ func (x *InvestigateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvestigateRequest.ProtoReflect.Descriptor instead.
 func (*InvestigateRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{66}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *InvestigateRequest) GetSymptom() *Symptom {
@@ -7447,7 +7655,7 @@ type GetRequest struct {
 
 func (x *GetRequest) Reset() {
 	*x = GetRequest{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[67]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7459,7 +7667,7 @@ func (x *GetRequest) String() string {
 func (*GetRequest) ProtoMessage() {}
 
 func (x *GetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[67]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7472,7 +7680,7 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
 func (*GetRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{67}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *GetRequest) GetInvestigationId() string {
@@ -7493,7 +7701,7 @@ type ReplayRequest struct {
 
 func (x *ReplayRequest) Reset() {
 	*x = ReplayRequest{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[68]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7505,7 +7713,7 @@ func (x *ReplayRequest) String() string {
 func (*ReplayRequest) ProtoMessage() {}
 
 func (x *ReplayRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[68]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7518,7 +7726,7 @@ func (x *ReplayRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayRequest.ProtoReflect.Descriptor instead.
 func (*ReplayRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{68}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *ReplayRequest) GetInvestigationId() string {
@@ -7555,7 +7763,7 @@ type ReplayResponse struct {
 
 func (x *ReplayResponse) Reset() {
 	*x = ReplayResponse{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[69]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7567,7 +7775,7 @@ func (x *ReplayResponse) String() string {
 func (*ReplayResponse) ProtoMessage() {}
 
 func (x *ReplayResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[69]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7580,7 +7788,7 @@ func (x *ReplayResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayResponse.ProtoReflect.Descriptor instead.
 func (*ReplayResponse) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{69}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *ReplayResponse) GetIdentical() bool {
@@ -7628,7 +7836,7 @@ type ReopenRequest struct {
 
 func (x *ReopenRequest) Reset() {
 	*x = ReopenRequest{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[70]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7640,7 +7848,7 @@ func (x *ReopenRequest) String() string {
 func (*ReopenRequest) ProtoMessage() {}
 
 func (x *ReopenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[70]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7653,7 +7861,7 @@ func (x *ReopenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReopenRequest.ProtoReflect.Descriptor instead.
 func (*ReopenRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{70}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *ReopenRequest) GetInvestigationId() string {
@@ -7680,7 +7888,7 @@ type SubmitHumanFactRequest struct {
 
 func (x *SubmitHumanFactRequest) Reset() {
 	*x = SubmitHumanFactRequest{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[71]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7692,7 +7900,7 @@ func (x *SubmitHumanFactRequest) String() string {
 func (*SubmitHumanFactRequest) ProtoMessage() {}
 
 func (x *SubmitHumanFactRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[71]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7705,7 +7913,7 @@ func (x *SubmitHumanFactRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitHumanFactRequest.ProtoReflect.Descriptor instead.
 func (*SubmitHumanFactRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{71}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *SubmitHumanFactRequest) GetInvestigationId() string {
@@ -7732,7 +7940,7 @@ type LabelRequest struct {
 
 func (x *LabelRequest) Reset() {
 	*x = LabelRequest{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[72]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7744,7 +7952,7 @@ func (x *LabelRequest) String() string {
 func (*LabelRequest) ProtoMessage() {}
 
 func (x *LabelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[72]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7757,7 +7965,7 @@ func (x *LabelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LabelRequest.ProtoReflect.Descriptor instead.
 func (*LabelRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{72}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *LabelRequest) GetInvestigationId() string {
@@ -7784,7 +7992,7 @@ type ReviewRequest struct {
 
 func (x *ReviewRequest) Reset() {
 	*x = ReviewRequest{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[73]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7796,7 +8004,7 @@ func (x *ReviewRequest) String() string {
 func (*ReviewRequest) ProtoMessage() {}
 
 func (x *ReviewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[73]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7809,7 +8017,7 @@ func (x *ReviewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewRequest.ProtoReflect.Descriptor instead.
 func (*ReviewRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{73}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *ReviewRequest) GetInvestigationId() string {
@@ -7839,7 +8047,7 @@ type ListInvestigationsRequest struct {
 
 func (x *ListInvestigationsRequest) Reset() {
 	*x = ListInvestigationsRequest{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[74]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7851,7 +8059,7 @@ func (x *ListInvestigationsRequest) String() string {
 func (*ListInvestigationsRequest) ProtoMessage() {}
 
 func (x *ListInvestigationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[74]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7864,7 +8072,7 @@ func (x *ListInvestigationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvestigationsRequest.ProtoReflect.Descriptor instead.
 func (*ListInvestigationsRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{74}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *ListInvestigationsRequest) GetIncidentId() string {
@@ -7912,7 +8120,7 @@ type ListInvestigationsResponse struct {
 
 func (x *ListInvestigationsResponse) Reset() {
 	*x = ListInvestigationsResponse{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[75]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7924,7 +8132,7 @@ func (x *ListInvestigationsResponse) String() string {
 func (*ListInvestigationsResponse) ProtoMessage() {}
 
 func (x *ListInvestigationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[75]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7937,7 +8145,7 @@ func (x *ListInvestigationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvestigationsResponse.ProtoReflect.Descriptor instead.
 func (*ListInvestigationsResponse) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{75}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *ListInvestigationsResponse) GetInvestigations() []*Investigation {
@@ -7966,7 +8174,7 @@ type ExportRequest struct {
 
 func (x *ExportRequest) Reset() {
 	*x = ExportRequest{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[76]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7978,7 +8186,7 @@ func (x *ExportRequest) String() string {
 func (*ExportRequest) ProtoMessage() {}
 
 func (x *ExportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[76]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7991,7 +8199,7 @@ func (x *ExportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportRequest.ProtoReflect.Descriptor instead.
 func (*ExportRequest) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{76}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ExportRequest) GetInvestigationId() string {
@@ -8020,7 +8228,7 @@ type ExportResponse struct {
 
 func (x *ExportResponse) Reset() {
 	*x = ExportResponse{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[77]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8032,7 +8240,7 @@ func (x *ExportResponse) String() string {
 func (*ExportResponse) ProtoMessage() {}
 
 func (x *ExportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[77]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8045,7 +8253,7 @@ func (x *ExportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportResponse.ProtoReflect.Descriptor instead.
 func (*ExportResponse) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{77}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ExportResponse) GetOutDir() string {
@@ -8088,7 +8296,7 @@ type ModelRequestRecord struct {
 
 func (x *ModelRequestRecord) Reset() {
 	*x = ModelRequestRecord{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[78]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8100,7 +8308,7 @@ func (x *ModelRequestRecord) String() string {
 func (*ModelRequestRecord) ProtoMessage() {}
 
 func (x *ModelRequestRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[78]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8113,7 +8321,7 @@ func (x *ModelRequestRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelRequestRecord.ProtoReflect.Descriptor instead.
 func (*ModelRequestRecord) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{78}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *ModelRequestRecord) GetRole() string {
@@ -8156,7 +8364,7 @@ type ModelResponseRecord struct {
 
 func (x *ModelResponseRecord) Reset() {
 	*x = ModelResponseRecord{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[79]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8168,7 +8376,7 @@ func (x *ModelResponseRecord) String() string {
 func (*ModelResponseRecord) ProtoMessage() {}
 
 func (x *ModelResponseRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[79]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8181,7 +8389,7 @@ func (x *ModelResponseRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelResponseRecord.ProtoReflect.Descriptor instead.
 func (*ModelResponseRecord) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{79}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ModelResponseRecord) GetResponseDigest() string {
@@ -8223,7 +8431,7 @@ type WorkerRequestRecord struct {
 
 func (x *WorkerRequestRecord) Reset() {
 	*x = WorkerRequestRecord{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[80]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8235,7 +8443,7 @@ func (x *WorkerRequestRecord) String() string {
 func (*WorkerRequestRecord) ProtoMessage() {}
 
 func (x *WorkerRequestRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[80]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8248,7 +8456,7 @@ func (x *WorkerRequestRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerRequestRecord.ProtoReflect.Descriptor instead.
 func (*WorkerRequestRecord) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{80}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *WorkerRequestRecord) GetWorker() string {
@@ -8281,7 +8489,7 @@ type WorkerResponseRecord struct {
 
 func (x *WorkerResponseRecord) Reset() {
 	*x = WorkerResponseRecord{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[81]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8293,7 +8501,7 @@ func (x *WorkerResponseRecord) String() string {
 func (*WorkerResponseRecord) ProtoMessage() {}
 
 func (x *WorkerResponseRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[81]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8306,7 +8514,7 @@ func (x *WorkerResponseRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerResponseRecord.ProtoReflect.Descriptor instead.
 func (*WorkerResponseRecord) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{81}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *WorkerResponseRecord) GetResponse() *AlgebraResponse {
@@ -8326,7 +8534,7 @@ type LedgerUpdateRecord struct {
 
 func (x *LedgerUpdateRecord) Reset() {
 	*x = LedgerUpdateRecord{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[82]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8338,7 +8546,7 @@ func (x *LedgerUpdateRecord) String() string {
 func (*LedgerUpdateRecord) ProtoMessage() {}
 
 func (x *LedgerUpdateRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[82]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8351,7 +8559,7 @@ func (x *LedgerUpdateRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LedgerUpdateRecord.ProtoReflect.Descriptor instead.
 func (*LedgerUpdateRecord) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{82}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *LedgerUpdateRecord) GetJudgments() []*Judgment {
@@ -8399,7 +8607,7 @@ type FinalHypothesis struct {
 
 func (x *FinalHypothesis) Reset() {
 	*x = FinalHypothesis{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[83]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8411,7 +8619,7 @@ func (x *FinalHypothesis) String() string {
 func (*FinalHypothesis) ProtoMessage() {}
 
 func (x *FinalHypothesis) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[83]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8424,7 +8632,7 @@ func (x *FinalHypothesis) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinalHypothesis.ProtoReflect.Descriptor instead.
 func (*FinalHypothesis) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{83}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *FinalHypothesis) GetHypothesisId() string {
@@ -8496,7 +8704,7 @@ type StopRecord struct {
 
 func (x *StopRecord) Reset() {
 	*x = StopRecord{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[84]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8508,7 +8716,7 @@ func (x *StopRecord) String() string {
 func (*StopRecord) ProtoMessage() {}
 
 func (x *StopRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[84]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8521,7 +8729,7 @@ func (x *StopRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRecord.ProtoReflect.Descriptor instead.
 func (*StopRecord) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{84}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *StopRecord) GetReason() StopReason {
@@ -8565,7 +8773,7 @@ type TrajectoryRecord struct {
 
 func (x *TrajectoryRecord) Reset() {
 	*x = TrajectoryRecord{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[85]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8577,7 +8785,7 @@ func (x *TrajectoryRecord) String() string {
 func (*TrajectoryRecord) ProtoMessage() {}
 
 func (x *TrajectoryRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[85]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8590,7 +8798,7 @@ func (x *TrajectoryRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrajectoryRecord.ProtoReflect.Descriptor instead.
 func (*TrajectoryRecord) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{85}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *TrajectoryRecord) GetSeq() uint64 {
@@ -8740,7 +8948,7 @@ type WorldIndex struct {
 
 func (x *WorldIndex) Reset() {
 	*x = WorldIndex{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[86]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8752,7 +8960,7 @@ func (x *WorldIndex) String() string {
 func (*WorldIndex) ProtoMessage() {}
 
 func (x *WorldIndex) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[86]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8765,7 +8973,7 @@ func (x *WorldIndex) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorldIndex.ProtoReflect.Descriptor instead.
 func (*WorldIndex) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{86}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *WorldIndex) GetAlgebraVersion() string {
@@ -8842,7 +9050,7 @@ type CausalStep struct {
 
 func (x *CausalStep) Reset() {
 	*x = CausalStep{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[87]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8854,7 +9062,7 @@ func (x *CausalStep) String() string {
 func (*CausalStep) ProtoMessage() {}
 
 func (x *CausalStep) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[87]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8867,7 +9075,7 @@ func (x *CausalStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CausalStep.ProtoReflect.Descriptor instead.
 func (*CausalStep) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{87}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *CausalStep) GetEntityId() string {
@@ -8905,7 +9113,7 @@ type EvidencePredicate struct {
 
 func (x *EvidencePredicate) Reset() {
 	*x = EvidencePredicate{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[88]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8917,7 +9125,7 @@ func (x *EvidencePredicate) String() string {
 func (*EvidencePredicate) ProtoMessage() {}
 
 func (x *EvidencePredicate) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[88]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8930,7 +9138,7 @@ func (x *EvidencePredicate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvidencePredicate.ProtoReflect.Descriptor instead.
 func (*EvidencePredicate) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{88}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *EvidencePredicate) GetTerm() *AlgebraTerm {
@@ -8983,7 +9191,7 @@ type GroundTruth struct {
 
 func (x *GroundTruth) Reset() {
 	*x = GroundTruth{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[89]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8995,7 +9203,7 @@ func (x *GroundTruth) String() string {
 func (*GroundTruth) ProtoMessage() {}
 
 func (x *GroundTruth) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[89]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9008,7 +9216,7 @@ func (x *GroundTruth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroundTruth.ProtoReflect.Descriptor instead.
 func (*GroundTruth) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{89}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *GroundTruth) GetCulpritKind() CulpritKind {
@@ -9118,7 +9326,7 @@ type EvidencePredicateList struct {
 
 func (x *EvidencePredicateList) Reset() {
 	*x = EvidencePredicateList{}
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[90]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9130,7 +9338,7 @@ func (x *EvidencePredicateList) String() string {
 func (*EvidencePredicateList) ProtoMessage() {}
 
 func (x *EvidencePredicateList) ProtoReflect() protoreflect.Message {
-	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[90]
+	mi := &file_sreagent_investigation_v1_investigation_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9143,7 +9351,7 @@ func (x *EvidencePredicateList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvidencePredicateList.ProtoReflect.Descriptor instead.
 func (*EvidencePredicateList) Descriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{90}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *EvidencePredicateList) GetPredicates() []*EvidencePredicate {
@@ -9743,7 +9951,23 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"hypotheses\x18\x02 \x03(\v20.sreagent.investigation.v1.HypothesisExaminationR\n" +
 	"hypotheses\x12-\n" +
 	"\x12untouched_entities\x18\x03 \x03(\tR\x11untouchedEntities\x12\x1c\n" +
-	"\tomissions\x18\x04 \x01(\rR\tomissions\"\xc0\x01\n" +
+	"\tomissions\x18\x04 \x01(\rR\tomissions\"\xb1\x01\n" +
+	"\bPathEdge\x12\x10\n" +
+	"\x03src\x18\x01 \x01(\tR\x03src\x12\x10\n" +
+	"\x03dst\x18\x02 \x01(\tR\x03dst\x12\x1b\n" +
+	"\tedge_type\x18\x03 \x01(\tR\bedgeType\x12!\n" +
+	"\fagainst_edge\x18\x04 \x01(\bR\vagainstEdge\x12!\n" +
+	"\fevidence_ids\x18\x05 \x03(\tR\vevidenceIds\x12\x1e\n" +
+	"\n" +
+	"unverified\x18\x06 \x01(\bR\n" +
+	"unverified\"\xd7\x01\n" +
+	"\x0fPropagationPath\x12#\n" +
+	"\rhypothesis_id\x18\x01 \x01(\tR\fhypothesisId\x129\n" +
+	"\x05edges\x18\x02 \x03(\v2#.sreagent.investigation.v1.PathEdgeR\x05edges\x12\x1a\n" +
+	"\bdrawable\x18\x03 \x01(\bR\bdrawable\x12H\n" +
+	"\fmissing_link\x18\x04 \x01(\v2%.sreagent.investigation.v1.ResolutionR\vmissingLink\"T\n" +
+	"\x10PropagationPaths\x12@\n" +
+	"\x05paths\x18\x01 \x03(\v2*.sreagent.investigation.v1.PropagationPathR\x05paths\"\xc0\x01\n" +
 	"\x0fVerifierFinding\x12\x1b\n" +
 	"\tclaim_ref\x18\x01 \x01(\tR\bclaimRef\x12\x18\n" +
 	"\averdict\x18\x02 \x01(\tR\averdict\x12'\n" +
@@ -9757,7 +9981,7 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\n" +
 	"next_query\x18\x03 \x01(\v2&.sreagent.investigation.v1.AlgebraTermR\tnextQuery\x12\x1b\n" +
 	"\tdeep_link\x18\x04 \x01(\tR\bdeepLink\x12#\n" +
-	"\rhypothesis_id\x18\x05 \x01(\tR\fhypothesisId\"\x9b\x11\n" +
+	"\rhypothesis_id\x18\x05 \x01(\tR\fhypothesisId\"\xf5\x11\n" +
 	"\rInvestigation\x12)\n" +
 	"\x10investigation_id\x18\x01 \x01(\tR\x0finvestigationId\x12\x1f\n" +
 	"\vincident_id\x18\x02 \x01(\tR\n" +
@@ -9806,7 +10030,8 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\x13verification_status\x18$ \x01(\x0e2-.sreagent.investigation.v1.VerificationStatusR\x12verificationStatus\x12/\n" +
 	"\x13verification_detail\x18% \x01(\tR\x12verificationDetail\x120\n" +
 	"\x14search_space_profile\x18& \x01(\tR\x12searchSpaceProfile\x12N\n" +
-	"\vexamination\x18' \x01(\v2,.sreagent.investigation.v1.ExaminationReportR\vexamination\"\x9b\x01\n" +
+	"\vexamination\x18' \x01(\v2,.sreagent.investigation.v1.ExaminationReportR\vexamination\x12X\n" +
+	"\x11propagation_paths\x18( \x01(\v2+.sreagent.investigation.v1.PropagationPathsR\x10propagationPaths\"\x9b\x01\n" +
 	"\x0eDeclareRequest\x12D\n" +
 	"\vdeclaration\x18\x01 \x01(\v2\".sreagent.investigation.v1.SymptomR\vdeclaration\x12)\n" +
 	"\x10lookback_seconds\x18\x02 \x01(\x03R\x0flookbackSeconds\x12\x18\n" +
@@ -10129,7 +10354,7 @@ func file_sreagent_investigation_v1_investigation_proto_rawDescGZIP() []byte {
 }
 
 var file_sreagent_investigation_v1_investigation_proto_enumTypes = make([]protoimpl.EnumInfo, 20)
-var file_sreagent_investigation_v1_investigation_proto_msgTypes = make([]protoimpl.MessageInfo, 109)
+var file_sreagent_investigation_v1_investigation_proto_msgTypes = make([]protoimpl.MessageInfo, 112)
 var file_sreagent_investigation_v1_investigation_proto_goTypes = []any{
 	(Statistic)(0),                     // 0: sreagent.investigation.v1.Statistic
 	(OnsetMethod)(0),                   // 1: sreagent.investigation.v1.OnsetMethod
@@ -10213,95 +10438,98 @@ var file_sreagent_investigation_v1_investigation_proto_goTypes = []any{
 	(*Label)(nil),                      // 79: sreagent.investigation.v1.Label
 	(*HypothesisExamination)(nil),      // 80: sreagent.investigation.v1.HypothesisExamination
 	(*ExaminationReport)(nil),          // 81: sreagent.investigation.v1.ExaminationReport
-	(*VerifierFinding)(nil),            // 82: sreagent.investigation.v1.VerifierFinding
-	(*Resolution)(nil),                 // 83: sreagent.investigation.v1.Resolution
-	(*Investigation)(nil),              // 84: sreagent.investigation.v1.Investigation
-	(*DeclareRequest)(nil),             // 85: sreagent.investigation.v1.DeclareRequest
-	(*InvestigateRequest)(nil),         // 86: sreagent.investigation.v1.InvestigateRequest
-	(*GetRequest)(nil),                 // 87: sreagent.investigation.v1.GetRequest
-	(*ReplayRequest)(nil),              // 88: sreagent.investigation.v1.ReplayRequest
-	(*ReplayResponse)(nil),             // 89: sreagent.investigation.v1.ReplayResponse
-	(*ReopenRequest)(nil),              // 90: sreagent.investigation.v1.ReopenRequest
-	(*SubmitHumanFactRequest)(nil),     // 91: sreagent.investigation.v1.SubmitHumanFactRequest
-	(*LabelRequest)(nil),               // 92: sreagent.investigation.v1.LabelRequest
-	(*ReviewRequest)(nil),              // 93: sreagent.investigation.v1.ReviewRequest
-	(*ListInvestigationsRequest)(nil),  // 94: sreagent.investigation.v1.ListInvestigationsRequest
-	(*ListInvestigationsResponse)(nil), // 95: sreagent.investigation.v1.ListInvestigationsResponse
-	(*ExportRequest)(nil),              // 96: sreagent.investigation.v1.ExportRequest
-	(*ExportResponse)(nil),             // 97: sreagent.investigation.v1.ExportResponse
-	(*ModelRequestRecord)(nil),         // 98: sreagent.investigation.v1.ModelRequestRecord
-	(*ModelResponseRecord)(nil),        // 99: sreagent.investigation.v1.ModelResponseRecord
-	(*WorkerRequestRecord)(nil),        // 100: sreagent.investigation.v1.WorkerRequestRecord
-	(*WorkerResponseRecord)(nil),       // 101: sreagent.investigation.v1.WorkerResponseRecord
-	(*LedgerUpdateRecord)(nil),         // 102: sreagent.investigation.v1.LedgerUpdateRecord
-	(*FinalHypothesis)(nil),            // 103: sreagent.investigation.v1.FinalHypothesis
-	(*StopRecord)(nil),                 // 104: sreagent.investigation.v1.StopRecord
-	(*TrajectoryRecord)(nil),           // 105: sreagent.investigation.v1.TrajectoryRecord
-	(*WorldIndex)(nil),                 // 106: sreagent.investigation.v1.WorldIndex
-	(*CausalStep)(nil),                 // 107: sreagent.investigation.v1.CausalStep
-	(*EvidencePredicate)(nil),          // 108: sreagent.investigation.v1.EvidencePredicate
-	(*GroundTruth)(nil),                // 109: sreagent.investigation.v1.GroundTruth
-	(*EvidencePredicateList)(nil),      // 110: sreagent.investigation.v1.EvidencePredicateList
-	nil,                                // 111: sreagent.investigation.v1.SeriesSummary.TagsEntry
-	nil,                                // 112: sreagent.investigation.v1.SeriesSummary.StatisticsEntry
-	nil,                                // 113: sreagent.investigation.v1.LogDigest.CountsByStatusEntry
-	nil,                                // 114: sreagent.investigation.v1.SpanGroup.LatencyEntry
-	nil,                                // 115: sreagent.investigation.v1.MonitorStateDigest.PerGroupStateEntry
-	nil,                                // 116: sreagent.investigation.v1.OnsetDigest.MethodParametersEntry
-	nil,                                // 117: sreagent.investigation.v1.BackendDescription.CostClassesEntry
-	nil,                                // 118: sreagent.investigation.v1.BudgetProfile.CallsPerBackendEntry
-	nil,                                // 119: sreagent.investigation.v1.BudgetProfile.CallsPerCostClassEntry
-	nil,                                // 120: sreagent.investigation.v1.BudgetSpend.TokensByModelAndClassEntry
-	nil,                                // 121: sreagent.investigation.v1.BudgetSpend.CallsByWorkerEntry
-	nil,                                // 122: sreagent.investigation.v1.BudgetSpend.CallsByBackendEntry
-	nil,                                // 123: sreagent.investigation.v1.BudgetSpend.CallsByCostClassEntry
-	nil,                                // 124: sreagent.investigation.v1.BudgetSpend.QuotaShareUsedEntry
-	nil,                                // 125: sreagent.investigation.v1.BudgetSpend.RemainingQuotaObservedEntry
-	nil,                                // 126: sreagent.investigation.v1.ModelResponseRecord.UsageEntry
-	nil,                                // 127: sreagent.investigation.v1.WorldIndex.TermKeyToFileEntry
-	nil,                                // 128: sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry
-	(*timestamppb.Timestamp)(nil),      // 129: google.protobuf.Timestamp
-	(*v1.SubgraphRequest)(nil),         // 130: sreagent.graph.v1.SubgraphRequest
-	(*v1.DiffRequest)(nil),             // 131: sreagent.graph.v1.DiffRequest
-	(*v1.ImpactRequest)(nil),           // 132: sreagent.graph.v1.ImpactRequest
-	(*v1.PointersRequest)(nil),         // 133: sreagent.graph.v1.PointersRequest
-	(*v1.NodeHistoryRequest)(nil),      // 134: sreagent.graph.v1.NodeHistoryRequest
-	(*v1.ResolutionAuditRequest)(nil),  // 135: sreagent.graph.v1.ResolutionAuditRequest
-	(*v1.ExtentRequest)(nil),           // 136: sreagent.graph.v1.ExtentRequest
-	(*v1.Pointer)(nil),                 // 137: sreagent.graph.v1.Pointer
-	(v1.EdgeType)(0),                   // 138: sreagent.graph.v1.EdgeType
-	(*v1.Ref)(nil),                     // 139: sreagent.graph.v1.Ref
-	(*v1.Interval)(nil),                // 140: sreagent.graph.v1.Interval
-	(*structpb.Struct)(nil),            // 141: google.protobuf.Struct
-	(*structpb.Value)(nil),             // 142: google.protobuf.Value
+	(*PathEdge)(nil),                   // 82: sreagent.investigation.v1.PathEdge
+	(*PropagationPath)(nil),            // 83: sreagent.investigation.v1.PropagationPath
+	(*PropagationPaths)(nil),           // 84: sreagent.investigation.v1.PropagationPaths
+	(*VerifierFinding)(nil),            // 85: sreagent.investigation.v1.VerifierFinding
+	(*Resolution)(nil),                 // 86: sreagent.investigation.v1.Resolution
+	(*Investigation)(nil),              // 87: sreagent.investigation.v1.Investigation
+	(*DeclareRequest)(nil),             // 88: sreagent.investigation.v1.DeclareRequest
+	(*InvestigateRequest)(nil),         // 89: sreagent.investigation.v1.InvestigateRequest
+	(*GetRequest)(nil),                 // 90: sreagent.investigation.v1.GetRequest
+	(*ReplayRequest)(nil),              // 91: sreagent.investigation.v1.ReplayRequest
+	(*ReplayResponse)(nil),             // 92: sreagent.investigation.v1.ReplayResponse
+	(*ReopenRequest)(nil),              // 93: sreagent.investigation.v1.ReopenRequest
+	(*SubmitHumanFactRequest)(nil),     // 94: sreagent.investigation.v1.SubmitHumanFactRequest
+	(*LabelRequest)(nil),               // 95: sreagent.investigation.v1.LabelRequest
+	(*ReviewRequest)(nil),              // 96: sreagent.investigation.v1.ReviewRequest
+	(*ListInvestigationsRequest)(nil),  // 97: sreagent.investigation.v1.ListInvestigationsRequest
+	(*ListInvestigationsResponse)(nil), // 98: sreagent.investigation.v1.ListInvestigationsResponse
+	(*ExportRequest)(nil),              // 99: sreagent.investigation.v1.ExportRequest
+	(*ExportResponse)(nil),             // 100: sreagent.investigation.v1.ExportResponse
+	(*ModelRequestRecord)(nil),         // 101: sreagent.investigation.v1.ModelRequestRecord
+	(*ModelResponseRecord)(nil),        // 102: sreagent.investigation.v1.ModelResponseRecord
+	(*WorkerRequestRecord)(nil),        // 103: sreagent.investigation.v1.WorkerRequestRecord
+	(*WorkerResponseRecord)(nil),       // 104: sreagent.investigation.v1.WorkerResponseRecord
+	(*LedgerUpdateRecord)(nil),         // 105: sreagent.investigation.v1.LedgerUpdateRecord
+	(*FinalHypothesis)(nil),            // 106: sreagent.investigation.v1.FinalHypothesis
+	(*StopRecord)(nil),                 // 107: sreagent.investigation.v1.StopRecord
+	(*TrajectoryRecord)(nil),           // 108: sreagent.investigation.v1.TrajectoryRecord
+	(*WorldIndex)(nil),                 // 109: sreagent.investigation.v1.WorldIndex
+	(*CausalStep)(nil),                 // 110: sreagent.investigation.v1.CausalStep
+	(*EvidencePredicate)(nil),          // 111: sreagent.investigation.v1.EvidencePredicate
+	(*GroundTruth)(nil),                // 112: sreagent.investigation.v1.GroundTruth
+	(*EvidencePredicateList)(nil),      // 113: sreagent.investigation.v1.EvidencePredicateList
+	nil,                                // 114: sreagent.investigation.v1.SeriesSummary.TagsEntry
+	nil,                                // 115: sreagent.investigation.v1.SeriesSummary.StatisticsEntry
+	nil,                                // 116: sreagent.investigation.v1.LogDigest.CountsByStatusEntry
+	nil,                                // 117: sreagent.investigation.v1.SpanGroup.LatencyEntry
+	nil,                                // 118: sreagent.investigation.v1.MonitorStateDigest.PerGroupStateEntry
+	nil,                                // 119: sreagent.investigation.v1.OnsetDigest.MethodParametersEntry
+	nil,                                // 120: sreagent.investigation.v1.BackendDescription.CostClassesEntry
+	nil,                                // 121: sreagent.investigation.v1.BudgetProfile.CallsPerBackendEntry
+	nil,                                // 122: sreagent.investigation.v1.BudgetProfile.CallsPerCostClassEntry
+	nil,                                // 123: sreagent.investigation.v1.BudgetSpend.TokensByModelAndClassEntry
+	nil,                                // 124: sreagent.investigation.v1.BudgetSpend.CallsByWorkerEntry
+	nil,                                // 125: sreagent.investigation.v1.BudgetSpend.CallsByBackendEntry
+	nil,                                // 126: sreagent.investigation.v1.BudgetSpend.CallsByCostClassEntry
+	nil,                                // 127: sreagent.investigation.v1.BudgetSpend.QuotaShareUsedEntry
+	nil,                                // 128: sreagent.investigation.v1.BudgetSpend.RemainingQuotaObservedEntry
+	nil,                                // 129: sreagent.investigation.v1.ModelResponseRecord.UsageEntry
+	nil,                                // 130: sreagent.investigation.v1.WorldIndex.TermKeyToFileEntry
+	nil,                                // 131: sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry
+	(*timestamppb.Timestamp)(nil),      // 132: google.protobuf.Timestamp
+	(*v1.SubgraphRequest)(nil),         // 133: sreagent.graph.v1.SubgraphRequest
+	(*v1.DiffRequest)(nil),             // 134: sreagent.graph.v1.DiffRequest
+	(*v1.ImpactRequest)(nil),           // 135: sreagent.graph.v1.ImpactRequest
+	(*v1.PointersRequest)(nil),         // 136: sreagent.graph.v1.PointersRequest
+	(*v1.NodeHistoryRequest)(nil),      // 137: sreagent.graph.v1.NodeHistoryRequest
+	(*v1.ResolutionAuditRequest)(nil),  // 138: sreagent.graph.v1.ResolutionAuditRequest
+	(*v1.ExtentRequest)(nil),           // 139: sreagent.graph.v1.ExtentRequest
+	(*v1.Pointer)(nil),                 // 140: sreagent.graph.v1.Pointer
+	(v1.EdgeType)(0),                   // 141: sreagent.graph.v1.EdgeType
+	(*v1.Ref)(nil),                     // 142: sreagent.graph.v1.Ref
+	(*v1.Interval)(nil),                // 143: sreagent.graph.v1.Interval
+	(*structpb.Struct)(nil),            // 144: google.protobuf.Struct
+	(*structpb.Value)(nil),             // 145: google.protobuf.Value
 }
 var file_sreagent_investigation_v1_investigation_proto_depIdxs = []int32{
-	129, // 0: sreagent.investigation.v1.Window.start:type_name -> google.protobuf.Timestamp
-	129, // 1: sreagent.investigation.v1.Window.end:type_name -> google.protobuf.Timestamp
-	129, // 2: sreagent.investigation.v1.WindowPair.reference_at:type_name -> google.protobuf.Timestamp
+	132, // 0: sreagent.investigation.v1.Window.start:type_name -> google.protobuf.Timestamp
+	132, // 1: sreagent.investigation.v1.Window.end:type_name -> google.protobuf.Timestamp
+	132, // 2: sreagent.investigation.v1.WindowPair.reference_at:type_name -> google.protobuf.Timestamp
 	20,  // 3: sreagent.investigation.v1.WindowPair.baseline:type_name -> sreagent.investigation.v1.Window
 	20,  // 4: sreagent.investigation.v1.WindowPair.symptom:type_name -> sreagent.investigation.v1.Window
-	130, // 5: sreagent.investigation.v1.GraphTerm.subgraph:type_name -> sreagent.graph.v1.SubgraphRequest
-	131, // 6: sreagent.investigation.v1.GraphTerm.diff:type_name -> sreagent.graph.v1.DiffRequest
-	132, // 7: sreagent.investigation.v1.GraphTerm.impact:type_name -> sreagent.graph.v1.ImpactRequest
-	133, // 8: sreagent.investigation.v1.GraphTerm.pointers:type_name -> sreagent.graph.v1.PointersRequest
-	134, // 9: sreagent.investigation.v1.GraphTerm.node_history:type_name -> sreagent.graph.v1.NodeHistoryRequest
-	135, // 10: sreagent.investigation.v1.GraphTerm.resolution_audit:type_name -> sreagent.graph.v1.ResolutionAuditRequest
-	136, // 11: sreagent.investigation.v1.GraphTerm.extent:type_name -> sreagent.graph.v1.ExtentRequest
-	137, // 12: sreagent.investigation.v1.CompareTerm.pointer:type_name -> sreagent.graph.v1.Pointer
+	133, // 5: sreagent.investigation.v1.GraphTerm.subgraph:type_name -> sreagent.graph.v1.SubgraphRequest
+	134, // 6: sreagent.investigation.v1.GraphTerm.diff:type_name -> sreagent.graph.v1.DiffRequest
+	135, // 7: sreagent.investigation.v1.GraphTerm.impact:type_name -> sreagent.graph.v1.ImpactRequest
+	136, // 8: sreagent.investigation.v1.GraphTerm.pointers:type_name -> sreagent.graph.v1.PointersRequest
+	137, // 9: sreagent.investigation.v1.GraphTerm.node_history:type_name -> sreagent.graph.v1.NodeHistoryRequest
+	138, // 10: sreagent.investigation.v1.GraphTerm.resolution_audit:type_name -> sreagent.graph.v1.ResolutionAuditRequest
+	139, // 11: sreagent.investigation.v1.GraphTerm.extent:type_name -> sreagent.graph.v1.ExtentRequest
+	140, // 12: sreagent.investigation.v1.CompareTerm.pointer:type_name -> sreagent.graph.v1.Pointer
 	21,  // 13: sreagent.investigation.v1.CompareTerm.windows:type_name -> sreagent.investigation.v1.WindowPair
 	0,   // 14: sreagent.investigation.v1.CompareTerm.statistic:type_name -> sreagent.investigation.v1.Statistic
-	137, // 15: sreagent.investigation.v1.OnsetTerm.pointer:type_name -> sreagent.graph.v1.Pointer
+	140, // 15: sreagent.investigation.v1.OnsetTerm.pointer:type_name -> sreagent.graph.v1.Pointer
 	20,  // 16: sreagent.investigation.v1.OnsetTerm.search_window:type_name -> sreagent.investigation.v1.Window
 	1,   // 17: sreagent.investigation.v1.OnsetTerm.method:type_name -> sreagent.investigation.v1.OnsetMethod
-	137, // 18: sreagent.investigation.v1.NewLogPatternsTerm.pointer:type_name -> sreagent.graph.v1.Pointer
+	140, // 18: sreagent.investigation.v1.NewLogPatternsTerm.pointer:type_name -> sreagent.graph.v1.Pointer
 	20,  // 19: sreagent.investigation.v1.NewLogPatternsTerm.window:type_name -> sreagent.investigation.v1.Window
 	20,  // 20: sreagent.investigation.v1.NewLogPatternsTerm.baseline_window:type_name -> sreagent.investigation.v1.Window
-	138, // 21: sreagent.investigation.v1.ErrorSpansTerm.edge_type:type_name -> sreagent.graph.v1.EdgeType
+	141, // 21: sreagent.investigation.v1.ErrorSpansTerm.edge_type:type_name -> sreagent.graph.v1.EdgeType
 	20,  // 22: sreagent.investigation.v1.ErrorSpansTerm.window:type_name -> sreagent.investigation.v1.Window
-	137, // 23: sreagent.investigation.v1.ErrorsByVersionTerm.pointer:type_name -> sreagent.graph.v1.Pointer
+	140, // 23: sreagent.investigation.v1.ErrorsByVersionTerm.pointer:type_name -> sreagent.graph.v1.Pointer
 	20,  // 24: sreagent.investigation.v1.ErrorsByVersionTerm.window:type_name -> sreagent.investigation.v1.Window
-	137, // 25: sreagent.investigation.v1.MonitorStateTerm.pointer:type_name -> sreagent.graph.v1.Pointer
+	140, // 25: sreagent.investigation.v1.MonitorStateTerm.pointer:type_name -> sreagent.graph.v1.Pointer
 	20,  // 26: sreagent.investigation.v1.MonitorStateTerm.window:type_name -> sreagent.investigation.v1.Window
 	22,  // 27: sreagent.investigation.v1.ExemplarsTerm.handle:type_name -> sreagent.investigation.v1.Handle
 	22,  // 28: sreagent.investigation.v1.DrillDownTerm.handle:type_name -> sreagent.investigation.v1.Handle
@@ -10320,13 +10548,13 @@ var file_sreagent_investigation_v1_investigation_proto_depIdxs = []int32{
 	33,  // 41: sreagent.investigation.v1.AlgebraTerm.chat_mentions:type_name -> sreagent.investigation.v1.ChatMentionsTerm
 	34,  // 42: sreagent.investigation.v1.AlgebraTerm.chat_timeline:type_name -> sreagent.investigation.v1.ChatTimelineTerm
 	20,  // 43: sreagent.investigation.v1.Coverage.window_actually_covered:type_name -> sreagent.investigation.v1.Window
-	129, // 44: sreagent.investigation.v1.Coverage.executed_at:type_name -> google.protobuf.Timestamp
-	129, // 45: sreagent.investigation.v1.Coverage.horizon:type_name -> google.protobuf.Timestamp
-	129, // 46: sreagent.investigation.v1.JoinKeys.first_seen:type_name -> google.protobuf.Timestamp
+	132, // 44: sreagent.investigation.v1.Coverage.executed_at:type_name -> google.protobuf.Timestamp
+	132, // 45: sreagent.investigation.v1.Coverage.horizon:type_name -> google.protobuf.Timestamp
+	132, // 46: sreagent.investigation.v1.JoinKeys.first_seen:type_name -> google.protobuf.Timestamp
 	22,  // 47: sreagent.investigation.v1.DrillDown.handle:type_name -> sreagent.investigation.v1.Handle
-	111, // 48: sreagent.investigation.v1.SeriesSummary.tags:type_name -> sreagent.investigation.v1.SeriesSummary.TagsEntry
+	114, // 48: sreagent.investigation.v1.SeriesSummary.tags:type_name -> sreagent.investigation.v1.SeriesSummary.TagsEntry
 	20,  // 49: sreagent.investigation.v1.SeriesSummary.interval_covered:type_name -> sreagent.investigation.v1.Window
-	112, // 50: sreagent.investigation.v1.SeriesSummary.statistics:type_name -> sreagent.investigation.v1.SeriesSummary.StatisticsEntry
+	115, // 50: sreagent.investigation.v1.SeriesSummary.statistics:type_name -> sreagent.investigation.v1.SeriesSummary.StatisticsEntry
 	37,  // 51: sreagent.investigation.v1.SeriesSummary.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
 	38,  // 52: sreagent.investigation.v1.SeriesSummary.drill_down:type_name -> sreagent.investigation.v1.DrillDown
 	0,   // 53: sreagent.investigation.v1.Comparison.statistic:type_name -> sreagent.investigation.v1.Statistic
@@ -10335,31 +10563,31 @@ var file_sreagent_investigation_v1_investigation_proto_depIdxs = []int32{
 	37,  // 56: sreagent.investigation.v1.LogPattern.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
 	38,  // 57: sreagent.investigation.v1.LogPattern.drill_down:type_name -> sreagent.investigation.v1.DrillDown
 	43,  // 58: sreagent.investigation.v1.LogDigest.patterns:type_name -> sreagent.investigation.v1.LogPattern
-	113, // 59: sreagent.investigation.v1.LogDigest.counts_by_status:type_name -> sreagent.investigation.v1.LogDigest.CountsByStatusEntry
-	114, // 60: sreagent.investigation.v1.SpanGroup.latency:type_name -> sreagent.investigation.v1.SpanGroup.LatencyEntry
+	116, // 59: sreagent.investigation.v1.LogDigest.counts_by_status:type_name -> sreagent.investigation.v1.LogDigest.CountsByStatusEntry
+	117, // 60: sreagent.investigation.v1.SpanGroup.latency:type_name -> sreagent.investigation.v1.SpanGroup.LatencyEntry
 	37,  // 61: sreagent.investigation.v1.SpanGroup.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
 	38,  // 62: sreagent.investigation.v1.SpanGroup.drill_down:type_name -> sreagent.investigation.v1.DrillDown
 	45,  // 63: sreagent.investigation.v1.TraceDigest.groups:type_name -> sreagent.investigation.v1.SpanGroup
 	41,  // 64: sreagent.investigation.v1.TraceDigest.comparisons:type_name -> sreagent.investigation.v1.Comparison
-	129, // 65: sreagent.investigation.v1.MonitorTransition.at:type_name -> google.protobuf.Timestamp
+	132, // 65: sreagent.investigation.v1.MonitorTransition.at:type_name -> google.protobuf.Timestamp
 	47,  // 66: sreagent.investigation.v1.MonitorStateDigest.transitions:type_name -> sreagent.investigation.v1.MonitorTransition
-	115, // 67: sreagent.investigation.v1.MonitorStateDigest.per_group_state:type_name -> sreagent.investigation.v1.MonitorStateDigest.PerGroupStateEntry
-	129, // 68: sreagent.investigation.v1.OnsetDigest.estimated_onset:type_name -> google.protobuf.Timestamp
+	118, // 67: sreagent.investigation.v1.MonitorStateDigest.per_group_state:type_name -> sreagent.investigation.v1.MonitorStateDigest.PerGroupStateEntry
+	132, // 68: sreagent.investigation.v1.OnsetDigest.estimated_onset:type_name -> google.protobuf.Timestamp
 	1,   // 69: sreagent.investigation.v1.OnsetDigest.method:type_name -> sreagent.investigation.v1.OnsetMethod
-	116, // 70: sreagent.investigation.v1.OnsetDigest.method_parameters:type_name -> sreagent.investigation.v1.OnsetDigest.MethodParametersEntry
+	119, // 70: sreagent.investigation.v1.OnsetDigest.method_parameters:type_name -> sreagent.investigation.v1.OnsetDigest.MethodParametersEntry
 	20,  // 71: sreagent.investigation.v1.OnsetDigest.examined:type_name -> sreagent.investigation.v1.Window
 	37,  // 72: sreagent.investigation.v1.VersionBreakdown.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
 	38,  // 73: sreagent.investigation.v1.VersionBreakdown.drill_down:type_name -> sreagent.investigation.v1.DrillDown
-	139, // 74: sreagent.investigation.v1.VersionBreakdown.deploy_ref:type_name -> sreagent.graph.v1.Ref
+	142, // 74: sreagent.investigation.v1.VersionBreakdown.deploy_ref:type_name -> sreagent.graph.v1.Ref
 	4,   // 75: sreagent.investigation.v1.VersionBreakdown.deploy_ref_absent_reason:type_name -> sreagent.investigation.v1.DeployRefAbsentReason
 	50,  // 76: sreagent.investigation.v1.ErrorsByVersionDigest.versions:type_name -> sreagent.investigation.v1.VersionBreakdown
 	37,  // 77: sreagent.investigation.v1.Exemplar.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
 	52,  // 78: sreagent.investigation.v1.ExemplarDigest.exemplars:type_name -> sreagent.investigation.v1.Exemplar
-	129, // 79: sreagent.investigation.v1.KnowledgeItem.authored_at:type_name -> google.protobuf.Timestamp
+	132, // 79: sreagent.investigation.v1.KnowledgeItem.authored_at:type_name -> google.protobuf.Timestamp
 	54,  // 80: sreagent.investigation.v1.KnowledgeDigest.items:type_name -> sreagent.investigation.v1.KnowledgeItem
-	129, // 81: sreagent.investigation.v1.ChatMentionsDigest.first_at:type_name -> google.protobuf.Timestamp
-	129, // 82: sreagent.investigation.v1.ChatMentionsDigest.last_at:type_name -> google.protobuf.Timestamp
-	129, // 83: sreagent.investigation.v1.ChatBucket.start:type_name -> google.protobuf.Timestamp
+	132, // 81: sreagent.investigation.v1.ChatMentionsDigest.first_at:type_name -> google.protobuf.Timestamp
+	132, // 82: sreagent.investigation.v1.ChatMentionsDigest.last_at:type_name -> google.protobuf.Timestamp
+	132, // 83: sreagent.investigation.v1.ChatBucket.start:type_name -> google.protobuf.Timestamp
 	57,  // 84: sreagent.investigation.v1.ChatTimelineDigest.buckets:type_name -> sreagent.investigation.v1.ChatBucket
 	42,  // 85: sreagent.investigation.v1.Digest.metric:type_name -> sreagent.investigation.v1.MetricDigest
 	44,  // 86: sreagent.investigation.v1.Digest.log:type_name -> sreagent.investigation.v1.LogDigest
@@ -10374,17 +10602,17 @@ var file_sreagent_investigation_v1_investigation_proto_depIdxs = []int32{
 	36,  // 95: sreagent.investigation.v1.Digest.coverage:type_name -> sreagent.investigation.v1.Coverage
 	39,  // 96: sreagent.investigation.v1.Digest.truncation:type_name -> sreagent.investigation.v1.Truncated
 	35,  // 97: sreagent.investigation.v1.AlgebraRequest.term:type_name -> sreagent.investigation.v1.AlgebraTerm
-	129, // 98: sreagent.investigation.v1.AlgebraRequest.valid_at:type_name -> google.protobuf.Timestamp
-	129, // 99: sreagent.investigation.v1.AlgebraRequest.observed_at:type_name -> google.protobuf.Timestamp
+	132, // 98: sreagent.investigation.v1.AlgebraRequest.valid_at:type_name -> google.protobuf.Timestamp
+	132, // 99: sreagent.investigation.v1.AlgebraRequest.observed_at:type_name -> google.protobuf.Timestamp
 	2,   // 100: sreagent.investigation.v1.AlgebraResponse.outcome:type_name -> sreagent.investigation.v1.TermOutcome
 	59,  // 101: sreagent.investigation.v1.AlgebraResponse.digest:type_name -> sreagent.investigation.v1.Digest
 	3,   // 102: sreagent.investigation.v1.AlgebraResponse.failure_reason:type_name -> sreagent.investigation.v1.FailureReason
 	5,   // 103: sreagent.investigation.v1.AlgebraResponse.cost_class:type_name -> sreagent.investigation.v1.CostClass
-	129, // 104: sreagent.investigation.v1.AlgebraResponse.retention_horizon:type_name -> google.protobuf.Timestamp
+	132, // 104: sreagent.investigation.v1.AlgebraResponse.retention_horizon:type_name -> google.protobuf.Timestamp
 	5,   // 105: sreagent.investigation.v1.Capability.cost_class:type_name -> sreagent.investigation.v1.CostClass
 	62,  // 106: sreagent.investigation.v1.WorkerDescription.capabilities:type_name -> sreagent.investigation.v1.Capability
 	63,  // 107: sreagent.investigation.v1.WorkerDescription.redaction:type_name -> sreagent.investigation.v1.RedactionPolicy
-	117, // 108: sreagent.investigation.v1.BackendDescription.cost_classes:type_name -> sreagent.investigation.v1.BackendDescription.CostClassesEntry
+	120, // 108: sreagent.investigation.v1.BackendDescription.cost_classes:type_name -> sreagent.investigation.v1.BackendDescription.CostClassesEntry
 	63,  // 109: sreagent.investigation.v1.BackendDescription.redaction:type_name -> sreagent.investigation.v1.RedactionPolicy
 	6,   // 110: sreagent.investigation.v1.Hypothesis.kind:type_name -> sreagent.investigation.v1.HypothesisKind
 	8,   // 111: sreagent.investigation.v1.Hypothesis.causal_role:type_name -> sreagent.investigation.v1.CausalRole
@@ -10393,11 +10621,11 @@ var file_sreagent_investigation_v1_investigation_proto_depIdxs = []int32{
 	35,  // 114: sreagent.investigation.v1.Hypothesis.next_query:type_name -> sreagent.investigation.v1.AlgebraTerm
 	9,   // 115: sreagent.investigation.v1.Judgment.direction:type_name -> sreagent.investigation.v1.JudgmentDirection
 	10,  // 116: sreagent.investigation.v1.Judgment.strength:type_name -> sreagent.investigation.v1.JudgmentStrength
-	129, // 117: sreagent.investigation.v1.Judgment.recorded_at:type_name -> google.protobuf.Timestamp
+	132, // 117: sreagent.investigation.v1.Judgment.recorded_at:type_name -> google.protobuf.Timestamp
 	35,  // 118: sreagent.investigation.v1.EvidenceItem.term:type_name -> sreagent.investigation.v1.AlgebraTerm
-	129, // 119: sreagent.investigation.v1.EvidenceItem.valid_at:type_name -> google.protobuf.Timestamp
-	129, // 120: sreagent.investigation.v1.EvidenceItem.observed_at:type_name -> google.protobuf.Timestamp
-	129, // 121: sreagent.investigation.v1.EvidenceItem.called_at:type_name -> google.protobuf.Timestamp
+	132, // 119: sreagent.investigation.v1.EvidenceItem.valid_at:type_name -> google.protobuf.Timestamp
+	132, // 120: sreagent.investigation.v1.EvidenceItem.observed_at:type_name -> google.protobuf.Timestamp
+	132, // 121: sreagent.investigation.v1.EvidenceItem.called_at:type_name -> google.protobuf.Timestamp
 	2,   // 122: sreagent.investigation.v1.EvidenceItem.outcome:type_name -> sreagent.investigation.v1.TermOutcome
 	36,  // 123: sreagent.investigation.v1.EvidenceItem.coverage:type_name -> sreagent.investigation.v1.Coverage
 	37,  // 124: sreagent.investigation.v1.EvidenceItem.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
@@ -10405,124 +10633,128 @@ var file_sreagent_investigation_v1_investigation_proto_depIdxs = []int32{
 	69,  // 126: sreagent.investigation.v1.Ledger.judgments:type_name -> sreagent.investigation.v1.Judgment
 	70,  // 127: sreagent.investigation.v1.Ledger.evidence:type_name -> sreagent.investigation.v1.EvidenceItem
 	67,  // 128: sreagent.investigation.v1.Ledger.buckets:type_name -> sreagent.investigation.v1.ConfidenceBucket
-	139, // 129: sreagent.investigation.v1.TargetRef.ref:type_name -> sreagent.graph.v1.Ref
+	142, // 129: sreagent.investigation.v1.TargetRef.ref:type_name -> sreagent.graph.v1.Ref
 	17,  // 130: sreagent.investigation.v1.TargetRef.provenance:type_name -> sreagent.investigation.v1.TargetRefProvenance
-	129, // 131: sreagent.investigation.v1.Symptom.fired_at:type_name -> google.protobuf.Timestamp
-	139, // 132: sreagent.investigation.v1.Symptom.named_identifiers:type_name -> sreagent.graph.v1.Ref
+	132, // 131: sreagent.investigation.v1.Symptom.fired_at:type_name -> google.protobuf.Timestamp
+	142, // 132: sreagent.investigation.v1.Symptom.named_identifiers:type_name -> sreagent.graph.v1.Ref
 	16,  // 133: sreagent.investigation.v1.Symptom.origin:type_name -> sreagent.investigation.v1.IntakeOrigin
 	72,  // 134: sreagent.investigation.v1.Symptom.target_refs:type_name -> sreagent.investigation.v1.TargetRef
-	129, // 135: sreagent.investigation.v1.ReportDelivery.first_delivered_at:type_name -> google.protobuf.Timestamp
-	129, // 136: sreagent.investigation.v1.ReportDelivery.last_updated_at:type_name -> google.protobuf.Timestamp
-	118, // 137: sreagent.investigation.v1.BudgetProfile.calls_per_backend:type_name -> sreagent.investigation.v1.BudgetProfile.CallsPerBackendEntry
-	119, // 138: sreagent.investigation.v1.BudgetProfile.calls_per_cost_class:type_name -> sreagent.investigation.v1.BudgetProfile.CallsPerCostClassEntry
+	132, // 135: sreagent.investigation.v1.ReportDelivery.first_delivered_at:type_name -> google.protobuf.Timestamp
+	132, // 136: sreagent.investigation.v1.ReportDelivery.last_updated_at:type_name -> google.protobuf.Timestamp
+	121, // 137: sreagent.investigation.v1.BudgetProfile.calls_per_backend:type_name -> sreagent.investigation.v1.BudgetProfile.CallsPerBackendEntry
+	122, // 138: sreagent.investigation.v1.BudgetProfile.calls_per_cost_class:type_name -> sreagent.investigation.v1.BudgetProfile.CallsPerCostClassEntry
 	75,  // 139: sreagent.investigation.v1.BudgetSpend.limits:type_name -> sreagent.investigation.v1.BudgetProfile
-	120, // 140: sreagent.investigation.v1.BudgetSpend.tokens_by_model_and_class:type_name -> sreagent.investigation.v1.BudgetSpend.TokensByModelAndClassEntry
-	121, // 141: sreagent.investigation.v1.BudgetSpend.calls_by_worker:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByWorkerEntry
-	122, // 142: sreagent.investigation.v1.BudgetSpend.calls_by_backend:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByBackendEntry
-	123, // 143: sreagent.investigation.v1.BudgetSpend.calls_by_cost_class:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByCostClassEntry
-	124, // 144: sreagent.investigation.v1.BudgetSpend.quota_share_used:type_name -> sreagent.investigation.v1.BudgetSpend.QuotaShareUsedEntry
-	125, // 145: sreagent.investigation.v1.BudgetSpend.remaining_quota_observed:type_name -> sreagent.investigation.v1.BudgetSpend.RemainingQuotaObservedEntry
-	129, // 146: sreagent.investigation.v1.BudgetSpend.reserve_entered_at:type_name -> google.protobuf.Timestamp
-	140, // 147: sreagent.investigation.v1.HumanFact.concerns:type_name -> sreagent.graph.v1.Interval
-	129, // 148: sreagent.investigation.v1.HumanFact.submitted_at:type_name -> google.protobuf.Timestamp
+	123, // 140: sreagent.investigation.v1.BudgetSpend.tokens_by_model_and_class:type_name -> sreagent.investigation.v1.BudgetSpend.TokensByModelAndClassEntry
+	124, // 141: sreagent.investigation.v1.BudgetSpend.calls_by_worker:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByWorkerEntry
+	125, // 142: sreagent.investigation.v1.BudgetSpend.calls_by_backend:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByBackendEntry
+	126, // 143: sreagent.investigation.v1.BudgetSpend.calls_by_cost_class:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByCostClassEntry
+	127, // 144: sreagent.investigation.v1.BudgetSpend.quota_share_used:type_name -> sreagent.investigation.v1.BudgetSpend.QuotaShareUsedEntry
+	128, // 145: sreagent.investigation.v1.BudgetSpend.remaining_quota_observed:type_name -> sreagent.investigation.v1.BudgetSpend.RemainingQuotaObservedEntry
+	132, // 146: sreagent.investigation.v1.BudgetSpend.reserve_entered_at:type_name -> google.protobuf.Timestamp
+	143, // 147: sreagent.investigation.v1.HumanFact.concerns:type_name -> sreagent.graph.v1.Interval
+	132, // 148: sreagent.investigation.v1.HumanFact.submitted_at:type_name -> google.protobuf.Timestamp
 	68,  // 149: sreagent.investigation.v1.HumanReview.amendments:type_name -> sreagent.investigation.v1.Hypothesis
-	129, // 150: sreagent.investigation.v1.HumanReview.decided_at:type_name -> google.protobuf.Timestamp
-	129, // 151: sreagent.investigation.v1.Label.labelled_at:type_name -> google.protobuf.Timestamp
+	132, // 150: sreagent.investigation.v1.HumanReview.decided_at:type_name -> google.protobuf.Timestamp
+	132, // 151: sreagent.investigation.v1.Label.labelled_at:type_name -> google.protobuf.Timestamp
 	80,  // 152: sreagent.investigation.v1.ExaminationReport.hypotheses:type_name -> sreagent.investigation.v1.HypothesisExamination
-	35,  // 153: sreagent.investigation.v1.Resolution.next_query:type_name -> sreagent.investigation.v1.AlgebraTerm
-	73,  // 154: sreagent.investigation.v1.Investigation.symptoms:type_name -> sreagent.investigation.v1.Symptom
-	129, // 155: sreagent.investigation.v1.Investigation.valid_at:type_name -> google.protobuf.Timestamp
-	129, // 156: sreagent.investigation.v1.Investigation.observed_at:type_name -> google.protobuf.Timestamp
-	20,  // 157: sreagent.investigation.v1.Investigation.window:type_name -> sreagent.investigation.v1.Window
-	11,  // 158: sreagent.investigation.v1.Investigation.lifecycle:type_name -> sreagent.investigation.v1.Lifecycle
-	12,  // 159: sreagent.investigation.v1.Investigation.conclusion_kind:type_name -> sreagent.investigation.v1.ConclusionKind
-	13,  // 160: sreagent.investigation.v1.Investigation.outcome:type_name -> sreagent.investigation.v1.InvestigationOutcome
-	15,  // 161: sreagent.investigation.v1.Investigation.stop_reason:type_name -> sreagent.investigation.v1.StopReason
-	71,  // 162: sreagent.investigation.v1.Investigation.ledger:type_name -> sreagent.investigation.v1.Ledger
-	83,  // 163: sreagent.investigation.v1.Investigation.resolutions:type_name -> sreagent.investigation.v1.Resolution
-	76,  // 164: sreagent.investigation.v1.Investigation.spend:type_name -> sreagent.investigation.v1.BudgetSpend
-	77,  // 165: sreagent.investigation.v1.Investigation.facts:type_name -> sreagent.investigation.v1.HumanFact
-	78,  // 166: sreagent.investigation.v1.Investigation.reviews:type_name -> sreagent.investigation.v1.HumanReview
-	79,  // 167: sreagent.investigation.v1.Investigation.labels:type_name -> sreagent.investigation.v1.Label
-	82,  // 168: sreagent.investigation.v1.Investigation.verifier_findings:type_name -> sreagent.investigation.v1.VerifierFinding
-	74,  // 169: sreagent.investigation.v1.Investigation.deliveries:type_name -> sreagent.investigation.v1.ReportDelivery
-	141, // 170: sreagent.investigation.v1.Investigation.model_config:type_name -> google.protobuf.Struct
-	129, // 171: sreagent.investigation.v1.Investigation.started_at:type_name -> google.protobuf.Timestamp
-	129, // 172: sreagent.investigation.v1.Investigation.ended_at:type_name -> google.protobuf.Timestamp
-	14,  // 173: sreagent.investigation.v1.Investigation.verification_status:type_name -> sreagent.investigation.v1.VerificationStatus
-	81,  // 174: sreagent.investigation.v1.Investigation.examination:type_name -> sreagent.investigation.v1.ExaminationReport
-	73,  // 175: sreagent.investigation.v1.DeclareRequest.declaration:type_name -> sreagent.investigation.v1.Symptom
-	73,  // 176: sreagent.investigation.v1.InvestigateRequest.symptom:type_name -> sreagent.investigation.v1.Symptom
-	129, // 177: sreagent.investigation.v1.InvestigateRequest.valid_at:type_name -> google.protobuf.Timestamp
-	129, // 178: sreagent.investigation.v1.InvestigateRequest.observed_at:type_name -> google.protobuf.Timestamp
-	84,  // 179: sreagent.investigation.v1.ReplayResponse.investigation:type_name -> sreagent.investigation.v1.Investigation
-	77,  // 180: sreagent.investigation.v1.ReopenRequest.fact:type_name -> sreagent.investigation.v1.HumanFact
-	77,  // 181: sreagent.investigation.v1.SubmitHumanFactRequest.fact:type_name -> sreagent.investigation.v1.HumanFact
-	78,  // 182: sreagent.investigation.v1.ReviewRequest.review:type_name -> sreagent.investigation.v1.HumanReview
-	129, // 183: sreagent.investigation.v1.ListInvestigationsRequest.since:type_name -> google.protobuf.Timestamp
-	84,  // 184: sreagent.investigation.v1.ListInvestigationsResponse.investigations:type_name -> sreagent.investigation.v1.Investigation
-	141, // 185: sreagent.investigation.v1.ModelRequestRecord.body:type_name -> google.protobuf.Struct
-	141, // 186: sreagent.investigation.v1.ModelResponseRecord.body:type_name -> google.protobuf.Struct
-	126, // 187: sreagent.investigation.v1.ModelResponseRecord.usage:type_name -> sreagent.investigation.v1.ModelResponseRecord.UsageEntry
-	60,  // 188: sreagent.investigation.v1.WorkerRequestRecord.request:type_name -> sreagent.investigation.v1.AlgebraRequest
-	61,  // 189: sreagent.investigation.v1.WorkerResponseRecord.response:type_name -> sreagent.investigation.v1.AlgebraResponse
-	69,  // 190: sreagent.investigation.v1.LedgerUpdateRecord.judgments:type_name -> sreagent.investigation.v1.Judgment
-	67,  // 191: sreagent.investigation.v1.FinalHypothesis.bucket:type_name -> sreagent.investigation.v1.ConfidenceBucket
-	7,   // 192: sreagent.investigation.v1.FinalHypothesis.status:type_name -> sreagent.investigation.v1.HypothesisStatus
-	6,   // 193: sreagent.investigation.v1.FinalHypothesis.kind:type_name -> sreagent.investigation.v1.HypothesisKind
-	15,  // 194: sreagent.investigation.v1.StopRecord.reason:type_name -> sreagent.investigation.v1.StopReason
-	103, // 195: sreagent.investigation.v1.StopRecord.final_ledger:type_name -> sreagent.investigation.v1.FinalHypothesis
-	129, // 196: sreagent.investigation.v1.TrajectoryRecord.at:type_name -> google.protobuf.Timestamp
-	98,  // 197: sreagent.investigation.v1.TrajectoryRecord.model_request:type_name -> sreagent.investigation.v1.ModelRequestRecord
-	99,  // 198: sreagent.investigation.v1.TrajectoryRecord.model_response:type_name -> sreagent.investigation.v1.ModelResponseRecord
-	100, // 199: sreagent.investigation.v1.TrajectoryRecord.worker_request:type_name -> sreagent.investigation.v1.WorkerRequestRecord
-	101, // 200: sreagent.investigation.v1.TrajectoryRecord.worker_response:type_name -> sreagent.investigation.v1.WorkerResponseRecord
-	102, // 201: sreagent.investigation.v1.TrajectoryRecord.ledger_update:type_name -> sreagent.investigation.v1.LedgerUpdateRecord
-	77,  // 202: sreagent.investigation.v1.TrajectoryRecord.human_fact:type_name -> sreagent.investigation.v1.HumanFact
-	104, // 203: sreagent.investigation.v1.TrajectoryRecord.stop:type_name -> sreagent.investigation.v1.StopRecord
-	21,  // 204: sreagent.investigation.v1.WorldIndex.window_grid:type_name -> sreagent.investigation.v1.WindowPair
-	127, // 205: sreagent.investigation.v1.WorldIndex.term_key_to_file:type_name -> sreagent.investigation.v1.WorldIndex.TermKeyToFileEntry
-	138, // 206: sreagent.investigation.v1.CausalStep.via:type_name -> sreagent.graph.v1.EdgeType
-	35,  // 207: sreagent.investigation.v1.EvidencePredicate.term:type_name -> sreagent.investigation.v1.AlgebraTerm
-	142, // 208: sreagent.investigation.v1.EvidencePredicate.value:type_name -> google.protobuf.Value
-	18,  // 209: sreagent.investigation.v1.GroundTruth.culprit_kind:type_name -> sreagent.investigation.v1.CulpritKind
-	107, // 210: sreagent.investigation.v1.GroundTruth.causal_path:type_name -> sreagent.investigation.v1.CausalStep
-	108, // 211: sreagent.investigation.v1.GroundTruth.decisive_evidence:type_name -> sreagent.investigation.v1.EvidencePredicate
-	128, // 212: sreagent.investigation.v1.GroundTruth.exonerating_evidence_by_decoy:type_name -> sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry
-	129, // 213: sreagent.investigation.v1.GroundTruth.knowability_time:type_name -> google.protobuf.Timestamp
-	19,  // 214: sreagent.investigation.v1.GroundTruth.provenance:type_name -> sreagent.investigation.v1.Provenance
-	108, // 215: sreagent.investigation.v1.EvidencePredicateList.predicates:type_name -> sreagent.investigation.v1.EvidencePredicate
-	5,   // 216: sreagent.investigation.v1.BackendDescription.CostClassesEntry.value:type_name -> sreagent.investigation.v1.CostClass
-	110, // 217: sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry.value:type_name -> sreagent.investigation.v1.EvidencePredicateList
-	66,  // 218: sreagent.investigation.v1.TelemetryBackendService.Describe:input_type -> sreagent.investigation.v1.DescribeBackendRequest
-	60,  // 219: sreagent.investigation.v1.TelemetryBackendService.Execute:input_type -> sreagent.investigation.v1.AlgebraRequest
-	86,  // 220: sreagent.investigation.v1.InvestigationService.Investigate:input_type -> sreagent.investigation.v1.InvestigateRequest
-	85,  // 221: sreagent.investigation.v1.InvestigationService.Declare:input_type -> sreagent.investigation.v1.DeclareRequest
-	87,  // 222: sreagent.investigation.v1.InvestigationService.Get:input_type -> sreagent.investigation.v1.GetRequest
-	88,  // 223: sreagent.investigation.v1.InvestigationService.Replay:input_type -> sreagent.investigation.v1.ReplayRequest
-	90,  // 224: sreagent.investigation.v1.InvestigationService.Reopen:input_type -> sreagent.investigation.v1.ReopenRequest
-	91,  // 225: sreagent.investigation.v1.InvestigationService.SubmitHumanFact:input_type -> sreagent.investigation.v1.SubmitHumanFactRequest
-	93,  // 226: sreagent.investigation.v1.InvestigationService.Review:input_type -> sreagent.investigation.v1.ReviewRequest
-	92,  // 227: sreagent.investigation.v1.InvestigationService.Label:input_type -> sreagent.investigation.v1.LabelRequest
-	94,  // 228: sreagent.investigation.v1.InvestigationService.List:input_type -> sreagent.investigation.v1.ListInvestigationsRequest
-	96,  // 229: sreagent.investigation.v1.InvestigationService.Export:input_type -> sreagent.investigation.v1.ExportRequest
-	65,  // 230: sreagent.investigation.v1.TelemetryBackendService.Describe:output_type -> sreagent.investigation.v1.BackendDescription
-	61,  // 231: sreagent.investigation.v1.TelemetryBackendService.Execute:output_type -> sreagent.investigation.v1.AlgebraResponse
-	84,  // 232: sreagent.investigation.v1.InvestigationService.Investigate:output_type -> sreagent.investigation.v1.Investigation
-	84,  // 233: sreagent.investigation.v1.InvestigationService.Declare:output_type -> sreagent.investigation.v1.Investigation
-	84,  // 234: sreagent.investigation.v1.InvestigationService.Get:output_type -> sreagent.investigation.v1.Investigation
-	89,  // 235: sreagent.investigation.v1.InvestigationService.Replay:output_type -> sreagent.investigation.v1.ReplayResponse
-	84,  // 236: sreagent.investigation.v1.InvestigationService.Reopen:output_type -> sreagent.investigation.v1.Investigation
-	84,  // 237: sreagent.investigation.v1.InvestigationService.SubmitHumanFact:output_type -> sreagent.investigation.v1.Investigation
-	84,  // 238: sreagent.investigation.v1.InvestigationService.Review:output_type -> sreagent.investigation.v1.Investigation
-	84,  // 239: sreagent.investigation.v1.InvestigationService.Label:output_type -> sreagent.investigation.v1.Investigation
-	95,  // 240: sreagent.investigation.v1.InvestigationService.List:output_type -> sreagent.investigation.v1.ListInvestigationsResponse
-	97,  // 241: sreagent.investigation.v1.InvestigationService.Export:output_type -> sreagent.investigation.v1.ExportResponse
-	230, // [230:242] is the sub-list for method output_type
-	218, // [218:230] is the sub-list for method input_type
-	218, // [218:218] is the sub-list for extension type_name
-	218, // [218:218] is the sub-list for extension extendee
-	0,   // [0:218] is the sub-list for field type_name
+	82,  // 153: sreagent.investigation.v1.PropagationPath.edges:type_name -> sreagent.investigation.v1.PathEdge
+	86,  // 154: sreagent.investigation.v1.PropagationPath.missing_link:type_name -> sreagent.investigation.v1.Resolution
+	83,  // 155: sreagent.investigation.v1.PropagationPaths.paths:type_name -> sreagent.investigation.v1.PropagationPath
+	35,  // 156: sreagent.investigation.v1.Resolution.next_query:type_name -> sreagent.investigation.v1.AlgebraTerm
+	73,  // 157: sreagent.investigation.v1.Investigation.symptoms:type_name -> sreagent.investigation.v1.Symptom
+	132, // 158: sreagent.investigation.v1.Investigation.valid_at:type_name -> google.protobuf.Timestamp
+	132, // 159: sreagent.investigation.v1.Investigation.observed_at:type_name -> google.protobuf.Timestamp
+	20,  // 160: sreagent.investigation.v1.Investigation.window:type_name -> sreagent.investigation.v1.Window
+	11,  // 161: sreagent.investigation.v1.Investigation.lifecycle:type_name -> sreagent.investigation.v1.Lifecycle
+	12,  // 162: sreagent.investigation.v1.Investigation.conclusion_kind:type_name -> sreagent.investigation.v1.ConclusionKind
+	13,  // 163: sreagent.investigation.v1.Investigation.outcome:type_name -> sreagent.investigation.v1.InvestigationOutcome
+	15,  // 164: sreagent.investigation.v1.Investigation.stop_reason:type_name -> sreagent.investigation.v1.StopReason
+	71,  // 165: sreagent.investigation.v1.Investigation.ledger:type_name -> sreagent.investigation.v1.Ledger
+	86,  // 166: sreagent.investigation.v1.Investigation.resolutions:type_name -> sreagent.investigation.v1.Resolution
+	76,  // 167: sreagent.investigation.v1.Investigation.spend:type_name -> sreagent.investigation.v1.BudgetSpend
+	77,  // 168: sreagent.investigation.v1.Investigation.facts:type_name -> sreagent.investigation.v1.HumanFact
+	78,  // 169: sreagent.investigation.v1.Investigation.reviews:type_name -> sreagent.investigation.v1.HumanReview
+	79,  // 170: sreagent.investigation.v1.Investigation.labels:type_name -> sreagent.investigation.v1.Label
+	85,  // 171: sreagent.investigation.v1.Investigation.verifier_findings:type_name -> sreagent.investigation.v1.VerifierFinding
+	74,  // 172: sreagent.investigation.v1.Investigation.deliveries:type_name -> sreagent.investigation.v1.ReportDelivery
+	144, // 173: sreagent.investigation.v1.Investigation.model_config:type_name -> google.protobuf.Struct
+	132, // 174: sreagent.investigation.v1.Investigation.started_at:type_name -> google.protobuf.Timestamp
+	132, // 175: sreagent.investigation.v1.Investigation.ended_at:type_name -> google.protobuf.Timestamp
+	14,  // 176: sreagent.investigation.v1.Investigation.verification_status:type_name -> sreagent.investigation.v1.VerificationStatus
+	81,  // 177: sreagent.investigation.v1.Investigation.examination:type_name -> sreagent.investigation.v1.ExaminationReport
+	84,  // 178: sreagent.investigation.v1.Investigation.propagation_paths:type_name -> sreagent.investigation.v1.PropagationPaths
+	73,  // 179: sreagent.investigation.v1.DeclareRequest.declaration:type_name -> sreagent.investigation.v1.Symptom
+	73,  // 180: sreagent.investigation.v1.InvestigateRequest.symptom:type_name -> sreagent.investigation.v1.Symptom
+	132, // 181: sreagent.investigation.v1.InvestigateRequest.valid_at:type_name -> google.protobuf.Timestamp
+	132, // 182: sreagent.investigation.v1.InvestigateRequest.observed_at:type_name -> google.protobuf.Timestamp
+	87,  // 183: sreagent.investigation.v1.ReplayResponse.investigation:type_name -> sreagent.investigation.v1.Investigation
+	77,  // 184: sreagent.investigation.v1.ReopenRequest.fact:type_name -> sreagent.investigation.v1.HumanFact
+	77,  // 185: sreagent.investigation.v1.SubmitHumanFactRequest.fact:type_name -> sreagent.investigation.v1.HumanFact
+	78,  // 186: sreagent.investigation.v1.ReviewRequest.review:type_name -> sreagent.investigation.v1.HumanReview
+	132, // 187: sreagent.investigation.v1.ListInvestigationsRequest.since:type_name -> google.protobuf.Timestamp
+	87,  // 188: sreagent.investigation.v1.ListInvestigationsResponse.investigations:type_name -> sreagent.investigation.v1.Investigation
+	144, // 189: sreagent.investigation.v1.ModelRequestRecord.body:type_name -> google.protobuf.Struct
+	144, // 190: sreagent.investigation.v1.ModelResponseRecord.body:type_name -> google.protobuf.Struct
+	129, // 191: sreagent.investigation.v1.ModelResponseRecord.usage:type_name -> sreagent.investigation.v1.ModelResponseRecord.UsageEntry
+	60,  // 192: sreagent.investigation.v1.WorkerRequestRecord.request:type_name -> sreagent.investigation.v1.AlgebraRequest
+	61,  // 193: sreagent.investigation.v1.WorkerResponseRecord.response:type_name -> sreagent.investigation.v1.AlgebraResponse
+	69,  // 194: sreagent.investigation.v1.LedgerUpdateRecord.judgments:type_name -> sreagent.investigation.v1.Judgment
+	67,  // 195: sreagent.investigation.v1.FinalHypothesis.bucket:type_name -> sreagent.investigation.v1.ConfidenceBucket
+	7,   // 196: sreagent.investigation.v1.FinalHypothesis.status:type_name -> sreagent.investigation.v1.HypothesisStatus
+	6,   // 197: sreagent.investigation.v1.FinalHypothesis.kind:type_name -> sreagent.investigation.v1.HypothesisKind
+	15,  // 198: sreagent.investigation.v1.StopRecord.reason:type_name -> sreagent.investigation.v1.StopReason
+	106, // 199: sreagent.investigation.v1.StopRecord.final_ledger:type_name -> sreagent.investigation.v1.FinalHypothesis
+	132, // 200: sreagent.investigation.v1.TrajectoryRecord.at:type_name -> google.protobuf.Timestamp
+	101, // 201: sreagent.investigation.v1.TrajectoryRecord.model_request:type_name -> sreagent.investigation.v1.ModelRequestRecord
+	102, // 202: sreagent.investigation.v1.TrajectoryRecord.model_response:type_name -> sreagent.investigation.v1.ModelResponseRecord
+	103, // 203: sreagent.investigation.v1.TrajectoryRecord.worker_request:type_name -> sreagent.investigation.v1.WorkerRequestRecord
+	104, // 204: sreagent.investigation.v1.TrajectoryRecord.worker_response:type_name -> sreagent.investigation.v1.WorkerResponseRecord
+	105, // 205: sreagent.investigation.v1.TrajectoryRecord.ledger_update:type_name -> sreagent.investigation.v1.LedgerUpdateRecord
+	77,  // 206: sreagent.investigation.v1.TrajectoryRecord.human_fact:type_name -> sreagent.investigation.v1.HumanFact
+	107, // 207: sreagent.investigation.v1.TrajectoryRecord.stop:type_name -> sreagent.investigation.v1.StopRecord
+	21,  // 208: sreagent.investigation.v1.WorldIndex.window_grid:type_name -> sreagent.investigation.v1.WindowPair
+	130, // 209: sreagent.investigation.v1.WorldIndex.term_key_to_file:type_name -> sreagent.investigation.v1.WorldIndex.TermKeyToFileEntry
+	141, // 210: sreagent.investigation.v1.CausalStep.via:type_name -> sreagent.graph.v1.EdgeType
+	35,  // 211: sreagent.investigation.v1.EvidencePredicate.term:type_name -> sreagent.investigation.v1.AlgebraTerm
+	145, // 212: sreagent.investigation.v1.EvidencePredicate.value:type_name -> google.protobuf.Value
+	18,  // 213: sreagent.investigation.v1.GroundTruth.culprit_kind:type_name -> sreagent.investigation.v1.CulpritKind
+	110, // 214: sreagent.investigation.v1.GroundTruth.causal_path:type_name -> sreagent.investigation.v1.CausalStep
+	111, // 215: sreagent.investigation.v1.GroundTruth.decisive_evidence:type_name -> sreagent.investigation.v1.EvidencePredicate
+	131, // 216: sreagent.investigation.v1.GroundTruth.exonerating_evidence_by_decoy:type_name -> sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry
+	132, // 217: sreagent.investigation.v1.GroundTruth.knowability_time:type_name -> google.protobuf.Timestamp
+	19,  // 218: sreagent.investigation.v1.GroundTruth.provenance:type_name -> sreagent.investigation.v1.Provenance
+	111, // 219: sreagent.investigation.v1.EvidencePredicateList.predicates:type_name -> sreagent.investigation.v1.EvidencePredicate
+	5,   // 220: sreagent.investigation.v1.BackendDescription.CostClassesEntry.value:type_name -> sreagent.investigation.v1.CostClass
+	113, // 221: sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry.value:type_name -> sreagent.investigation.v1.EvidencePredicateList
+	66,  // 222: sreagent.investigation.v1.TelemetryBackendService.Describe:input_type -> sreagent.investigation.v1.DescribeBackendRequest
+	60,  // 223: sreagent.investigation.v1.TelemetryBackendService.Execute:input_type -> sreagent.investigation.v1.AlgebraRequest
+	89,  // 224: sreagent.investigation.v1.InvestigationService.Investigate:input_type -> sreagent.investigation.v1.InvestigateRequest
+	88,  // 225: sreagent.investigation.v1.InvestigationService.Declare:input_type -> sreagent.investigation.v1.DeclareRequest
+	90,  // 226: sreagent.investigation.v1.InvestigationService.Get:input_type -> sreagent.investigation.v1.GetRequest
+	91,  // 227: sreagent.investigation.v1.InvestigationService.Replay:input_type -> sreagent.investigation.v1.ReplayRequest
+	93,  // 228: sreagent.investigation.v1.InvestigationService.Reopen:input_type -> sreagent.investigation.v1.ReopenRequest
+	94,  // 229: sreagent.investigation.v1.InvestigationService.SubmitHumanFact:input_type -> sreagent.investigation.v1.SubmitHumanFactRequest
+	96,  // 230: sreagent.investigation.v1.InvestigationService.Review:input_type -> sreagent.investigation.v1.ReviewRequest
+	95,  // 231: sreagent.investigation.v1.InvestigationService.Label:input_type -> sreagent.investigation.v1.LabelRequest
+	97,  // 232: sreagent.investigation.v1.InvestigationService.List:input_type -> sreagent.investigation.v1.ListInvestigationsRequest
+	99,  // 233: sreagent.investigation.v1.InvestigationService.Export:input_type -> sreagent.investigation.v1.ExportRequest
+	65,  // 234: sreagent.investigation.v1.TelemetryBackendService.Describe:output_type -> sreagent.investigation.v1.BackendDescription
+	61,  // 235: sreagent.investigation.v1.TelemetryBackendService.Execute:output_type -> sreagent.investigation.v1.AlgebraResponse
+	87,  // 236: sreagent.investigation.v1.InvestigationService.Investigate:output_type -> sreagent.investigation.v1.Investigation
+	87,  // 237: sreagent.investigation.v1.InvestigationService.Declare:output_type -> sreagent.investigation.v1.Investigation
+	87,  // 238: sreagent.investigation.v1.InvestigationService.Get:output_type -> sreagent.investigation.v1.Investigation
+	92,  // 239: sreagent.investigation.v1.InvestigationService.Replay:output_type -> sreagent.investigation.v1.ReplayResponse
+	87,  // 240: sreagent.investigation.v1.InvestigationService.Reopen:output_type -> sreagent.investigation.v1.Investigation
+	87,  // 241: sreagent.investigation.v1.InvestigationService.SubmitHumanFact:output_type -> sreagent.investigation.v1.Investigation
+	87,  // 242: sreagent.investigation.v1.InvestigationService.Review:output_type -> sreagent.investigation.v1.Investigation
+	87,  // 243: sreagent.investigation.v1.InvestigationService.Label:output_type -> sreagent.investigation.v1.Investigation
+	98,  // 244: sreagent.investigation.v1.InvestigationService.List:output_type -> sreagent.investigation.v1.ListInvestigationsResponse
+	100, // 245: sreagent.investigation.v1.InvestigationService.Export:output_type -> sreagent.investigation.v1.ExportResponse
+	234, // [234:246] is the sub-list for method output_type
+	222, // [222:234] is the sub-list for method input_type
+	222, // [222:222] is the sub-list for extension type_name
+	222, // [222:222] is the sub-list for extension extendee
+	0,   // [0:222] is the sub-list for field type_name
 }
 
 func init() { file_sreagent_investigation_v1_investigation_proto_init() }
@@ -10565,7 +10797,7 @@ func file_sreagent_investigation_v1_investigation_proto_init() {
 		(*Digest_ChatMentions)(nil),
 		(*Digest_ChatTimeline)(nil),
 	}
-	file_sreagent_investigation_v1_investigation_proto_msgTypes[85].OneofWrappers = []any{
+	file_sreagent_investigation_v1_investigation_proto_msgTypes[88].OneofWrappers = []any{
 		(*TrajectoryRecord_ModelRequest)(nil),
 		(*TrajectoryRecord_ModelResponse)(nil),
 		(*TrajectoryRecord_WorkerRequest)(nil),
@@ -10580,7 +10812,7 @@ func file_sreagent_investigation_v1_investigation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sreagent_investigation_v1_investigation_proto_rawDesc), len(file_sreagent_investigation_v1_investigation_proto_rawDesc)),
 			NumEnums:      20,
-			NumMessages:   109,
+			NumMessages:   112,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

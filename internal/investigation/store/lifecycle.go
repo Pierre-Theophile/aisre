@@ -91,6 +91,14 @@ func ConcludeInTx(ctx context.Context, tx pgx.Tx, investigationID string, c reco
 		}
 		examination = raw
 	}
+	var paths any
+	if c.PropagationPaths != nil {
+		raw, err := protojson.Marshal(c.PropagationPaths)
+		if err != nil {
+			return fmt.Errorf("investigation store: conclude %s: propagation paths: %w", investigationID, err)
+		}
+		paths = raw
+	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE investigation.investigations SET
 			lifecycle = $2,
@@ -109,14 +117,15 @@ func ConcludeInTx(ctx context.Context, tx pgx.Tx, investigationID string, c reco
 			verification_status = $15,
 			verification_detail = $16,
 			search_space_profile = $17,
-			examination = $18
+			examination = $18,
+			propagation_paths = $19
 		WHERE investigation_id = $1 AND lifecycle = $14`,
 		investigationID, record.LifecycleConcluded, c.Kind, c.Outcome,
 		record.StopReasonName(c.StopReason), c.StopDetail, nullable(c.VerdictLine),
 		nullable(c.RollbackCandidate), endedAt.UTC(),
 		c.RecordingKey, c.RecordingDigest, c.DecisionEventID, c.OnsetEstimateEvidenceID,
 		record.LifecycleRunning, nullable(c.VerificationStatus), nullable(c.VerificationDetail),
-		nullable(c.SearchSpaceProfile), examination)
+		nullable(c.SearchSpaceProfile), examination, paths)
 	if err != nil {
 		return fmt.Errorf("investigation store: conclude %s: %w", investigationID, err)
 	}

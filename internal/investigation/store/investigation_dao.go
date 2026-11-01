@@ -410,7 +410,7 @@ const investigationSelect = `
 	       coalesce(decision_event_id, ''), coalesce(onset_estimate_evidence_id, ''),
 	       started_at, ended_at,
 	       coalesce(verification_status, ''), coalesce(verification_detail, ''),
-	       coalesce(search_space_profile, ''), examination
+	       coalesce(search_space_profile, ''), examination, propagation_paths
 	FROM investigation.investigations`
 
 func (d *InvestigationDAO) scanOne(ctx context.Context, where string, args ...any) (*investigationv1.Investigation, error) {
@@ -437,6 +437,7 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 		lifecycle, conclusionKind, outcome, stopName string
 		verification                                 string
 		examination                                  []byte
+		paths                                        []byte
 		modelConfig                                  []byte
 		profile                                      string
 	)
@@ -451,7 +452,7 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 		&inv.SchemaVersion, &inv.RecordingKey, &inv.RecordingDigest,
 		&inv.DecisionEventId, &inv.OnsetEstimateEvidenceId,
 		&startedAt, &endedAt,
-		&verification, &inv.VerificationDetail, &inv.SearchSpaceProfile, &examination,
+		&verification, &inv.VerificationDetail, &inv.SearchSpaceProfile, &examination, &paths,
 	); err != nil {
 		return nil, fmt.Errorf("investigation store: scan investigation: %w", err)
 	}
@@ -471,6 +472,12 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 		inv.Examination = &investigationv1.ExaminationReport{}
 		if err := protojson.Unmarshal(examination, inv.Examination); err != nil {
 			return nil, fmt.Errorf("investigation store: examination of %s: %w", inv.GetInvestigationId(), err)
+		}
+	}
+	if len(paths) > 0 {
+		inv.PropagationPaths = &investigationv1.PropagationPaths{}
+		if err := protojson.Unmarshal(paths, inv.PropagationPaths); err != nil {
+			return nil, fmt.Errorf("investigation store: propagation paths of %s: %w", inv.GetInvestigationId(), err)
 		}
 	}
 	inv.StartedAt = timestamppb.New(startedAt.UTC())

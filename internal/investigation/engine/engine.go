@@ -203,6 +203,8 @@ type Engine struct {
 	// fallenEdges are the edges the intake diff reports as retracted, or whose weight class fell,
 	// inside the window (FR-046b); flowHypotheses the stopped-flow candidates the first wave
 	// opened, by hypothesis id, each with the evidence id of the comparison that surfaced it.
+	// paths are the propagation paths drawn at the stop (FR-019b).
+	paths          []Path
 	fallenEdges    []fallenEdge
 	flowHypotheses map[string]string
 	// verification is the pass's outcome, set once by Stop.
@@ -358,11 +360,22 @@ func (e *Engine) Stop(stop Stop) error {
 	}
 	// The verification pass runs on every exit, before the stop record, so that its exchange is
 	// part of the trajectory and no exit can skip it silently (FR-022c).
+	// The paths are drawn on the settled ledger, before verification, so that a path edge the
+	// verifier removes is published as unverified (FR-019b, FR-022c).
+	paths := e.drawPaths()
+	e.mu.Lock()
+	e.paths = paths
+	e.mu.Unlock()
 	ctx := e.runContext()
 	verification := e.verifyClaims(ctx, stop)
 	e.mu.Lock()
 	e.verification = &verification
+	e.paths = withdrawRemovedEdges(e.paths, verification.Findings)
+	paths = append([]Path(nil), e.paths...)
 	e.mu.Unlock()
+	if err := e.widenUnverifiedPaths(paths); err != nil {
+		return err
+	}
 	e.trajectory.Stop(stop, e.FinalLedger())
 	return nil
 }

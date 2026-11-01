@@ -372,6 +372,7 @@ func (r *Report) writeRanked(b *strings.Builder) {
 		if h.Rationale != "" {
 			fmt.Fprintf(b, "   %s\n", h.Rationale)
 		}
+		r.writePath(b, h.ID)
 		r.writeExamination(b, h.ID)
 		r.writeJudgments(b, h)
 	}
@@ -401,6 +402,34 @@ func (r *Report) writeExamination(b *strings.Builder, hypothesisID string) {
 		if len(x.GetCoverageGaps()) > 0 {
 			fmt.Fprintf(b, "   coverage gap: %s\n", strings.Join(x.GetCoverageGaps(), ", "))
 		}
+	}
+}
+
+// writePath renders one hypothesis's propagation path (FR-019b): every edge with the evidence that
+// shows the fault crossed it, an unverified edge said to be one, and an undrawable path with the
+// link the graph lacks.
+func (r *Report) writePath(b *strings.Builder, hypothesisID string) {
+	for _, p := range r.Investigation.GetPropagationPaths().GetPaths() {
+		if p.GetHypothesisId() != hypothesisID {
+			continue
+		}
+		if !p.GetDrawable() {
+			fmt.Fprintf(b, "   path: cannot be drawn — %s\n", p.GetMissingLink().GetStatement())
+			continue
+		}
+		if len(p.GetEdges()) == 0 {
+			b.WriteString("   path: the cause is on the subject itself\n")
+			continue
+		}
+		parts := make([]string, 0, len(p.GetEdges()))
+		for _, edge := range p.GetEdges() {
+			cite := "unverified"
+			if !edge.GetUnverified() {
+				cite = strings.Join(edge.GetEvidenceIds(), ", ")
+			}
+			parts = append(parts, fmt.Sprintf("%s -%s-> %s (%s)", edge.GetSrc(), edge.GetEdgeType(), edge.GetDst(), cite))
+		}
+		fmt.Fprintf(b, "   path: %s\n", strings.Join(parts, "; "))
 	}
 }
 

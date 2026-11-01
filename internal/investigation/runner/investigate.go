@@ -461,6 +461,7 @@ func (r *Runner) conclude(
 		conclusion.SearchSpaceProfile = profile.Render()
 	}
 	conclusion.Examination = eng.Examination().Proto()
+	conclusion.PropagationPaths = engine.PathsProto(eng.Paths())
 	written := r.writeTrajectory(rn.investigationID, eng)
 	conclusion.RecordingKey = written.key
 	conclusion.RecordingDigest = written.digest
