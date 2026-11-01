@@ -266,6 +266,26 @@ func namesCulprit(outcome *RunOutcome, truth GroundTruth) bool {
 	return false
 }
 
+// VerdictRight scores an answer alone against the ground truth: `unknown` before the decisive
+// evidence existed, `unobserved` for the unobserved remainder, the culprit otherwise. It is the
+// part of Grade a baseline that cites nothing can be held to, and the engine is held to the same
+// rule when the two are compared (FR-059b), so the lift over the floor measures the answer and
+// not the citations only one side can make.
+func VerdictRight(outcome *RunOutcome, truth GroundTruth, askedAt time.Time) bool {
+	if outcome == nil {
+		return false
+	}
+	if !truth.KnowabilityTime.IsZero() && askedAt.Before(truth.KnowabilityTime) {
+		return outcome.IsUnknown()
+	}
+	switch truth.Class() {
+	case fixture.CulpritUnobserved, fixture.CulpritNotChangeInduced:
+		return outcome.VerdictClass() == VerdictUnobserved
+	default:
+		return namesCulprit(outcome, truth)
+	}
+}
+
 // symptomEntity is the last step of the declared causal path: the thing that broke.
 func symptomEntity(truth GroundTruth) string {
 	if len(truth.CausalPath) == 0 {

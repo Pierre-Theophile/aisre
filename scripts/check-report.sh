@@ -333,6 +333,7 @@ investigation_gate() {
 	echo '  reported, never gated:'
 	for metric in pass_hat_k culprit_rank top_k_hit_rate localisation attribution mechanism \
 		path_edge_f1 undrawable_path_share omission_rate enforcement_cost \
+		verdict_accuracy floor_verdict_accuracy lift_over_floor answerable_without_telemetry \
 		unknown_rate non_unknown_precision human_agreement cost_usd worker_calls \
 		time_to_provisional_seconds time_to_first_tested_seconds time_to_conclusion_seconds; do
 		value=$(row_value "$report" "$metric" corpus)

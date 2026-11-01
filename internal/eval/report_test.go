@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Pierre-Theophile/aisre/internal/eval"
 )
@@ -199,6 +200,29 @@ func TestPathEdgeF1ScoresConsecutiveEntityPairs(t *testing.T) {
 	}
 	if _, ok := eval.EdgeF1(nil, truth); ok {
 		t.Error("a fixture with no causal path must not be scored")
+	}
+}
+
+// TestTheFloorIsScoredOnItsAnswerAlone pins FR-059b's comparison: the floor's answer and the
+// engine's are held to the same verdict-only rule, and `unknown` is the right answer before the
+// decisive evidence existed whoever gives it.
+func TestTheFloorIsScoredOnItsAnswerAlone(t *testing.T) {
+	t.Parallel()
+	knowable := time.Date(2026, 9, 1, 14, 27, 0, 0, time.UTC)
+	culprit := eval.GroundTruth{Culprit: "k8s.change=shop/flags@1", KnowabilityTime: knowable}
+	after, before := knowable.Add(time.Minute), knowable.Add(-time.Minute)
+	named := &eval.RunOutcome{Verdict: "c-1", VerdictRefs: []string{"c-1", "k8s.change=shop/flags@1"}}
+	if !eval.VerdictRight(named, culprit, after) {
+		t.Error("the culprit, named by any of its spellings, is right after knowability")
+	}
+	if eval.VerdictRight(named, culprit, before) {
+		t.Error("before knowability only `unknown` is right")
+	}
+	if !eval.VerdictRight(&eval.RunOutcome{Verdict: eval.VerdictUnknown}, culprit, before) {
+		t.Error("`unknown` before knowability is right")
+	}
+	if eval.VerdictRight(&eval.RunOutcome{Verdict: "k8s.change=shop/other@2"}, culprit, after) {
+		t.Error("another change is wrong")
 	}
 }
 
