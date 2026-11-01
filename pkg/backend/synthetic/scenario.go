@@ -96,7 +96,16 @@ type Change struct {
 	// CapacityFraction is the ceiling as a fraction of the target's baseline request rate, used
 	// when Capacity is not positive. Zero takes 1.0 — a ceiling exactly at baseline demand.
 	CapacityFraction float64
+	// StopsFlow makes a degrading change stop its targets' outbound calls instead of making them
+	// fail: from At on, every callee of a target receives StoppedFlowFraction less traffic, and
+	// no error rate moves anywhere (002 FR-046b, `stopped-flow-01`). It is the one failure
+	// error rate and latency cannot see, which is what makes it worth a shape of its own.
+	StopsFlow bool
 }
+
+// StoppedFlowFraction is how much of a callee's traffic a flow-stopping change removes: most of
+// it, not all, because a real caller keeps a trickle of retries and health checks.
+const StoppedFlowFraction = 0.95
 
 // factorOf is the multiplier this change applies once it is fully in effect.
 func (c Change) factorOf() float64 {
@@ -322,7 +331,7 @@ func (s Scenario) versionAt(entity Entity, at time.Time) string {
 func (s Scenario) degradationAt(entity Entity, at time.Time) float64 {
 	factor := 1.0
 	for _, change := range s.changesAffecting(entity.EntityID) {
-		if !change.Degrades {
+		if !change.Degrades || change.StopsFlow {
 			continue
 		}
 		fraction := change.rampFractionAt(at)
@@ -366,6 +375,26 @@ func (s Scenario) loadFractionAt(entity Entity, change Change, at time.Time) flo
 		return 1
 	}
 	return excess
+}
+
+// flowFactorAt is the multiplier on an entity's request rate at an instant: 1, unless a
+// flow-stopping change has taken effect on one of its callers, in which case each such change
+// removes StoppedFlowFraction of what was left.
+func (s Scenario) flowFactorAt(entity Entity, at time.Time) float64 {
+	factor := 1.0
+	for _, change := range s.Changes {
+		if !change.Degrades || !change.StopsFlow || change.At.After(at) {
+			continue
+		}
+		for _, target := range change.TargetEntityIDs {
+			for _, callee := range s.calleesOf(target) {
+				if callee == entity.EntityID {
+					factor = round6(factor * (1 - StoppedFlowFraction))
+				}
+			}
+		}
+	}
+	return factor
 }
 
 // baselineRateOf is an entity's baseline request rate: the same deterministic function of the

@@ -349,12 +349,12 @@ func TestSlowBurnShape(t *testing.T) {
 	}
 }
 
-// TestShapeRegistry: the four published names exist, an unknown name is refused rather than
+// TestShapeRegistry: the five published names exist, an unknown name is refused rather than
 // silently defaulted, and a shape leaves a non-degrading change alone.
 func TestShapeRegistry(t *testing.T) {
 	t.Parallel()
 
-	want := []string{ShapeAdjacentDecoy, ShapeDistantCulprit, ShapeSlowBurn, ShapeStep}
+	want := []string{ShapeAdjacentDecoy, ShapeDistantCulprit, ShapeSlowBurn, ShapeStep, ShapeStoppedFlow}
 	got := ShapeNames()
 	if len(got) != len(want) {
 		t.Fatalf("ShapeNames() = %v, want %v", got, want)
@@ -437,5 +437,38 @@ func TestOnsetOnTheSubjectFindsThePropagatedSymptom(t *testing.T) {
 	}
 	if got.Confidence <= 0 {
 		t.Errorf("confidence = %v on a real 9.28x propagated shift", got.Confidence)
+	}
+}
+
+// TestAStoppedFlowDropsTheCalleesRateAndFailsNothing is `stopped-flow`: a change on payments
+// stops payments calling ledger, so ledger's request rate falls by StoppedFlowFraction from the
+// change instant on, and no error rate moves anywhere in the chain.
+func TestAStoppedFlowDropsTheCalleesRateAndFailsNothing(t *testing.T) {
+	t.Parallel()
+
+	change := ledgerChange()
+	change.TargetEntityIDs = []string{"otel.service.name=payments"}
+	scenario, checkout, payments, ledger := chain(t, change)
+	shape, ok := ShapeByName(ShapeStoppedFlow)
+	if !ok {
+		t.Fatal("the stopped-flow shape is not registered")
+	}
+	shape.ApplyTo(&scenario)
+
+	if got := scenario.flowFactorAt(ledger, changeAt.Add(-time.Second)); got != 1 {
+		t.Errorf("ledger before the change: %v, want 1", got)
+	}
+	if got := scenario.flowFactorAt(ledger, changeAt); math.Abs(got-(1-StoppedFlowFraction)) > 1e-9 {
+		t.Errorf("ledger after the change: %v, want %v", got, 1-StoppedFlowFraction)
+	}
+	for _, e := range []Entity{checkout, payments} {
+		if got := scenario.flowFactorAt(e, changeAt.Add(time.Hour)); got != 1 {
+			t.Errorf("%s's rate moved: %v", e.Name, got)
+		}
+	}
+	for _, e := range []Entity{checkout, payments, ledger} {
+		if got := scenario.effectiveDegradationAt(e, changeAt.Add(time.Hour)); got != 1 {
+			t.Errorf("%s's error rate moved: %v", e.Name, got)
+		}
 	}
 }

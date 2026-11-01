@@ -1,0 +1,216 @@
+# Hand-authored fixture. See fixtures/incidents/README.md.
+id: stopped-flow-01
+family: stopped-flow
+description: >-
+  002 FR-046b, T127: the root cause is visible ONLY as a callee that stops receiving calls.
+
+  The call graph is storefront -> checkout -> notifier, and storefront -> payments. At 14:12 a
+  ConfigMap edit turns checkout's `async_confirmations` flag on: order confirmations are meant to
+  go to a queue instead of a call to notifier, and the queue's consumer was never deployed. From
+  14:12 checkout stops calling notifier. Nothing fails. checkout answers every request it gets,
+  at its usual latency and error rate; notifier answers every request it still gets, which is a
+  twentieth of what it got before (the residue is retries and health checks). The monitor that
+  fires is an absence monitor on notifier's request rate.
+
+  Error rate and latency cannot see this, and that is the whole fixture. The first wave's own
+  comparisons on every candidate's target read flat, so before FR-046b the wave refuted the
+  culprit outright: "this change did not move its own target". What moved is the traffic on the
+  edge out of its target. The wave now compares the request rate of each candidate's callers and
+  callees (FR-046b), sees notifier's fall by 95 %, opens a `stopped_flow` candidate on notifier,
+  and withholds the flat-target refutation from the change whose callee lost its flow. The graph
+  says the same thing a second way: the otel source re-observes the checkout -> notifier edge at
+  weight class 0 for the 14:20 window, so the intake diff reports its weight class falling.
+
+  The decoys are the shapes an on-call would chase. notifier itself was rolled out at 14:05, seven
+  minutes earlier, on the very service that alerted; its own telemetry is clean and its new
+  version fails at its ordinary rate. The autoscaler widens storefront at 14:26, after the flow
+  had already stopped. A payments ConfigMap edit at 13:15 is an hour stale.
+
+  The culprit is checkout's flag change. The stopped flow on notifier is the mechanism, not the
+  cause: ranking it first is the consequence-over-cause mistake option 0 of the T126 decision
+  keeps the deterministic wave from making on its own.
+schema_version: 1.0.0
+sdk_version: 0.1.0
+hand_authored: true
+events: events.jsonl
+
+sources:
+  - source_id: otel:demo
+    kind: otel
+    ordering: none
+    reordering_window: 30s
+  - source_id: k8s:demo
+    kind: k8s
+    ordering: per_source_sequence
+    reordering_window: 60s
+
+clock:
+  start: 2026-09-01T13:00:00Z
+  end:   2026-09-01T14:40:00Z
+
+queries:
+  # The prior, as a file: hops 2 is `engine.NeighbourhoodHops` and the window is the
+  # investigation's own, so this golden IS the ranking `prior_rank_of_culprit` is read from. It
+  # also carries the checkout -> notifier edge in `edges_changed`, weight class 3 -> 0.
+  - name: notifier-diff
+    kind: diff
+    focus: otel.service.name=notifier
+    t1: 2026-09-01T13:02:00Z
+    t2: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: notifier-2hop-1432
+    kind: subgraph
+    focus: otel.service.name=notifier
+    valid_at: 2026-09-01T14:32:00Z
+    hops: 2
+    direction: both
+  - name: checkout-notifier-edge-1415
+    kind: subgraph
+    focus: otel.service.name=checkout
+    valid_at: 2026-09-01T14:15:00Z
+    hops: 1
+    direction: both
+
+ground_truth:
+  culprit_change: k8s.change=shop/checkout-flags@cfg42
+  expected_top_k: 3
+
+incident:
+  question:
+    transport: monitor
+    origin_system: datadog
+    origin_ref: "monitor:20577:group=env:prod"
+    statement: "notifier request rate below 20 % of its baseline for 10 minutes"
+    fired_at: 2026-09-01T14:32:00Z
+    subject: otel.service.name=notifier
+    lookback: 90m
+    profile: page
+
+  ground_truth:
+    culprit: k8s.change=shop/checkout-flags@cfg42
+    causal_path:
+      - entity: k8s.change=shop/checkout-flags@cfg42
+        via: changed-by
+        role: cause
+      - entity: otel.service.name=checkout
+        via: calls
+        role: mechanism
+      - entity: otel.service.name=notifier
+        role: symptom
+
+    decisive_evidence:
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=notifier"
+            windows: {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+            statistic: RATE
+        field_path: comparisons[statistic=RATE].direction
+        op: eq
+        value: down
+        note: >-
+          notifier's request rate across the flag change: the quarter-hour after 14:12 carries a
+          twentieth of the quarter-hour before. This is the only telemetry in the fixture that
+          moves, and it moves on the callee of the culprit's target, not on the target.
+      - term:
+          compare:
+            pointer: "METRIC otel.service.name=checkout"
+            windows: {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+            statistic: ERROR_RATE
+        field_path: comparisons[statistic=ERROR_RATE].direction
+        op: eq
+        value: flat
+        note: >-
+          and checkout's own error rate does not move. A change that stops a call fails nothing,
+          which is why a first wave that reads only error rate and latency refutes it.
+
+    decoys:
+      - entity: k8s.change=shop/notifier@rev3
+        causal_role: coincident
+        why: >-
+          a scheduled rollout of notifier itself at 14:05, seven minutes before the flow stops,
+          on the very service that alerted. The prior likes it best: it is on the subject and it
+          is recent. Its own telemetry is clean.
+      - entity: k8s.change=shop/storefront@scale-1426
+        causal_role: coincident
+        why: >-
+          the autoscaler widening storefront at 14:26, fourteen minutes after notifier's traffic
+          had already fallen. storefront is two hops from notifier, and nothing about it moved.
+      - entity: k8s.change=shop/payments-config@rv8800
+        causal_role: stale
+        why: >-
+          a payments ConfigMap edit at 13:15, an hour before anything happened, on a service that
+          does not call notifier at all.
+
+    exonerating_evidence:
+      k8s.change=shop/notifier@rev3:
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=notifier"
+              windows: {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: notifier's own error rate does not move; a rollout that broke notifier would.
+        - term:
+            errors_by_version:
+              pointer: "METRIC otel.service.name=notifier"
+              window: "2026-09-01T14:12:00Z..2026-09-01T14:27:00Z"
+              version_attribute: service.version
+          field_path: versions[version=rev3].error_rate
+          op: lt
+          value: 0.02
+          note: and the version the rollout shipped fails at notifier's ordinary rate.
+      k8s.change=shop/storefront@scale-1426:
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=storefront"
+              windows: {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+              statistic: ERROR_RATE
+          field_path: comparisons[statistic=ERROR_RATE].direction
+          op: eq
+          value: flat
+          note: storefront's own error rate does not move across the onset.
+      k8s.change=shop/payments-config@rv8800:
+        - term:
+            compare:
+              pointer: "METRIC otel.service.name=payments"
+              windows: {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+              statistic: RATE
+          field_path: comparisons[statistic=RATE].direction
+          op: eq
+          value: flat
+          note: >-
+            payments' traffic does not move: the flow that stopped is not on its path.
+
+    # The flag lands at 14:12 and the first quarter-hour window that holds its effect closes at
+    # 14:27, five minutes before the monitor fires.
+    knowability_time: 2026-09-01T14:27:00Z
+    onset: {at: 2026-09-01T14:12:00Z, tolerance_seconds: 120}
+    # Read off golden/diff.notifier-diff.json: third of four, behind the autoscaler (2 hops, 14:26) and
+    # notifier@rev3 (on the subject, 14:05).
+    prior_rank_of_culprit: 3
+    provenance:
+      kind: synthetic
+      sanitiser_policy_version: "1.0.0"
+
+  world:
+    # THREE, like distant-culprit-01 and for the same narrow reason: payments, which the stale
+    # decoy targets, is three hops from notifier (notifier <- checkout <- storefront -> payments),
+    # and at radius 2 its exonerating evidence would name a pointer the world cannot answer. The
+    # engine still reads a two-hop neighbourhood.
+    hop_radius: 3
+    drill_down_depth: 1
+    window_grid:
+      - {reference_at: 2026-09-01T14:12:00Z, width_seconds: 900}
+    algebra_version: "1.0.0"
+    miss_rate_threshold: 0.05
+    shape: stopped-flow
+    note: >-
+      One grid entry, centred on the flag change. `stopped-flow` is the one shape under which no
+      error rate moves: the culprit's target keeps answering, and its callee's request rate falls
+      by StoppedFlowFraction (pkg/backend/synthetic). As everywhere else in this corpus the grid
+      is a supplement to the terms the deterministic engine itself asks.
+
+  runs: 3

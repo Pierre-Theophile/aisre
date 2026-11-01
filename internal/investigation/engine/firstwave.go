@@ -224,6 +224,7 @@ func (e *Engine) RunFirstWave(ctx context.Context) (*FirstWave, error) {
 	}
 
 	// The ledger writes, in candidate order and then in query order.
+	stopped := stoppedNear(answers[groups])
 	for i, plan := range plans {
 		for _, answer := range answers[i] {
 			if err := e.record(answer); err != nil {
@@ -234,7 +235,7 @@ func (e *Engine) RunFirstWave(ctx context.Context) (*FirstWave, error) {
 				wave.Missing = append(wave.Missing, plan.hypothesisID+":"+answer.Capability)
 			}
 		}
-		judgments, err := e.judgeFirstWave(plan, answers[i])
+		judgments, err := e.judgeFirstWave(plan, answers[i], stopped[plan.hypothesisID])
 		if err != nil {
 			return nil, err
 		}
@@ -617,9 +618,13 @@ const (
 // and no single digest says it — it is the conjunction of the comparisons and the version split
 // (flatTarget below). That judgment replaces the neutral one on the first comparison rather than
 // being added beside it, because the ledger allows one judgment per (evidence, hypothesis) pair
-// and because counting the same silence twice would be counting the same fact twice.
-func (e *Engine) judgeFirstWave(plan candidatePlan, answers []*Answer) ([]ledger.Judgment, error) {
+// and because counting the same silence twice would be counting the same fact twice. It does not
+// fire on a candidate whose callers' or callees' traffic fell (flowStopped, flows.go).
+func (e *Engine) judgeFirstWave(plan candidatePlan, answers []*Answer, flowStopped bool) ([]ledger.Judgment, error) {
 	flat, flatEvidenceID := flatTarget(answers)
+	// A candidate whose neighbourhood lost a flow moved something measurable, so its target's
+	// silence is not the silence flatTarget reads as a refutation (FR-046b).
+	flat = flat && !flowStopped
 	var out []ledger.Judgment
 	for _, answer := range answers {
 		if answer == nil || answer.EvidenceID == "" || answer.Refused != nil {
@@ -631,6 +636,13 @@ func (e *Engine) judgeFirstWave(plan candidatePlan, answers []*Answer) ([]ledger
 		}
 		if flat && answer.EvidenceID == flatEvidenceID {
 			direction, strength = ledger.Refutes, ledger.Moderate
+		}
+		// Error rate and latency are silent about a flow that stopped: a change that stops a call
+		// fails nothing. Where the candidate's neighbourhood lost a flow, their silence is not
+		// held against it, from the comparisons or from an even version split (FR-046b).
+		if flowStopped && direction == ledger.Refutes &&
+			(answer.Capability == "compare" || answer.Capability == "errors_by_version") {
+			direction, strength = ledger.Neutral, ""
 		}
 		judgment, err := e.Judge(plan.hypothesisID, answer.EvidenceID, direction, strength,
 			ledger.SourceFirstWave, answer.Response.GetTermKey())

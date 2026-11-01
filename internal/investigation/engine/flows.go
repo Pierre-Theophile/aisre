@@ -191,7 +191,7 @@ func (e *Engine) openStoppedFlows(flows []*Answer) ([]string, error) {
 	var opened []string
 	for _, answer := range flows {
 		fall, ok := stoppedFall(answer)
-		if !ok {
+		if !ok || answer.EvidenceID == "" {
 			continue
 		}
 		pointer := answer.Request.GetTerm().GetCompare().GetPointer()
@@ -241,7 +241,7 @@ func (e *Engine) flowHypothesisFor(entityID string) string {
 // stoppedFall is the relative fall a rate comparison reports, when it separates and is at least
 // StoppedFlowFall.
 func stoppedFall(answer *Answer) (float64, bool) {
-	if answer == nil || answer.EvidenceID == "" || answer.Refused != nil ||
+	if answer == nil || answer.Refused != nil ||
 		answer.Response.GetOutcome() != investigationv1.TermOutcome_DIGEST {
 		return 0, false
 	}
@@ -255,4 +255,20 @@ func stoppedFall(answer *Answer) (float64, bool) {
 		return 0, false
 	}
 	return fall, true
+}
+
+// stoppedNear names the candidates whose neighbourhood lost a flow: a rate comparison served to
+// them fell by at least StoppedFlowFall. Such a candidate is not flat — its change moved something
+// measurable, a callee's or caller's traffic — so the wave-level refutation (flatTarget) must not
+// fire on it. Nothing is supported by this either; the stopped flow is a candidate of its own.
+func stoppedNear(flows []*Answer) map[string]bool {
+	out := map[string]bool{}
+	for _, answer := range flows {
+		if _, ok := stoppedFall(answer); ok {
+			if id := answer.Request.GetServesHypothesisId(); id != "" {
+				out[id] = true
+			}
+		}
+	}
+	return out
 }

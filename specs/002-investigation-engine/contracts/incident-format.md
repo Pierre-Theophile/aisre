@@ -116,6 +116,7 @@ what every world recorded before the shapes existed holds.
 | `slow-burn` | a **ceiling** is lowered onto the target (a pool sized just above its baseline demand) under a **rising demand curve** (a 0.6 diurnal amplitude, trough at 04:00 UTC, peak at 16:00). The target is barely affected while demand sits near the ceiling and worse in proportion to the excess above it, so the same change is mild when it lands and several times worse hours later. |
 | `distant-culprit` | a step at the far end of a call chain, which reaches the alerting service attenuated once per hop and one resolution step later per hop. Parameters as `step`; it is named separately so a manifest can say what it relies on. |
 | `adjacent-decoy` | a step two hops out, propagated, so the alerting service's own series moves and `onset` on the subject has something real to find. Parameters as `step`, for the same reason. |
+| `stopped-flow` | the culprit **stops its target calling its callees**: from the change instant each callee's request rate falls by 95 % (`StoppedFlowFraction`), and no error rate or latency moves anywhere. The one failure error rate and latency cannot see (FR-046b, `stopped-flow-01`). |
 
 Two of the four share their parameters with `step`, and saying so is more useful than inventing a
 difference to justify four entries. The exact numbers live in `pkg/backend/synthetic/shape.go`
