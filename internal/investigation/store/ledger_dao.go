@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -246,29 +248,12 @@ func InsertJudgmentInTx(ctx context.Context, tx pgx.Tx, investigationID string, 
 	return nil
 }
 
-// LedgerRows is an investigation's ledger as the database holds it: the rows, with no ledger
-// object around them.
-//
-// It is what a replay, a grader or a calibration job reads. Recomputing `ledger.Posteriors` over
-// Hypotheses and Judgments must reproduce every stored confidence exactly — Invariant 1, and the
-// reason `prior` and `ln_lr` are columns at all.
-type LedgerRows struct {
-	// InvestigationID is the run.
-	InvestigationID string
-	// Hypotheses are in published rank order.
-	Hypotheses []ledger.Hypothesis
-	// Judgments are in recorded order.
-	Judgments []ledger.Judgment
-	// Evidence is in call order.
-	Evidence []ledger.EvidenceItem
-}
-
 // Load reads an investigation's ledger rows.
-func (d *LedgerDAO) Load(ctx context.Context, investigationID string) (*LedgerRows, error) {
+func (d *LedgerDAO) Load(ctx context.Context, investigationID string) (*record.LedgerRows, error) {
 	if d == nil || d.store == nil {
 		return nil, errors.New("investigation store: load ledger: no database")
 	}
-	rows := &LedgerRows{InvestigationID: investigationID}
+	rows := &record.LedgerRows{InvestigationID: investigationID}
 	var err error
 	if rows.Hypotheses, err = d.loadHypotheses(ctx, investigationID); err != nil {
 		return nil, err

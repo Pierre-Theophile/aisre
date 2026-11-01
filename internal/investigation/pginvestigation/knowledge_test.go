@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package knowledge_test
+package pginvestigation_test
 
 import (
 	"context"
@@ -13,8 +13,11 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
+
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/pginvestigation"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
@@ -32,10 +35,10 @@ func TestMain(m *testing.M) { pgtest.TestMain(m) }
 func TestTheGraphCorpusRanksTheInScopeDocumentFirst(t *testing.T) {
 	store := pgtest.Open(t)
 	ctx := context.Background()
-	if _, err := fixture.Load(ctx, projector.New(store), "../../../../fixtures/incidents/knowledge-scope-01", fixture.LoadOptions{}); err != nil {
+	if _, err := fixture.Load(ctx, projector.New(store), "../../../fixtures/incidents/knowledge-scope-01", fixture.LoadOptions{}); err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	w := knowledge.New(knowledge.GraphCorpus{Engine: query.NewEngine(store)})
+	w := knowledge.New(pginvestigation.KnowledgeCorpus{Engine: query.NewEngine(store)})
 
 	request := knowledge.SearchTerm(
 		[]string{"otel.service.name=checkout", "otel.service.name=payments"},
@@ -84,10 +87,10 @@ func TestTheGraphCorpusRanksTheInScopeDocumentFirst(t *testing.T) {
 func TestTheGraphCorpusCitesANotionPostmortem(t *testing.T) {
 	store := pgtest.Open(t)
 	ctx := context.Background()
-	if _, err := fixture.Load(ctx, projector.New(store), "../../../../fixtures/incidents/knowledge-notion-01", fixture.LoadOptions{}); err != nil {
+	if _, err := fixture.Load(ctx, projector.New(store), "../../../fixtures/incidents/knowledge-notion-01", fixture.LoadOptions{}); err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	w := knowledge.New(knowledge.GraphCorpus{Engine: query.NewEngine(store)})
+	w := knowledge.New(pginvestigation.KnowledgeCorpus{Engine: query.NewEngine(store)})
 
 	alert := time.Date(2026, 9, 1, 14, 32, 0, 0, time.UTC)
 	request := knowledge.SearchTerm(
@@ -132,4 +135,12 @@ func TestTheGraphCorpusCitesANotionPostmortem(t *testing.T) {
 	if !strings.Contains(resp.Algebra.GetDigest().GetFreeText(), "unconfirmed") {
 		t.Errorf("the digest does not say a document alone is unconfirmed: %q", resp.Algebra.GetDigest().GetFreeText())
 	}
+}
+
+func ids(items []*investigationv1.KnowledgeItem) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, item.GetDocumentId())
+	}
+	return out
 }

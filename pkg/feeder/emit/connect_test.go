@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/server/pgserver"
+
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -63,7 +65,7 @@ func newGraphServer(t *testing.T, sourceID string) *graphServer {
 		Knowledge:       sections,
 		Listen:          "127.0.0.1:0",
 		Auth:            auth,
-		Projector:       projector.New(store),
+		Backends:        pgserver.Backends(projector.New(store)),
 		Logger:          logger,
 		ShutdownTimeout: 2 * time.Second,
 	})

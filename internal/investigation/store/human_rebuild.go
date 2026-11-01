@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
+
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -156,7 +158,7 @@ func factFromEvent(body *graphv1.SubmitHumanFact) *investigationv1.HumanFact {
 		Statement:   body.GetStatement(),
 		Author:      body.GetAuthor(),
 		SubmittedAt: body.GetSubmittedAt(),
-		WeightClass: WeightClassStrong,
+		WeightClass: record.WeightClassStrong,
 	}
 	for _, ref := range body.GetEntities() {
 		fact.EntityIds = append(fact.EntityIds, ref.GetNamespace()+"="+ref.GetValue())
@@ -239,9 +241,9 @@ func investigationExists(ctx context.Context, tx pgx.Tx, id string) (bool, error
 }
 
 // investigationSeed reads the fields a reopened child inherits from its parent.
-func investigationSeed(ctx context.Context, tx pgx.Tx, id string) (NewInvestigation, bool, error) {
+func investigationSeed(ctx context.Context, tx pgx.Tx, id string) (record.NewInvestigation, bool, error) {
 	var (
-		inv                    NewInvestigation
+		inv                    record.NewInvestigation
 		windowStart, windowEnd *time.Time
 		modelConfig            []byte
 	)
@@ -255,9 +257,9 @@ func investigationSeed(ctx context.Context, tx pgx.Tx, id string) (NewInvestigat
 		&inv.AlgebraVersion, &inv.LedgerRuleVersion, &inv.SchemaVersion, &inv.StartedAt)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return NewInvestigation{}, false, nil
+		return record.NewInvestigation{}, false, nil
 	case err != nil:
-		return NewInvestigation{}, false, fmt.Errorf("investigation store: read investigation %s: %w", id, err)
+		return record.NewInvestigation{}, false, fmt.Errorf("investigation store: read investigation %s: %w", id, err)
 	}
 	if windowStart != nil {
 		inv.WindowStart = windowStart.UTC()

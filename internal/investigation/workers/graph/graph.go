@@ -14,8 +14,6 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
-	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
 
@@ -268,59 +266,4 @@ func queryName(term *investigationv1.GraphTerm) string {
 	default:
 		return "unknown"
 	}
-}
-
-// EngineService adapts feature 001's in-process query engine to QueryService. It is what a
-// fixture replay uses: the graph is replayed from events.jsonl into a database of its own and
-// read directly, with no server and no network.
-type EngineService struct {
-	engine *query.Engine
-	log    *eventlog.Log
-}
-
-var _ QueryService = (*EngineService)(nil)
-
-// NewEngineService returns the in-process adapter.
-func NewEngineService(e *query.Engine) *EngineService {
-	return &EngineService{engine: e, log: eventlog.New(e.Store())}
-}
-
-// WhyAttributed is the catalog read intake asks for the triggering signal's entries (009 FR-021).
-func (s *EngineService) WhyAttributed(ctx context.Context, req *graphv1.WhyAttributedRequest) (*graphv1.WhyAttributedResponse, error) {
-	return s.engine.WhyAttributed(ctx, req)
-}
-
-// Subgraph implements QueryService.
-func (s *EngineService) Subgraph(ctx context.Context, req *graphv1.SubgraphRequest) (*graphv1.SubgraphResponse, error) {
-	return s.engine.Subgraph(ctx, req)
-}
-
-// Diff implements QueryService.
-func (s *EngineService) Diff(ctx context.Context, req *graphv1.DiffRequest) (*graphv1.DiffResponse, error) {
-	return s.engine.Diff(ctx, req)
-}
-
-// Impact implements QueryService.
-func (s *EngineService) Impact(ctx context.Context, req *graphv1.ImpactRequest) (*graphv1.ImpactResponse, error) {
-	return s.engine.Impact(ctx, req)
-}
-
-// Pointers implements QueryService.
-func (s *EngineService) Pointers(ctx context.Context, req *graphv1.PointersRequest) (*graphv1.PointersResponse, error) {
-	return s.engine.Pointers(ctx, req)
-}
-
-// NodeHistory implements QueryService.
-func (s *EngineService) NodeHistory(ctx context.Context, req *graphv1.NodeHistoryRequest) (*graphv1.NodeHistoryResponse, error) {
-	return s.engine.NodeHistory(ctx, req)
-}
-
-// ResolutionAudit implements QueryService.
-func (s *EngineService) ResolutionAudit(ctx context.Context, req *graphv1.ResolutionAuditRequest) (*graphv1.ResolutionAuditResponse, error) {
-	return s.engine.ResolutionAudit(ctx, req)
-}
-
-// Extent implements QueryService.
-func (s *EngineService) Extent(ctx context.Context, _ *graphv1.ExtentRequest) (*graphv1.Extent, error) {
-	return s.log.Extent(ctx)
 }

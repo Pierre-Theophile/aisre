@@ -20,7 +20,6 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
-	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
 )
 
@@ -45,7 +44,7 @@ import (
 
 // IngestService implements sreagent.graph.v1.IngestService.
 type IngestService struct {
-	projector *projector.Projector
+	projector EventLog
 	metrics   *telemetry.Metrics
 	logger    *slog.Logger
 	tracer    trace.Tracer
@@ -55,7 +54,7 @@ var _ graphv1connect.IngestServiceHandler = (*IngestService)(nil)
 
 // NewIngestService returns the ingestion handler. metrics may be nil (every method on a nil
 // *telemetry.Metrics is a no-op) and logger defaults to slog.Default().
-func NewIngestService(p *projector.Projector, metrics *telemetry.Metrics, logger *slog.Logger) *IngestService {
+func NewIngestService(p EventLog, metrics *telemetry.Metrics, logger *slog.Logger) *IngestService {
 	if logger == nil {
 		logger = slog.Default()
 	}

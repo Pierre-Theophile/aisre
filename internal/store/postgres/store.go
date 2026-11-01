@@ -297,3 +297,15 @@ func stripOuterTransaction(sql string) string {
 	lines[last] = ""
 	return strings.Join(lines, "\n")
 }
+
+// Ping says the database answers.
+func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
+
+// Migrated says at least one migration has been applied.
+func (s *Store) Migrated(ctx context.Context) (bool, error) {
+	versions, err := s.AppliedVersions(ctx)
+	if err != nil {
+		return false, err
+	}
+	return len(versions) > 0, nil
+}

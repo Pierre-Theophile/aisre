@@ -13,6 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/server/pgserver"
+
+	"github.com/Pierre-Theophile/aisre/internal/investigation/pginvestigation"
+
 	"github.com/spf13/cobra"
 
 	"github.com/Pierre-Theophile/aisre/internal/catalog"
@@ -262,11 +266,12 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 	}
 	logger.Info("knowledge: store="+opts.knowledgeStore, "retrieval", retrievalMode(knowledgeEmbedder))
 
+	proj := projector.New(store, projector.WithMetrics(metrics))
 	cfg := server.Config{
 		Knowledge:       knowledgeStore,
 		Listen:          opts.listen,
 		Auth:            auth,
-		Projector:       projector.New(store, projector.WithMetrics(metrics)),
+		Backends:        pgserver.Backends(proj),
 		Metrics:         metrics,
 		Logger:          logger,
 		ShutdownTimeout: opts.shutdownTimeout,
@@ -279,7 +284,7 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 		// `--model-config` is given.
 		investigations, err := newInvestigationRunner(ctx, store, knowledgeRetrieval{
 			store: knowledgeStore, embedder: knowledgeEmbedder, ready: knowledgeReady,
-		}, cfg.Projector, opts, logger)
+		}, proj, opts, logger)
 		if err != nil {
 			return err
 		}
@@ -288,7 +293,7 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 			// The projector, so that the human channel served over RPC emits its three events
 			// in the transactions that write their rows (FR-057a/b/e).
 			investigationstore.NewInvestigationDAO(store,
-				investigationstore.WithEventLog(cfg.Projector)), logger,
+				investigationstore.WithEventLog(proj)), logger,
 			// `investigate get` returns the run's ledger: the hypotheses, the judgments and the
 			// evidence under the verdict. Without this the read path serves a verdict line with
 			// nothing beneath it and `--ledger`, `--chain` and `--evidence` print empty sections.
@@ -314,7 +319,7 @@ func runServe(cmd *cobra.Command, global *globalOptions, opts *serveOptions) err
 			// FR-034: with no classifier block, attribution needs no network and no model.
 			logger.Info("attribution: no classifier; layers 0-2 decide", "ruleset", rules.Ruleset, "classifier", "none")
 		}
-		attributor := pgcatalog.NewAttributor(cfg.Projector, attributorOpts...)
+		attributor := pgcatalog.NewAttributor(proj, attributorOpts...)
 		go attributor.Run(ctx)
 	}
 	srv, err := server.New(cfg)
@@ -669,13 +674,13 @@ func newInvestigationRunner(
 	}
 
 	investigations, err := runner.New(runner.Config{
-		Store:         store,
-		Projector:     proj,
-		Graph:         runner.GraphOver(store),
-		Workers:       registry,
-		Profiles:      profiles,
-		Model:         client,
-		RecordingRoot: opts.recordingRoot,
+		Persistence:     pginvestigation.Persistence(store, proj),
+		Graph:           pginvestigation.GraphOver(store),
+		KnowledgeCorpus: pginvestigation.KnowledgeCorpusOver(store),
+		Workers:         registry,
+		Profiles:        profiles,
+		Model:           client,
+		RecordingRoot:   opts.recordingRoot,
 		// The world the telemetry backend above is answering from, so an export carries the
 		// layer 2 the run actually read rather than looking for one nothing writes.
 		WorldDir:          worldDirOf(opts.recordingRoot),

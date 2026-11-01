@@ -17,6 +17,7 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1/investigationv1connect"
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render/slacksink"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
@@ -62,7 +63,7 @@ func newInvestigateFactCommand(global *globalOptions) *cobra.Command {
 			fact := &investigationv1.HumanFact{
 				Kind:        kind,
 				Statement:   statement,
-				WeightClass: investigationstore.WeightClassStrong,
+				WeightClass: record.WeightClassStrong,
 			}
 			for _, raw := range entities {
 				ref, err := parseFocusRef(raw)
@@ -131,7 +132,7 @@ func newInvestigateFactCommand(global *globalOptions) *cobra.Command {
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVar(&kind, "kind", "", "fact kind: "+strings.Join(investigationstore.FactKinds(), ", "))
+	flags.StringVar(&kind, "kind", "", "fact kind: "+strings.Join(record.FactKinds(), ", "))
 	flags.StringVar(&statement, "statement", "", "what is known, in words (required)")
 	flags.StringArrayVar(&entities, "entity", nil, "entity the fact concerns, as <ns>=<value>; repeatable")
 	flags.StringVar(&from, "from", "", "start of the interval the fact concerns")
@@ -140,13 +141,13 @@ func newInvestigateFactCommand(global *globalOptions) *cobra.Command {
 }
 
 func checkFactKind(kind string) error {
-	for _, k := range investigationstore.FactKinds() {
+	for _, k := range record.FactKinds() {
 		if k == kind {
 			return nil
 		}
 	}
 	return exitErrorf(ExitUsage, "--kind %q: want one of %s",
-		kind, strings.Join(investigationstore.FactKinds(), ", "))
+		kind, strings.Join(record.FactKinds(), ", "))
 }
 
 func parseConcerns(from, to string) (*graphv1.Interval, error) {
@@ -443,8 +444,8 @@ func recordDeliveryOutcome(
 
 	system, ref := deliverySplit(inv)
 	outcome, detail := deliveryLedgerOutcome(result)
-	rec := investigationstore.DeliveryRecord{
-		DeliveryID: investigationstore.DeliveryIDFor(
+	rec := record.DeliveryRecord{
+		DeliveryID: record.DeliveryIDFor(
 			inv.GetInvestigationId(), system, ref),
 		InvestigationID:    inv.GetInvestigationId(),
 		TargetSystem:       system,
@@ -469,15 +470,15 @@ func recordDeliveryOutcome(
 func deliveryLedgerOutcome(result render.DeliveryResult) (outcome, detail string) {
 	switch result.Outcome {
 	case render.OutcomeDelivered:
-		return investigationstore.DeliveryDelivered, ""
+		return record.DeliveryDelivered, ""
 	case render.OutcomeNotConfigured:
-		return investigationstore.DeliveryNotConfigured, result.FailureDetail
+		return record.DeliveryNotConfigured, result.FailureDetail
 	default:
 		detail = result.FailureDetail
 		if strings.TrimSpace(detail) == "" {
 			detail = "the transport reported a failure and no detail"
 		}
-		return investigationstore.DeliveryFailed, detail
+		return record.DeliveryFailed, detail
 	}
 }
 

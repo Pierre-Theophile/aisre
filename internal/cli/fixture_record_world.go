@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/pginvestigation"
+
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
@@ -22,7 +24,6 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/audit"
 	algebra "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/engine"
-	graphworker "github.com/Pierre-Theophile/aisre/internal/investigation/workers/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
@@ -220,7 +221,7 @@ func recordFixtureWorld(
 		if err != nil {
 			return nil, err
 		}
-		knowledgeWiring := worldKnowledge{corpus: knowledge.GraphCorpus{Engine: queryEngine}, store: sections}
+		knowledgeWiring := worldKnowledge{corpus: pginvestigation.KnowledgeCorpus{Engine: queryEngine}, store: sections}
 		// The engine pass. It runs the *same* wiring `fixture record-trajectory --model-free`
 		// runs, over the same graph, against the world's own generator — so every term the
 		// deterministic engine will ask on replay is in the recording by construction rather
@@ -268,7 +269,7 @@ func fixtureEnginePass(m *fixture.Manifest, prior audit.PriorRecord, queryEngine
 		wiring := eval.EngineWiring{
 			Manifest:       m,
 			Prior:          prior,
-			Graph:          graphworker.NewEngineService(queryEngine),
+			Graph:          pginvestigation.NewGraphService(queryEngine),
 			Knowledge:      kw.corpus,
 			KnowledgeStore: kw.store,
 			Telemetry:      taping,
@@ -316,7 +317,7 @@ func fixtureLivePass(
 			wiring := eval.EngineWiring{
 				Manifest:       m,
 				Prior:          prior,
-				Graph:          graphworker.NewEngineService(queryEngine),
+				Graph:          pginvestigation.NewGraphService(queryEngine),
 				Knowledge:      kw.corpus,
 				KnowledgeStore: kw.store,
 				Telemetry:      taping,

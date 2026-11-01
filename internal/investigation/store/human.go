@@ -10,12 +10,13 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
+
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 )
 
 // The human channel (T083, T084, FR-054, FR-057a, FR-057b, FR-057e, SC-024).
@@ -38,63 +39,6 @@ import (
 // one reopens it, which means a *new linked row*, never an edit of the concluded one (FR-007,
 // FR-057b). That asymmetry is the whole design: the engine never blocks, and the record never
 // changes under a reader.
-
-// WeightClassStrong is the only weight class a human fact may carry. A person who is certain is
-// still a person, and the ledger has to be able to report a conflict with what was measured.
-const WeightClassStrong = "strong"
-
-// The published human-fact kinds (data-model §investigation.human_facts).
-const (
-	FactKindManualAction = "manual_action"
-	FactKindVendorNotice = "vendor_notice"
-	FactKindKnownState   = "known_state"
-	FactKindCorrection   = "correction"
-	FactKindOther        = "other"
-)
-
-// EvidenceKindHumanFact is the evidence kind a human fact becomes.
-const EvidenceKindHumanFact = "human_fact"
-
-// FactKinds lists the published kinds, for a CLI that has to say what it accepts.
-func FactKinds() []string {
-	return []string{FactKindManualAction, FactKindVendorNotice, FactKindKnownState,
-		FactKindCorrection, FactKindOther}
-}
-
-// factKindAliases map the spellings connectors use onto the published set.
-//
-// The published vocabulary is `investigation.human_facts.kind`'s CHECK and is deliberately
-// short. A connector that observes a fact in a chat thread or a ticket will spell it in its own
-// words, and `operator_action` — which the `human-fact-reopen-01` fixture uses in its graph
-// event — is the same fact as `manual_action`. The alias table is explicit and small: a spelling
-// that is not here is an error rather than a silent `other`, because a fact filed under the
-// wrong kind is worse than one that was refused.
-var factKindAliases = map[string]string{
-	"operator_action": FactKindManualAction,
-	"manual":          FactKindManualAction,
-	"vendor":          FactKindVendorNotice,
-	"state":           FactKindKnownState,
-}
-
-// NormaliseFactKind maps a connector's spelling onto the published set, or reports that it does
-// not know it.
-func NormaliseFactKind(kind string) (string, error) {
-	if validFactKind(kind) {
-		return kind, nil
-	}
-	if mapped, ok := factKindAliases[kind]; ok {
-		return mapped, nil
-	}
-	return "", fmt.Errorf("%w (got %q)", ErrUnknownFactKind, kind)
-}
-
-// ErrUnknownFactKind is a fact whose kind is outside the published set.
-var ErrUnknownFactKind = fmt.Errorf("human fact kind must be one of %v", FactKinds())
-
-// ErrDecisiveHumanFact is an attempt to weight a human fact as decisive. It is refused here as
-// well as by the schema, because the rule is the point rather than the column.
-var ErrDecisiveHumanFact = errors.New(
-	"a human fact is strong evidence, never decisive: where telemetry contradicts it both are kept (FR-057a)")
 
 // SubmitFact writes a human fact against an investigation, running or concluded, and returns it
 // with its evidence id filled in.
@@ -126,7 +70,7 @@ func (d *InvestigationDAO) emitFact(
 	if d == nil || d.proj == nil {
 		return nil
 	}
-	env, err := HumanFactEnvelope(investigationID, fact)
+	env, err := record.HumanFactEnvelope(investigationID, fact)
 	if err != nil {
 		return err
 	}
@@ -143,23 +87,23 @@ func SubmitFactInTx(ctx context.Context, tx pgx.Tx, investigationID string, fact
 	if fact == nil {
 		return nil, errors.New("investigation store: submit fact: no fact")
 	}
-	kind, err := NormaliseFactKind(fact.GetKind())
+	kind, err := record.NormaliseFactKind(fact.GetKind())
 	if err != nil {
 		return nil, fmt.Errorf("investigation store: submit fact: %w", err)
 	}
-	if w := fact.GetWeightClass(); w != "" && w != WeightClassStrong {
-		return nil, fmt.Errorf("investigation store: submit fact: %w (got %q)", ErrDecisiveHumanFact, w)
+	if w := fact.GetWeightClass(); w != "" && w != record.WeightClassStrong {
+		return nil, fmt.Errorf("investigation store: submit fact: %w (got %q)", record.ErrDecisiveHumanFact, w)
 	}
 	if fact.GetAuthor() == "" {
-		return nil, fmt.Errorf("investigation store: submit fact: %w", ErrAnonymousPrincipal)
+		return nil, fmt.Errorf("investigation store: submit fact: %w", record.ErrAnonymousPrincipal)
 	}
 	if err := EnsurePrincipalInTx(ctx, tx, fact.GetAuthor()); err != nil {
 		return nil, err
 	}
 
-	out := cloneFact(fact)
+	out := record.CloneFact(fact)
 	out.Kind = kind
-	out.WeightClass = WeightClassStrong
+	out.WeightClass = record.WeightClassStrong
 	if out.GetSubmittedAt() == nil {
 		out.SubmittedAt = timestamppb.New(time.Now().UTC())
 	}
@@ -179,12 +123,12 @@ func SubmitFactInTx(ctx context.Context, tx pgx.Tx, investigationID string, fact
 		`SELECT valid_at, observed_at FROM investigation.investigations WHERE investigation_id = $1`,
 		investigationID).Scan(&validAt, &observedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("investigation store: submit fact to %s: %w", investigationID, ErrNotFound)
+			return nil, fmt.Errorf("investigation store: submit fact to %s: %w", investigationID, record.ErrNotFound)
 		}
 		return nil, fmt.Errorf("investigation store: submit fact to %s: %w", investigationID, err)
 	}
 
-	item := FactEvidence(out, validAt, observedAt)
+	item := record.FactEvidence(out, validAt, observedAt)
 	if err := InsertEvidenceInTx(ctx, tx, investigationID, item); err != nil {
 		return nil, err
 	}
@@ -205,61 +149,12 @@ func SubmitFactInTx(ctx context.Context, tx pgx.Tx, investigationID string, fact
 		ON CONFLICT (fact_id) DO NOTHING`,
 		out.GetFactId(), investigationID, out.GetKind(), out.GetStatement(), entities,
 		intervalStart(out.GetConcerns()), intervalEnd(out.GetConcerns()),
-		out.GetAuthor(), out.GetSubmittedAt().AsTime(), WeightClassStrong,
+		out.GetAuthor(), out.GetSubmittedAt().AsTime(), record.WeightClassStrong,
 		out.GetEvidenceId(), nullable(out.GetEventId()), contradicted,
 	); err != nil {
 		return nil, fmt.Errorf("investigation store: submit fact %s: %w", out.GetFactId(), err)
 	}
 	return out, nil
-}
-
-// FactEvidence is the evidence item a human fact becomes (FR-057a).
-//
-// It has no algebra term — nobody queried anything — and says so in its deep-link absence reason
-// rather than inventing a link. Its coverage block names the entities the fact concerns, which is
-// the honest answer to "what did this look at?": one person's knowledge of those entities.
-func FactEvidence(fact *investigationv1.HumanFact, validAt, observedAt time.Time) ledger.EvidenceItem {
-	searched := fact.GetEntityIds()
-	if searched == nil {
-		searched = []string{}
-	}
-	return ledger.EvidenceItem{
-		ID:         fact.GetEvidenceId(),
-		Kind:       EvidenceKindHumanFact,
-		Worker:     "human",
-		Capability: fact.GetKind(),
-		ValidAt:    validAt.UTC(),
-		ObservedAt: observedAt.UTC(),
-		CalledAt:   fact.GetSubmittedAt().AsTime().UTC(),
-		Mode:       "live",
-		Outcome:    "digest",
-		Coverage: &investigationv1.Coverage{
-			SearchedEntities:         searched,
-			DataSource:               "human",
-			ExecutedAt:               fact.GetSubmittedAt(),
-			VolumeConsidered:         1,
-			IngestionLagUndetermined: true,
-			QuotaUndetermined:        true,
-		},
-		DeepLinkAbsentReason: "a human fact is not a query; `aisre investigate get <id> --evidence` " +
-			"shows the statement, its author and the instant it was submitted",
-		FreeText: fact.GetStatement(),
-	}
-}
-
-// FactJudgment is the judgment a human fact makes against one hypothesis: strong, never decisive
-// (FR-057a, research §8). The direction is the caller's — a fact can support or refute — and the
-// ledger computes the number.
-func FactJudgment(id, hypothesisID string, fact *investigationv1.HumanFact, direction ledger.Direction) ledger.Judgment {
-	return ledger.Judgment{
-		ID:           id,
-		HypothesisID: hypothesisID,
-		EvidenceID:   fact.GetEvidenceId(),
-		Direction:    direction,
-		Strength:     ledger.Strong,
-		Source:       ledger.SourceHumanFact,
-		RecordedAt:   fact.GetSubmittedAt().AsTime().UTC(),
-	}
 }
 
 // RecordContradiction states, on the fact, that a measurement disagrees with it (FR-057a).
@@ -283,7 +178,7 @@ func (d *InvestigationDAO) RecordContradiction(ctx context.Context, factID strin
 		return fmt.Errorf("investigation store: record contradiction on %s: %w", factID, err)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("investigation store: record contradiction on %s: %w", factID, ErrNotFound)
+		return fmt.Errorf("investigation store: record contradiction on %s: %w", factID, record.ErrNotFound)
 	}
 	return nil
 }
@@ -301,7 +196,7 @@ func (d *InvestigationDAO) RecordContradiction(ctx context.Context, factID strin
 func (d *InvestigationDAO) ReopenWithFact(
 	ctx context.Context,
 	parentID string,
-	child NewInvestigation,
+	child record.NewInvestigation,
 	fact *investigationv1.HumanFact,
 ) (*investigationv1.HumanFact, error) {
 	if d == nil || d.store == nil {
@@ -334,8 +229,8 @@ func (d *InvestigationDAO) ReopenWithFact(
 		}
 		// The reopen link, keyed by the child's id: the parent is not edited, so the event that
 		// records the supersession is identified by the record it produced (FR-007, FR-057b).
-		env, err := ReopenEnvelope(parentID, child.InvestigationID,
-			ReopenCauseHumanFact, out.GetFactId())
+		env, err := record.ReopenEnvelope(parentID, child.InvestigationID,
+			record.ReopenCauseHumanFact, out.GetFactId())
 		if err != nil {
 			return err
 		}
@@ -401,14 +296,14 @@ func (d *InvestigationDAO) RecordReview(ctx context.Context, investigationID str
 		return nil, errors.New("investigation store: review: no review")
 	}
 	if review.GetAuthor() == "" {
-		return nil, fmt.Errorf("investigation store: review: %w", ErrAnonymousPrincipal)
+		return nil, fmt.Errorf("investigation store: review: %w", record.ErrAnonymousPrincipal)
 	}
 	if review.GetValidatedRootCause() == "" {
 		return nil, errors.New("investigation store: review: a validated root cause is required; " +
 			"`unobserved` and `not_change_induced:<category>` are valid answers (FR-054)")
 	}
 
-	out, ok := proto3Clone(review).(*investigationv1.HumanReview)
+	out, ok := record.Proto3Clone(review).(*investigationv1.HumanReview)
 	if !ok {
 		return nil, errors.New("investigation store: review: clone")
 	}
@@ -485,9 +380,9 @@ func (d *InvestigationDAO) RecordLabel(ctx context.Context, investigationID stri
 		return nil, errors.New("investigation store: label: no label")
 	}
 	if label.GetAuthor() == "" {
-		return nil, fmt.Errorf("investigation store: label: %w", ErrAnonymousPrincipal)
+		return nil, fmt.Errorf("investigation store: label: %w", record.ErrAnonymousPrincipal)
 	}
-	out, ok := proto3Clone(label).(*investigationv1.Label)
+	out, ok := record.Proto3Clone(label).(*investigationv1.Label)
 	if !ok {
 		return nil, errors.New("investigation store: label: clone")
 	}
@@ -514,7 +409,7 @@ func (d *InvestigationDAO) RecordLabel(ctx context.Context, investigationID stri
 		if d.proj == nil {
 			return nil
 		}
-		env, err := LabelEnvelope(investigationID, out)
+		env, err := record.LabelEnvelope(investigationID, out)
 		if err != nil {
 			return err
 		}
@@ -552,37 +447,12 @@ func (d *InvestigationDAO) LabelsOf(ctx context.Context, investigationID string)
 	return out, rows.Err()
 }
 
-// AgreementWithHumans is the metric FR-056 asks for on every evaluation run: of the reviewed
-// investigations, the fraction whose top-ranked hypothesis matched the validated root cause,
-// and, separately, the fraction of labels that said "right".
-//
-// It is computed from the rows rather than materialised, because a review or a label added
-// tomorrow must move it without a backfill.
-type AgreementWithHumans struct {
-	// Reviewed is how many investigations carry at least one review.
-	Reviewed int
-	// Agreed is how many of those had the validated root cause ranked first.
-	Agreed int
-	// Labelled and LabelledRight are the same counts over the one-click label.
-	Labelled      int
-	LabelledRight int
-}
-
-// Rate is Agreed/Reviewed, or 0 when nothing has been reviewed. A rate over an empty corpus is
-// not 100%.
-func (a AgreementWithHumans) Rate() float64 {
-	if a.Reviewed == 0 {
-		return 0
-	}
-	return float64(a.Agreed) / float64(a.Reviewed)
-}
-
 // Agreement computes AgreementWithHumans over every reviewed investigation (FR-056).
-func (d *InvestigationDAO) Agreement(ctx context.Context) (AgreementWithHumans, error) {
+func (d *InvestigationDAO) Agreement(ctx context.Context) (record.AgreementWithHumans, error) {
 	if d == nil || d.store == nil {
-		return AgreementWithHumans{}, errors.New("investigation store: agreement: no database")
+		return record.AgreementWithHumans{}, errors.New("investigation store: agreement: no database")
 	}
-	var a AgreementWithHumans
+	var a record.AgreementWithHumans
 	// The engine's answer is the rank-1 hypothesis; the human's is the validated root cause.
 	// `unobserved` and `not_change_induced:*` match the open hypothesis, which is the one whose
 	// kind is `no_observed_change`.
@@ -603,31 +473,14 @@ func (d *InvestigationDAO) Agreement(ctx context.Context) (AgreementWithHumans, 
 		        OR reviewed.validated_root_cause = top.culprit)
 		FROM reviewed LEFT JOIN top USING (investigation_id)`).Scan(&a.Reviewed, &a.Agreed)
 	if err != nil {
-		return AgreementWithHumans{}, fmt.Errorf("investigation store: agreement: %w", err)
+		return record.AgreementWithHumans{}, fmt.Errorf("investigation store: agreement: %w", err)
 	}
 	if err := d.store.Pool().QueryRow(ctx, `
 		SELECT count(*), count(*) FILTER (WHERE was_this_right)
 		FROM investigation.labels`).Scan(&a.Labelled, &a.LabelledRight); err != nil {
-		return AgreementWithHumans{}, fmt.Errorf("investigation store: agreement labels: %w", err)
+		return record.AgreementWithHumans{}, fmt.Errorf("investigation store: agreement labels: %w", err)
 	}
 	return a, nil
-}
-
-func validFactKind(kind string) bool {
-	for _, k := range FactKinds() {
-		if k == kind {
-			return true
-		}
-	}
-	return false
-}
-
-func cloneFact(fact *investigationv1.HumanFact) *investigationv1.HumanFact {
-	out, ok := proto3Clone(fact).(*investigationv1.HumanFact)
-	if !ok {
-		return &investigationv1.HumanFact{}
-	}
-	return out
 }
 
 func intervalStart(i *graphv1.Interval) any {

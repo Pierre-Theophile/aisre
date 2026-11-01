@@ -18,7 +18,6 @@ import (
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1/investigationv1connect"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/knowledge/v1/knowledgev1connect"
-	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
 	"github.com/Pierre-Theophile/aisre/pkg/knowledge"
 )
@@ -78,8 +77,10 @@ type Config struct {
 	// Auth verifies bearer tokens. Required: a graph with no authenticator would accept
 	// anonymous callers, which FR-041a forbids.
 	Auth Authenticator
-	// Projector is the only way events reach the graph. Required.
-	Projector *projector.Projector
+	// Backends is what the handlers read and write through: the event log (the only way events
+	// reach the graph), the graph and catalog readers, the principal registry and the database
+	// the probes ask. Required; pgserver.Backends builds it over the projector.
+	Backends Backends
 	// Metrics receives the instruments from plan §Observability. A nil *Metrics is a no-op,
 	// so tests may leave it unset.
 	Metrics *telemetry.Metrics
@@ -111,11 +112,9 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Auth == nil {
 		return nil, errors.New("server: an Authenticator is required; every call must name an individual (FR-041a)")
 	}
-	if cfg.Projector == nil {
-		return nil, errors.New("server: a Projector is required")
-	}
-	if cfg.Projector.Store() == nil {
-		return nil, errors.New("server: the Projector has no store")
+	if !cfg.Backends.complete() {
+		return nil, errors.New("server: backends are required (event log, graph and catalog readers, " +
+			"principals, database)")
 	}
 
 	logger := cfg.Logger
@@ -131,13 +130,13 @@ func New(cfg Config) (*Server, error) {
 	mux.HandleFunc(HealthPath, s.handleHealth)
 	mux.HandleFunc(ReadyPath, s.handleReady)
 	mux.Handle(graphv1connect.NewIngestServiceHandler(
-		NewIngestService(cfg.Projector, cfg.Metrics, logger), interceptors))
+		NewIngestService(cfg.Backends.Log, cfg.Metrics, logger), interceptors))
 	mux.Handle(graphv1connect.NewQueryServiceHandler(
-		NewQueryService(cfg.Projector, cfg.Metrics, logger), interceptors))
+		NewQueryService(cfg.Backends.Log, cfg.Backends.Graph, cfg.Metrics, logger), interceptors))
 	mux.Handle(graphv1connect.NewResolutionServiceHandler(
-		NewResolutionService(cfg.Projector, cfg.Metrics, logger), interceptors))
+		NewResolutionService(cfg.Backends.Log, cfg.Backends.Principals, cfg.Metrics, logger), interceptors))
 	mux.Handle(graphv1connect.NewCatalogServiceHandler(
-		NewCatalogService(cfg.Projector, cfg.Metrics, logger), interceptors))
+		NewCatalogService(cfg.Backends.Catalog, cfg.Metrics, logger), interceptors))
 	if cfg.Investigation != nil {
 		mux.Handle(investigationv1connect.NewInvestigationServiceHandler(cfg.Investigation, interceptors))
 	}
@@ -211,7 +210,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	// ResolutionService registers it again, idempotently, before the first decision, so a
 	// database that is slow or a context that is already going away must not stop the server
 	// coming up — the health endpoints exist to report that condition.
-	if err := RegisterHumanSource(ctx, s.cfg.Projector); err != nil {
+	if err := RegisterHumanSource(ctx, s.cfg.Backends.Log); err != nil {
 		s.logger.Warn("could not declare the human decision source at startup; "+
 			"it will be declared before the first decision", "error", err.Error())
 	}
@@ -220,7 +219,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	// about the graph, not counters, so they are answered on every metric collection by reading
 	// it (FR-051, FR-052). Registering here rather than in New means a Server that was built and
 	// never served does not leave a callback holding a pool it will not use.
-	s.cfg.Projector.RegisterObservables(s.cfg.Metrics)
+	s.cfg.Backends.Log.RegisterObservables(s.cfg.Metrics)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -279,7 +278,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), healthTimeout)
 	defer cancel()
 
-	if err := s.cfg.Projector.Store().Pool().Ping(ctx); err != nil {
+	if err := s.cfg.Backends.Database.Ping(ctx); err != nil {
 		s.logger.Warn("health check failed", "error", err.Error())
 		writePlain(w, http.StatusServiceUnavailable, "database unavailable\n")
 		return
@@ -293,14 +292,14 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), healthTimeout)
 	defer cancel()
 
-	store := s.cfg.Projector.Store()
-	if err := store.Pool().Ping(ctx); err != nil {
+	db := s.cfg.Backends.Database
+	if err := db.Ping(ctx); err != nil {
 		s.logger.Warn("readiness check failed", "error", err.Error())
 		writePlain(w, http.StatusServiceUnavailable, "database unavailable\n")
 		return
 	}
-	versions, err := store.AppliedVersions(ctx)
-	if err != nil || len(versions) == 0 {
+	migrated, err := db.Migrated(ctx)
+	if err != nil || !migrated {
 		s.logger.Warn("readiness check failed: schema not migrated")
 		writePlain(w, http.StatusServiceUnavailable, "schema not migrated; run `aisre migrate`\n")
 		return

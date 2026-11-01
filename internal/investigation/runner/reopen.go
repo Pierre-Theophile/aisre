@@ -16,7 +16,7 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
-	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 )
 
 // Reopening (FR-057b, FR-007, SC-024).
@@ -53,7 +53,7 @@ func (r *Runner) Reopen(
 			errors.New("reopen: a reopen carries the fact that bears on the concluded investigation (FR-057b)"))
 	}
 	if requester == "" {
-		return nil, investigationstore.ErrAnonymousPrincipal
+		return nil, record.ErrAnonymousPrincipal
 	}
 	if fact.GetAuthor() == "" {
 		fact.Author = requester

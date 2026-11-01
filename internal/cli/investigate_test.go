@@ -11,10 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/server/pgserver"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/server"
@@ -208,12 +211,12 @@ func (r *cliStubRunner) open(
 	investigationID := "inv-" + strings.TrimPrefix(incidentID, "inc:")[:12]
 
 	id, err := r.dao.Open(ctx,
-		investigationstore.Incident{
+		record.Incident{
 			IncidentID: incidentID, CanonicalSubjectID: "e:checkout",
 			OpenedAt: at, LastSymptomAt: at,
 			AssociationRuleVersion: intake.AssociationRuleVersion,
 		},
-		investigationstore.NewInvestigation{
+		record.NewInvestigation{
 			InvestigationID: investigationID, IncidentID: incidentID,
 			ValidAt: at, ObservedAt: at,
 			WindowStart: at.Add(-90 * time.Minute), WindowEnd: at,
@@ -271,10 +274,10 @@ func investigationServerFixtureWithStore(t *testing.T) (baseURL, token string, s
 	}
 	dao := investigationstore.NewInvestigationDAO(store)
 	srv, err := server.New(server.Config{
-		Listen:    "127.0.0.1:0",
-		Auth:      auth,
-		Projector: projector.New(store),
-		Logger:    logger,
+		Listen:   "127.0.0.1:0",
+		Auth:     auth,
+		Backends: pgserver.Backends(projector.New(store)),
+		Logger:   logger,
 		Investigation: server.NewInvestigationService(
 			&cliStubRunner{dao: dao}, dao, logger),
 		ShutdownTimeout: 2 * time.Second,
@@ -697,14 +700,14 @@ func TestReportDeliveryIsRecordedInTheLedger(t *testing.T) {
 	// The target ref is the declaration's origin ref as it was given, prefix and all: the place
 	// the incident lives is `slack:C0888LEDGER`, and the id is derived from it rather than from
 	// a re-split of it.
-	if want := investigationstore.DeliveryIDFor(id, "slack", "slack:C0888LEDGER"); deliveryID != want {
+	if want := record.DeliveryIDFor(id, "slack", "slack:C0888LEDGER"); deliveryID != want {
 		t.Errorf("delivery id = %q, want the canonical %q", deliveryID, want)
 	}
 	if updateCount != 2 {
 		t.Errorf("update_count = %d after two deliveries, want 2", updateCount)
 	}
-	if outcome != investigationstore.DeliveryDelivered {
-		t.Errorf("outcome = %q, want %q", outcome, investigationstore.DeliveryDelivered)
+	if outcome != record.DeliveryDelivered {
+		t.Errorf("outcome = %q, want %q", outcome, record.DeliveryDelivered)
 	}
 	if externalRef == "" {
 		t.Error("no external message reference was recorded, so the next delivery has nothing " +

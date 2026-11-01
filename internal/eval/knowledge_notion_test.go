@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/pginvestigation"
+
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -87,7 +89,7 @@ func knowledgeSearch(t *testing.T, store *postgres.Store, predicate fixture.Evid
 	request.ValidAt = timestamppb.New(at)
 	request.ObservedAt = timestamppb.New(at)
 
-	w := knowledge.New(knowledge.GraphCorpus{Engine: query.NewEngine(store)}, opts...)
+	w := knowledge.New(pginvestigation.KnowledgeCorpus{Engine: query.NewEngine(store)}, opts...)
 	resp, err := w.Call(context.Background(), worker.Request{
 		Capability: engine.TermKnowledgeSearch, Mode: worker.ModeRecorded, Algebra: request,
 	})

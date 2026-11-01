@@ -16,9 +16,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/replay"
-	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 )
 
 // The reading half of `investigate` (T088, contracts/cli.md §Investigate, FR-046, FR-053).
@@ -203,7 +203,7 @@ func newInvestigateListCommand(global *globalOptions) *cobra.Command {
 	flags.StringVar(&lifecycle, "status", "",
 		"list the runs in one lifecycle: running, concluded, reopened or failed")
 	flags.StringVar(&since, "since", "", "list the runs started at or after an instant")
-	flags.IntVar(&limit, "limit", investigationstore.DefaultListLimit, "page size")
+	flags.IntVar(&limit, "limit", record.DefaultListLimit, "page size")
 	return cmd
 }
 
@@ -211,14 +211,14 @@ func newInvestigateListCommand(global *globalOptions) *cobra.Command {
 // (FR-006) and a typo that silently matched nothing would look like "no investigations".
 func checkLifecycle(value string) error {
 	switch value {
-	case "", investigationstore.LifecycleRunning, investigationstore.LifecycleConcluded,
-		investigationstore.LifecycleReopened, investigationstore.LifecycleFailed:
+	case "", record.LifecycleRunning, record.LifecycleConcluded,
+		record.LifecycleReopened, record.LifecycleFailed:
 		return nil
 	default:
 		return exitErrorf(ExitUsage,
 			"--status %q: the lifecycle is exactly %s, %s, %s or %s (FR-006)", value,
-			investigationstore.LifecycleRunning, investigationstore.LifecycleConcluded,
-			investigationstore.LifecycleReopened, investigationstore.LifecycleFailed)
+			record.LifecycleRunning, record.LifecycleConcluded,
+			record.LifecycleReopened, record.LifecycleFailed)
 	}
 }
 

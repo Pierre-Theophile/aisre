@@ -16,7 +16,6 @@ import (
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
 )
 
@@ -81,7 +80,7 @@ type PrincipalRecorder interface {
 
 // ResolutionService implements sreagent.graph.v1.ResolutionService.
 type ResolutionService struct {
-	projector   *projector.Projector
+	projector   EventLog
 	principals  PrincipalRecorder
 	metrics     *telemetry.Metrics
 	logger      *slog.Logger
@@ -93,15 +92,12 @@ var _ graphv1connect.ResolutionServiceHandler = (*ResolutionService)(nil)
 
 // NewResolutionService returns the resolution handler. metrics may be nil; logger defaults to
 // slog.Default().
-func NewResolutionService(p *projector.Projector, metrics *telemetry.Metrics, logger *slog.Logger) *ResolutionService {
+func NewResolutionService(p EventLog, principals PrincipalRecorder, metrics *telemetry.Metrics, logger *slog.Logger) *ResolutionService {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ResolutionService{projector: p, principals: p.Store(), metrics: metrics, logger: logger}
+	return &ResolutionService{projector: p, principals: principals, metrics: metrics, logger: logger}
 }
-
-// Projector is the graph decisions are applied through.
-func (s *ResolutionService) Projector() *projector.Projector { return s.projector }
 
 // Metrics is the instrument set resolution handlers record decisions on.
 func (s *ResolutionService) Metrics() *telemetry.Metrics { return s.metrics }
@@ -112,7 +108,7 @@ func (s *ResolutionService) Logger() *slog.Logger { return s.logger }
 // RegisterHumanSource declares the `human` source, which every decision event is logged under.
 // It is called at server start and again, idempotently, before the first decision, so that an
 // in-process caller that never ran Serve still works.
-func RegisterHumanSource(ctx context.Context, p *projector.Projector) error {
+func RegisterHumanSource(ctx context.Context, p EventLog) error {
 	return p.RegisterSource(ctx, humanSource)
 }
 
@@ -286,7 +282,7 @@ func (s *ResolutionService) decide(ctx context.Context, kind string, subject []s
 	env.IdempotencyKey = env.EventId
 	setBody(env)
 
-	result, err := s.projector.ApplyWithOptions(ctx, env, projector.ApplyOptions{Principal: p.Key()})
+	result, err := s.projector.ApplyAs(ctx, env, p.Key())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -322,8 +318,8 @@ func (s *ResolutionService) recordPrincipal(ctx context.Context, p *Principal) e
 
 // firstSchemaVersion is the event schema version decisions are stamped with: the first the log
 // accepts, so a deployment that has moved on does not have its own decisions refused.
-func firstSchemaVersion(p *projector.Projector) string {
-	if versions := p.Log().SchemaVersions(); len(versions) > 0 {
+func firstSchemaVersion(p EventLog) string {
+	if versions := p.SchemaVersions(); len(versions) > 0 {
 		return versions[0]
 	}
 	return "1.0.0"

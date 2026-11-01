@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
+
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -61,53 +63,6 @@ func NewInvestigationDAO(store *postgres.Store, opts ...DAOOption) *Investigatio
 // Store is the database behind the DAO, for a caller that needs its own transaction.
 func (d *InvestigationDAO) Store() *postgres.Store { return d.store }
 
-// Incident is one incident row.
-type Incident struct {
-	// IncidentID is the deterministic incident identifier (intake.IncidentID).
-	IncidentID string
-	// CanonicalSubjectID is the graph entity the first symptom resolved to. Empty is permitted
-	// and means "the first symptom resolved to nothing", which is the FR-002b path.
-	CanonicalSubjectID string
-	// OpenedAt is the first symptom's instant; LastSymptomAt moves as symptoms attach.
-	OpenedAt      time.Time
-	LastSymptomAt time.Time
-	// AssociationRuleVersion is the published rule that grouped symptoms into this incident.
-	AssociationRuleVersion string
-}
-
-// NewInvestigation is everything needed to open a run.
-type NewInvestigation struct {
-	// InvestigationID is the stable identifier printed in every rendering.
-	InvestigationID string
-	// IncidentID is the incident it covers.
-	IncidentID string
-	// ReopensInvestigationID links a reopened run to its parent (FR-057b). Empty on a first run.
-	ReopensInvestigationID string
-	// ValidAt, ObservedAt, ReviewMode and Window come from intake.
-	ValidAt     time.Time
-	ObservedAt  time.Time
-	ReviewMode  bool
-	WindowStart time.Time
-	WindowEnd   time.Time
-	// Profile is the budget profile applied (FR-006).
-	Profile string
-	// Requester is the authenticated identity that asked (FR-066). Required: the schema's FK
-	// into graph.principals is what makes `anonymous_principal` unrepresentable.
-	Requester string
-	// ModelConfig is the recorded production model configuration (FR-061).
-	ModelConfig *structpb.Struct
-	// AlgebraVersion, LedgerRuleVersion and SchemaVersion are the published versions in force.
-	AlgebraVersion    string
-	LedgerRuleVersion string
-	SchemaVersion     string
-	// StartedAt is when the run began. Zero means now.
-	StartedAt time.Time
-}
-
-// ErrAnonymousPrincipal is an investigation with no authenticated requester (FR-066). It is the
-// `anonymous_principal` reason code of data-model §Validation rules.
-var ErrAnonymousPrincipal = errors.New("anonymous_principal: an investigation must name the authenticated identity that requested it (FR-066)")
-
 // Open writes the incident, the investigation and its symptoms in one transaction.
 //
 // It returns the investigation id that now covers the incident. When the symptom's published key
@@ -116,15 +71,15 @@ var ErrAnonymousPrincipal = errors.New("anonymous_principal: an investigation mu
 // convention every caller has to remember.
 func (d *InvestigationDAO) Open(
 	ctx context.Context,
-	incident Incident,
-	inv NewInvestigation,
+	incident record.Incident,
+	inv record.NewInvestigation,
 	symptoms ...*investigationv1.Symptom,
 ) (string, error) {
 	if d == nil || d.store == nil {
 		return "", errors.New("investigation store: open: no database")
 	}
 	if inv.Requester == "" {
-		return "", fmt.Errorf("investigation store: open %s: %w", inv.InvestigationID, ErrAnonymousPrincipal)
+		return "", fmt.Errorf("investigation store: open %s: %w", inv.InvestigationID, record.ErrAnonymousPrincipal)
 	}
 	var out string
 	err := d.store.WithTx(ctx, func(ctx context.Context, tx pgx.Tx) error {
@@ -185,7 +140,7 @@ func (d *InvestigationDAO) Attach(ctx context.Context, incidentID string, s *inv
 			WHERE incident_id = $1 ORDER BY started_at DESC LIMIT 1`, incidentID).Scan(&out)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", fmt.Errorf("investigation store: attach to incident %s: %w", incidentID, ErrNotFound)
+		return "", fmt.Errorf("investigation store: attach to incident %s: %w", incidentID, record.ErrNotFound)
 	}
 	if err != nil {
 		return "", err
@@ -194,7 +149,7 @@ func (d *InvestigationDAO) Attach(ctx context.Context, incidentID string, s *inv
 }
 
 // EnsureIncidentInTx upserts an incident row, moving `last_symptom_at` forward only.
-func EnsureIncidentInTx(ctx context.Context, tx pgx.Tx, in Incident) error {
+func EnsureIncidentInTx(ctx context.Context, tx pgx.Tx, in record.Incident) error {
 	ruleVersion := in.AssociationRuleVersion
 	if ruleVersion == "" {
 		ruleVersion = intake.AssociationRuleVersion
@@ -223,7 +178,7 @@ func EnsureIncidentInTx(ctx context.Context, tx pgx.Tx, in Incident) error {
 // the rows after the identity provider has forgotten.
 func EnsurePrincipalInTx(ctx context.Context, tx pgx.Tx, principal string) error {
 	if principal == "" {
-		return ErrAnonymousPrincipal
+		return record.ErrAnonymousPrincipal
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO graph.principals (principal) VALUES ($1)
@@ -233,7 +188,7 @@ func EnsurePrincipalInTx(ctx context.Context, tx pgx.Tx, principal string) error
 	return nil
 }
 
-func insertInvestigationInTx(ctx context.Context, tx pgx.Tx, inv NewInvestigation) error {
+func insertInvestigationInTx(ctx context.Context, tx pgx.Tx, inv record.NewInvestigation) error {
 	startedAt := inv.StartedAt
 	if startedAt.IsZero() {
 		startedAt = time.Now().UTC()
@@ -255,7 +210,7 @@ func insertInvestigationInTx(ctx context.Context, tx pgx.Tx, inv NewInvestigatio
 		VALUES ($1, $2, $3, $4, $5, $6, tstzrange($7, $8), $9, $10, true, $11, $12, $13, $14, $15, $16)`,
 		inv.InvestigationID, inv.IncidentID, nullable(inv.ReopensInvestigationID),
 		inv.ValidAt.UTC(), inv.ObservedAt.UTC(), inv.ReviewMode,
-		inv.WindowStart.UTC(), inv.WindowEnd.UTC(), inv.Profile, LifecycleRunning,
+		inv.WindowStart.UTC(), inv.WindowEnd.UTC(), inv.Profile, record.LifecycleRunning,
 		inv.Requester, modelConfig, inv.AlgebraVersion, inv.LedgerRuleVersion,
 		inv.SchemaVersion, startedAt.UTC(),
 	); err != nil {
@@ -275,11 +230,11 @@ func InsertSymptomInTx(ctx context.Context, tx pgx.Tx, incidentID string, s *inv
 			return err
 		}
 	}
-	named, err := json.Marshal(refStrings(s.GetNamedIdentifiers()))
+	named, err := json.Marshal(record.RefStrings(s.GetNamedIdentifiers()))
 	if err != nil {
 		return fmt.Errorf("investigation store: symptom %s: named identifiers: %w", s.GetSymptomId(), err)
 	}
-	targets, err := json.Marshal(targetRows(s.GetTargetRefs()))
+	targets, err := json.Marshal(record.TargetRows(s.GetTargetRefs()))
 	if err != nil {
 		return fmt.Errorf("investigation store: symptom %s: target refs: %w", s.GetSymptomId(), err)
 	}
@@ -410,30 +365,15 @@ func (d *InvestigationDAO) Get(ctx context.Context, investigationID string) (*in
 	return inv, nil
 }
 
-// ListFilter narrows List (contracts/cli.md `investigate list`).
-type ListFilter struct {
-	// IncidentID lists the runs covering one incident, including reopens.
-	IncidentID string
-	// Lifecycle lists the runs in one status.
-	Lifecycle string
-	// Since lists the runs started at or after an instant.
-	Since time.Time
-	// Limit bounds the page; zero means DefaultListLimit.
-	Limit int
-}
-
-// DefaultListLimit is the page size `investigate list` uses when none is given.
-const DefaultListLimit = 50
-
 // List reads investigations newest first. It does not load children: a list is an index, and a
 // caller that wants one row's evidence asks for that row.
-func (d *InvestigationDAO) List(ctx context.Context, f ListFilter) ([]*investigationv1.Investigation, error) {
+func (d *InvestigationDAO) List(ctx context.Context, f record.ListFilter) ([]*investigationv1.Investigation, error) {
 	if d == nil || d.store == nil {
 		return nil, errors.New("investigation store: list: no database")
 	}
 	limit := f.Limit
 	if limit <= 0 {
-		limit = DefaultListLimit
+		limit = record.DefaultListLimit
 	}
 	rows, err := d.store.Pool().Query(ctx, investigationSelect+`
 		WHERE ($1 = '' OR incident_id = $1)
@@ -480,7 +420,7 @@ func (d *InvestigationDAO) scanOne(ctx context.Context, where string, args ...an
 		if err := rows.Err(); err != nil {
 			return nil, fmt.Errorf("investigation store: get: %w", err)
 		}
-		return nil, fmt.Errorf("investigation store: %v: %w", args, ErrNotFound)
+		return nil, fmt.Errorf("investigation store: %v: %w", args, record.ErrNotFound)
 	}
 	return scanInvestigation(rows)
 }
@@ -516,10 +456,10 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 		Start: timestamppb.New(windowStart.UTC()),
 		End:   timestamppb.New(windowEnd.UTC()),
 	}
-	inv.Lifecycle = LifecycleProto(lifecycle)
-	inv.ConclusionKind = ConclusionKindProto(conclusionKind)
-	inv.Outcome = OutcomeProto(outcome)
-	inv.StopReason = StopReasonFromName(stopName)
+	inv.Lifecycle = record.LifecycleProto(lifecycle)
+	inv.ConclusionKind = record.ConclusionKindProto(conclusionKind)
+	inv.Outcome = record.OutcomeProto(outcome)
+	inv.StopReason = record.StopReasonFromName(stopName)
 	inv.StartedAt = timestamppb.New(startedAt.UTC())
 	if endedAt != nil {
 		inv.EndedAt = timestamppb.New(endedAt.UTC())
@@ -606,8 +546,8 @@ func (d *InvestigationDAO) symptomsOf(ctx context.Context, incidentID string) ([
 		if actorKind == intake.ActorKindHuman {
 			s.Origin = investigationv1.IntakeOrigin_INTAKE_ORIGIN_DECLARED
 		}
-		s.NamedIdentifiers = parseRefs(named)
-		s.TargetRefs = parseTargets(targetsRaw)
+		s.NamedIdentifiers = record.ParseRefs(named)
+		s.TargetRefs = record.ParseTargets(targetsRaw)
 		out = append(out, &s)
 	}
 	return out, rows.Err()
@@ -622,12 +562,12 @@ func (d *InvestigationDAO) SetProvisional(ctx context.Context, investigationID s
 	tag, err := d.store.Pool().Exec(ctx, `
 		UPDATE investigation.investigations SET provisional = $2
 		WHERE investigation_id = $1 AND lifecycle = $3`,
-		investigationID, provisional, LifecycleRunning)
+		investigationID, provisional, record.LifecycleRunning)
 	if err != nil {
 		return fmt.Errorf("investigation store: set provisional on %s: %w", investigationID, err)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("investigation store: set provisional on %s: %w", investigationID, ErrNotRunning)
+		return fmt.Errorf("investigation store: set provisional on %s: %w", investigationID, record.ErrNotRunning)
 	}
 	return nil
 }

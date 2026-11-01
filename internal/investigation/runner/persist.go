@@ -15,8 +15,8 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/engine"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/replay"
-	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
@@ -162,8 +162,8 @@ func (r *Runner) saveCalls(ctx context.Context, investigationID string, eng *eng
 		seq          int
 	)
 
-	for _, record := range records {
-		switch body := record.GetRecord().(type) {
+	for _, rec := range records {
+		switch body := rec.GetRecord().(type) {
 		case *investigationv1.TrajectoryRecord_WorkerRequest:
 			waiting = append(waiting, pendingCall{
 				worker:  body.WorkerRequest.GetWorker(),
@@ -182,7 +182,7 @@ func (r *Runner) saveCalls(ctx context.Context, investigationID string, eng *eng
 			req := waiting[index]
 			waiting = append(waiting[:index], waiting[index+1:]...)
 
-			call := investigationstore.WorkerCall{
+			call := record.WorkerCall{
 				CallID:                 fmt.Sprintf("%s:call:%d", investigationID, seq),
 				Seq:                    seq,
 				Worker:                 req.worker,
@@ -214,7 +214,7 @@ func (r *Runner) saveCalls(ctx context.Context, investigationID string, eng *eng
 			}
 			resp := body.ModelResponse
 			usage := resp.GetUsage()
-			call := investigationstore.ModelCall{
+			call := record.ModelCall{
 				ModelCallID:      fmt.Sprintf("%s:model:%d", investigationID, seq),
 				Seq:              seq,
 				Role:             modelRoleName(modelPending.GetRole()),
@@ -259,7 +259,7 @@ func (r *Runner) emitDecisionRecord(
 	ctx context.Context,
 	rn *run,
 	eng *engine.Engine,
-	conclusion investigationstore.Conclusion,
+	conclusion record.Conclusion,
 ) (string, error) {
 	return r.emitDecisionRecordFrom(ctx, rn, eng.Ledger(), r.spendOf(rn), conclusion)
 }
@@ -275,9 +275,9 @@ func (r *Runner) emitDecisionRecordFrom(
 	rn *run,
 	book *ledger.Ledger,
 	spend *investigationv1.BudgetSpend,
-	conclusion investigationstore.Conclusion,
+	conclusion record.Conclusion,
 ) (string, error) {
-	input := investigationstore.DecisionInput{
+	input := record.DecisionInput{
 		Ledger:          book,
 		Subjects:        rn.subjects,
 		StartedAt:       rn.startedAt,
@@ -291,7 +291,7 @@ func (r *Runner) emitDecisionRecordFrom(
 		RecordingKey:    conclusion.RecordingKey,
 		RecordingDigest: conclusion.RecordingDigest,
 	}
-	result, err := investigationstore.EmitDecisionRecord(ctx, r.proj, input)
+	result, err := r.decisions.EmitDecisionRecord(ctx, input)
 	if err != nil {
 		return "", err
 	}
@@ -372,7 +372,7 @@ func questionOf(req *investigationv1.AlgebraRequest) string {
 	if q := strings.TrimSpace(req.GetDiscriminatingQuestion()); q != "" {
 		return q
 	}
-	return investigationstore.Exploratory("the recording carries no question for this call")
+	return record.Exploratory("the recording carries no question for this call")
 }
 
 // remainingQuotaOf keys the vendor's own remaining-quota figure by the backend it came from, so
@@ -411,22 +411,22 @@ func costClassOf(resp *investigationv1.AlgebraResponse) string {
 func callOutcomeOf(resp *investigationv1.AlgebraResponse) string {
 	switch resp.GetOutcome() {
 	case investigationv1.TermOutcome_DIGEST, investigationv1.TermOutcome_PARTIAL:
-		return investigationstore.CallOutcomeAnswered
+		return record.CallOutcomeAnswered
 	case investigationv1.TermOutcome_NO_DATA, investigationv1.TermOutcome_NOT_YET_INGESTED:
-		return investigationstore.CallOutcomeEmpty
+		return record.CallOutcomeEmpty
 	case investigationv1.TermOutcome_NOT_RECORDED:
-		return investigationstore.CallOutcomeNotRecorded
+		return record.CallOutcomeNotRecorded
 	case investigationv1.TermOutcome_QUERY_FAILED:
 		switch resp.GetFailureReason() {
 		case investigationv1.FailureReason_TIMED_OUT:
-			return investigationstore.CallOutcomeTimedOut
+			return record.CallOutcomeTimedOut
 		case investigationv1.FailureReason_OUTSIDE_ALGEBRA:
-			return investigationstore.CallOutcomeRefusedOutsideAlgebra
+			return record.CallOutcomeRefusedOutsideAlgebra
 		default:
-			return investigationstore.CallOutcomeFailed
+			return record.CallOutcomeFailed
 		}
 	default:
-		return investigationstore.CallOutcomeFailed
+		return record.CallOutcomeFailed
 	}
 }
 

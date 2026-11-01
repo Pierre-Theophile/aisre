@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render"
-	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
 )
 
@@ -34,7 +34,7 @@ func TestDeliveryIdentityMatchesTheLedgerRowIdentity(t *testing.T) {
 	}
 	seen := map[string]string{}
 	for _, c := range cases {
-		row := investigationstore.DeliveryIDFor(c[0], c[1], c[2])
+		row := record.DeliveryIDFor(c[0], c[1], c[2])
 		message := render.DeliveryIdentity(c[0], c[1], c[2])
 		if row != message {
 			t.Errorf("investigation %q at %s/%s: ledger row %q, delivered message %q — the row "+
@@ -61,7 +61,7 @@ func TestEveryOutcomeTheRendererProducesIsStorable(t *testing.T) {
 	for _, outcome := range []string{
 		render.OutcomeDelivered, render.OutcomeFailed, render.OutcomeNotConfigured,
 	} {
-		rec := investigationstore.DeliveryRecord{
+		rec := record.DeliveryRecord{
 			InvestigationID: "inv-delivery-outcomes", TargetSystem: "slack:acme",
 			TargetRef: "C0OUTCOME", RenderingDigest: "sha256:aaa", Outcome: outcome,
 			At: lifecycleAt,
@@ -75,7 +75,7 @@ func TestEveryOutcomeTheRendererProducesIsStorable(t *testing.T) {
 	}
 
 	// The zero value is not one of them, and must not be written as if it were an outcome.
-	if _, err := dao.RecordDelivery(ctx, investigationstore.DeliveryRecord{
+	if _, err := dao.RecordDelivery(ctx, record.DeliveryRecord{
 		InvestigationID: "inv-delivery-outcomes", TargetSystem: "slack:acme",
 		TargetRef: "C0OUTCOME", RenderingDigest: "sha256:bbb", At: lifecycleAt.Add(time.Minute),
 	}); err == nil {

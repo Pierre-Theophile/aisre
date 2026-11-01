@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/pginvestigation"
+
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -231,8 +233,8 @@ func (h *Harness) openGraph(ctx context.Context) error {
 	// `engine.DecodeCall` now stamps both instants on every graph read, and the engine learns the
 	// id ↔ reference translation from the neighbourhood it reads first (engine/catalogue.go).
 	queries := query.NewEngine(store)
-	h.graph = graphworker.NewEngineService(queries)
-	h.corpus = knowledge.GraphCorpus{Engine: queries}
+	h.graph = pginvestigation.NewGraphService(queries)
+	h.corpus = pginvestigation.KnowledgeCorpus{Engine: queries}
 	if h.sections, h.embedder, err = FixtureKnowledge(ctx, h.manifest.Dir); err != nil {
 		h.Close()
 		return err

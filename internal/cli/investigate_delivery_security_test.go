@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 )
@@ -126,9 +127,9 @@ func TestFactAgainstAConcludedInvestigationReopensIt(t *testing.T) {
 	ctx := context.Background()
 
 	id := declareForDelivery(t, ctx, baseURL, token, "slack:C0REOPEN")
-	if err := investigationstore.NewLifecycleDAO(store).Conclude(ctx, id, investigationstore.Conclusion{
-		Kind:        investigationstore.ConclusionFinal,
-		Outcome:     investigationstore.OutcomeUnknown,
+	if err := investigationstore.NewLifecycleDAO(store).Conclude(ctx, id, record.Conclusion{
+		Kind:        record.ConclusionFinal,
+		Outcome:     record.OutcomeUnknown,
 		VerdictLine: "no observed change explains this",
 	}); err != nil {
 		t.Fatalf("conclude %s: %v", id, err)
