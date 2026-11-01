@@ -43,7 +43,7 @@ cloud platform and the deploys an organisation actually runs.
 | [007 Notion knowledge](specs/007-notion-knowledge/spec.md) (postmortems and runbooks cited by investigations) | built, verified on a synthetic twin and recorded from the owner's real postmortem database (kept private) ([docs](docs/connectors/notion.md)); connector experimental, because that recording cannot be published |
 | [008 Postmortem RAG](specs/008-postmortem-rag/spec.md) (postmortems retrieved by section, lexical and semantic, with any OpenAI-compatible embedder, self-hosted included) | complete: verified on synthetic twins, a self-hosted embedder and the owner's seven real postmortems, each found at rank 1 against 3 or 4 of 7 for 007 ([docs](docs/knowledge/retrieval.md)) |
 | [009 Service catalog](specs/009-service-catalog/spec.md) (the agent's own catalog, automatic signal attribution, human corrections) | built: catalog, aliases, corrections, discovery, the decision model with a pluggable classifier, and its evaluation gated in CI ([docs](docs/catalog/README.md)); the owner's real catalog and SC-001 wait on the owner (T040–T041) |
-| 010 MCP server (read-only, for coding agents) | specified ([spec](specs/010-mcp-server/spec.md)); approved 2026-11-01; planning |
+| 010 MCP server (read-only, for coding agents) | built: `aisre mcp` over stdio and streamable HTTP ([docs](docs/mcp.md), [spec](specs/010-mcp-server/spec.md)) |
 | 011 Change-watch intake (the graph starts an investigation when a change is followed by a shift) | planned by [ADR-0016](docs/decisions/ADR-0016-roadmap-after-the-sazabi-review.md); not yet specified |
 | [012 Topology discovery](specs/012-topology-discovery/spec.md) (runtime-agnostic topology, declared and observed edges, Cloud Run sources) | specified and approved 2026-11-01 ([ADR-0019](docs/decisions/ADR-0019-roadmap-after-the-rca-literature-review.md)); slice A before 011, slice B after |
 
@@ -104,6 +104,10 @@ bin/aisre query diff otel.service.name=checkout \
 That last command is the product in one line: four changes in the window, ranked, with the
 rollout that caused the regression first and a decoy that is near in time and far in topology
 third.
+
+To ask the same question from a coding agent, add aisre as an MCP server:
+`claude mcp add aisre -- bin/aisre mcp --server http://127.0.0.1:8080 --token "$SRE_AGENT_TOKEN"`,
+then ask it what changed around checkout. See [`docs/mcp.md`](docs/mcp.md).
 
 The whole walkthrough — every query, the bitemporal check, entity resolution, the verification
 harness, the feeders, the benchmark — is

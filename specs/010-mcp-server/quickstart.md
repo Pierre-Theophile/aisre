@@ -5,12 +5,13 @@
 ## Local, over stdio (Claude Code)
 
 ```sh
-aisre serve --dev &                      # or point at your deployment with --server
-export AISRE_TOKEN=$(aisre dev-token --roles r,i)
-claude mcp add aisre -- aisre mcp --server http://127.0.0.1:8080 --token-file ~/.aisre/token
+bin/aisre serve --db "$PG_DSN" --listen 127.0.0.1:8080 --auth dev --dev &
+bin/aisre fixture load --db "$PG_DSN" fixtures/rollout-regression-01
+bin/aisre dev-token --dev --user alice --roles r,i > ~/.config/aisre/token
+claude mcp add aisre -- aisre mcp --server http://127.0.0.1:8080 --token-file ~/.config/aisre/token
 ```
 
-Then ask: "what changed around checkout in the last hour?" The agent calls `diff`.
+Then ask: "what changed around checkout between 13:00 and 14:32 on 2026-09-01?" The agent calls `diff`.
 
 ## Cursor, Codex and other clients
 

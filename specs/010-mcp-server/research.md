@@ -35,7 +35,8 @@ token.
 
 **Decision**: add `graph.v1.IdentityService.WhoAmI(WhoAmIRequest) returns (WhoAmIResponse)` with the
 subject, issuer and roles of the authenticated principal. Any authenticated principal may call it.
-The MCP server calls it once per stdio process start (and again when the token file changes) and once
+The MCP server calls it once per stdio process start (a rotated token keeps its roles; a change of
+roles takes a restart) and once
 per HTTP request, and registers only the tools the roles allow. A principal whose only role is
 `feeder` is refused (FR-014).
 

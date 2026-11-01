@@ -137,6 +137,7 @@ func New(cfg Config) (*Server, error) {
 		NewResolutionService(cfg.Backends.Log, cfg.Backends.Principals, cfg.Metrics, logger), interceptors))
 	mux.Handle(graphv1connect.NewCatalogServiceHandler(
 		NewCatalogService(cfg.Backends.Catalog, cfg.Metrics, logger), interceptors))
+	mux.Handle(graphv1connect.NewIdentityServiceHandler(NewIdentityService(), interceptors))
 	if cfg.Investigation != nil {
 		mux.Handle(investigationv1connect.NewInvestigationServiceHandler(cfg.Investigation, interceptors))
 	}

@@ -20,6 +20,7 @@ files here are the runs that answer it.
 | `<date>-scale-1k.md` | the same harness at a tenth of the size, when a run is worth keeping |
 | `<date>-replay.md` | a replay measurement on its own (`--replay-only`), when the replay is what moved |
 | `live-run-2026-09-16.md` | the live-versus-recorded run (FR-050 b, SC-010) — not a performance benchmark |
+| `mcp-overhead-2026-11-01.md` | the MCP adapter's added latency (010 SC-004) |
 | `investigation-page-profile-2026-09-18.md` | the `page` profile end to end (T117, SC-005, SC-013): the three latencies, the hard stop, ledger recomputation and trajectory replay, and the evidence that the first wave rather than the model carries the 120-second target |
 
 Reports are committed by a person, not by CI. `bench.yml` uploads its report as an artifact and

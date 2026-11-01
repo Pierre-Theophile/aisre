@@ -13,6 +13,10 @@ see the module's own LICENSE file in the Go module cache, and `go list -m all` f
 versions a given build uses. All direct dependencies are Apache-2.0, BSD-3-Clause or MIT, as
 required by the project constitution ("Contributions MUST be compatible" with Apache-2.0).
 
+The MCP server (`aisre mcp`, feature 010) links github.com/modelcontextprotocol/go-sdk,
+Copyright The Go MCP SDK Authors, licensed under Apache-2.0 (MIT for contributions not yet
+relicensed).
+
 The protobuf schema in api/sreagent/graph/v1/ imports well-known types from
 github.com/protocolbuffers/protobuf, Copyright Google Inc., licensed under BSD-3-Clause.
 
