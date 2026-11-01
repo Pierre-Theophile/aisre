@@ -200,6 +200,11 @@ type Engine struct {
 	// modelHypotheses are the hypotheses the investigator proposed: their statements are the
 	// sentences a model wrote, and so the claims the pass checks.
 	modelHypotheses map[string]bool
+	// fallenEdges are the edges the intake diff reports as retracted, or whose weight class fell,
+	// inside the window (FR-046b); flowHypotheses the stopped-flow candidates the first wave
+	// opened, by hypothesis id, each with the evidence id of the comparison that surfaced it.
+	fallenEdges    []fallenEdge
+	flowHypotheses map[string]string
 	// verification is the pass's outcome, set once by Stop.
 	verification *Verification
 }
@@ -286,6 +291,7 @@ func New(cfg Config) (*Engine, error) {
 		verifier:            verifier,
 		verifierUnavailable: unavailable,
 		modelHypotheses:     map[string]bool{},
+		flowHypotheses:      map[string]string{},
 	}, nil
 }
 

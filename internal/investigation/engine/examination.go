@@ -59,8 +59,9 @@ type HypothesisExamination struct {
 	Gaps []string
 }
 
-// CategoryOf is a hypothesis's cause category (FR-022b): the change kind for a change, the
-// `not_change_induced` category for a named condition, and none for the open hypothesis.
+// CategoryOf is a hypothesis's cause category (FR-022b): the change kind for a change,
+// `stopped_flow` for a flow the first wave surfaced by its absence (FR-046b), the
+// `not_change_induced` category for any other named condition, and none for the open hypothesis.
 func (e *Engine) CategoryOf(h ledger.Hypothesis) string {
 	switch h.Kind {
 	case ledger.KindChange:
@@ -74,6 +75,12 @@ func (e *Engine) CategoryOf(h ledger.Hypothesis) string {
 	case ledger.KindNoObservedChange:
 		return ""
 	default:
+		e.mu.Lock()
+		_, flow := e.flowHypotheses[h.ID]
+		e.mu.Unlock()
+		if flow {
+			return CategoryStoppedFlow
+		}
 		return "not_change_induced"
 	}
 }

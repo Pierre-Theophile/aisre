@@ -170,6 +170,7 @@ func (e *Engine) Publish(ctx context.Context) (*Provisional, error) {
 
 	if diff, ok := diffAnswer.Graph.(*graphv1.DiffResponse); ok {
 		provisional.RankingFormula = diff.GetRankingFormula()
+		e.noteFallenEdges(diff)
 		if err := e.seed(diff); err != nil {
 			return nil, err
 		}

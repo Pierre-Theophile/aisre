@@ -79,6 +79,7 @@ type Profile struct {
 	// all is every entity in scope, before the cap, and bySelector the entity each pointer
 	// belongs to (kind and selector): what the examination report reads (FR-022b).
 	all        []ProfileEntity
+	allEdges   []ProfileEdge
 	bySelector map[string]string
 }
 
@@ -88,6 +89,14 @@ func (p *Profile) InScope() []ProfileEntity {
 		return nil
 	}
 	return append([]ProfileEntity(nil), p.all...)
+}
+
+// AllEdges is every edge between entities in scope, uncapped.
+func (p *Profile) AllEdges() []ProfileEdge {
+	if p == nil {
+		return nil
+	}
+	return append([]ProfileEdge(nil), p.allEdges...)
 }
 
 // EntityOfPointer is the entity in scope a pointer belongs to, by its kind and selector.
@@ -265,6 +274,7 @@ func BuildProfile(sub *graphv1.SubgraphResponse, start, end, observedAt time.Tim
 		return a.Type < b.Type
 	})
 	p.TotalEdges = len(edges)
+	p.allEdges = append([]ProfileEdge(nil), edges...)
 	if len(edges) == 0 && len(entities) > 1 {
 		p.BlindSpots = append(p.BlindSpots, "no edge links the entities in scope: the propagation "+
 			"between them is unknown to the graph")
