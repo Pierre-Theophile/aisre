@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"time"
 
+	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
+
 	"cloud.google.com/go/monitoring/apiv3/v2/monitoringpb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/metrics"
 )
 
 // `compare`: baseline against symptom, with the comparison stated (T096, T105; FR-092, FR-094).
@@ -212,7 +213,7 @@ func comparisonOf(statistic investigationv1.Statistic, baseline, symptom float64
 		AbsoluteDelta: absolute,
 		RelativeDelta: relative,
 		Direction:     direction,
-		Separable:     metrics.Separates(relative),
+		Separable:     sdk.Separates(relative),
 	}
 }
 

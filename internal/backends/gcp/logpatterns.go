@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/logmine"
+
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
 )
 
 // `new_log_patterns`: mined client-side over a bounded sample (T100, T101; contract §4).
@@ -57,7 +58,7 @@ func (b *Backend) newLogPatterns(ctx context.Context, term *investigationv1.NewL
 		}
 	}
 
-	templates := logs.Diff(logs.Mine(linesOf(sample)), logs.Mine(linesOf(baseline)))
+	templates := logmine.Diff(logmine.Mine(linesOf(sample)), logmine.Mine(linesOf(baseline)))
 	key := termKeyOf(engine.NewLogPatterns(term.GetPointer(), term.GetWindow(), term.GetBaselineWindow()))
 
 	counts := make(map[string]int64, 4)
@@ -102,7 +103,7 @@ func (b *Backend) newLogPatterns(ctx context.Context, term *investigationv1.NewL
 		Body: &investigationv1.Digest_Log{Log: &investigationv1.LogDigest{
 			Patterns:       patterns,
 			CountsByStatus: counts,
-			MinerVersion:   logs.MinerVersion,
+			MinerVersion:   logmine.MinerVersion,
 			ModelUsed:      false,
 		}},
 		Coverage: coverage,
@@ -184,7 +185,7 @@ func (b *Backend) drillDownLogs(ctx context.Context, payload handlePayload, fact
 	// template handle asks. The rows mint no further handle — this is the world's recorded depth.
 	counts := make(map[string]int64, 4)
 	patterns := make([]*investigationv1.LogPattern, 0, 8)
-	for _, t := range logs.Mine(linesOf(sample)) {
+	for _, t := range logmine.Mine(linesOf(sample)) {
 		if payload.Group != "" && t.Text != payload.Group {
 			continue
 		}
@@ -215,7 +216,7 @@ func (b *Backend) drillDownLogs(ctx context.Context, payload handlePayload, fact
 		Body: &investigationv1.Digest_Log{Log: &investigationv1.LogDigest{
 			Patterns:       patterns,
 			CountsByStatus: counts,
-			MinerVersion:   logs.MinerVersion,
+			MinerVersion:   logmine.MinerVersion,
 		}},
 		Coverage: coverage,
 	}

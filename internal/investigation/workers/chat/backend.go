@@ -9,11 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/injection"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/backend"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/engine"
 	"github.com/Pierre-Theophile/aisre/internal/slackx"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 )
@@ -243,7 +244,7 @@ func mentions(term *investigationv1.ChatMentionsTerm, messages []message, covera
 	for _, m := range messages {
 		// Instruction-like messages are counted over everything read, whatever the class: an
 		// attempt is recorded where it was seen, and the text goes nowhere (FR-035).
-		if len(engine.InstructionPatterns(m.text)) > 0 {
+		if len(injection.Patterns(m.text)) > 0 {
 			digest.InstructionLike++
 		}
 		if !Matches(class, m.text) {

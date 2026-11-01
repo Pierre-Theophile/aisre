@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/knowledgedoc"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -43,7 +45,7 @@ func (c corpus) Candidates(_ context.Context, _ []string, at knowledge.Instants)
 func documents() []knowledge.Document {
 	return []knowledge.Document{
 		{
-			ID: "pm-2026-04", Kind: knowledge.KindPostmortem,
+			ID: "pm-2026-04", Kind: knowledgedoc.KindPostmortem,
 			Title:           "Checkout error rate spike after payments rollout",
 			Summary:         "A payments deploy raised the checkout error rate; rolled back in twelve minutes.",
 			LinkedEntityIDs: []string{"entity-payments", "entity-checkout"},
@@ -51,7 +53,7 @@ func documents() []knowledge.Document {
 			Location: "notion://pm-2026-04",
 		},
 		{
-			ID: "rb-checkout", Kind: knowledge.KindRunbook,
+			ID: "rb-checkout", Kind: knowledgedoc.KindRunbook,
 			Title:           "Checkout runbook",
 			Summary:         "How to page, how to roll back, and which dashboards to open.",
 			LinkedEntityIDs: []string{"entity-checkout"},
@@ -59,7 +61,7 @@ func documents() []knowledge.Document {
 			Location: "notion://rb-checkout",
 		},
 		{
-			ID: "adr-9", Kind: knowledge.KindDecision,
+			ID: "adr-9", Kind: knowledgedoc.KindDecision,
 			Title:           "Analytics warehouse partitioning",
 			Summary:         "Why the analytics warehouse partitions by day rather than by tenant.",
 			LinkedEntityIDs: []string{"entity-analytics"},
@@ -123,11 +125,11 @@ func TestAnOutOfScopeDocumentIsStillRecalled(t *testing.T) {
 	t.Parallel()
 
 	docs := []knowledge.Document{
-		{ID: "pm-search", Kind: knowledge.KindPostmortem, Title: "Search outage",
+		{ID: "pm-search", Kind: knowledgedoc.KindPostmortem, Title: "Search outage",
 			Summary: "connection pool exhaustion after a rollout", LinkedEntityIDs: []string{"entity-search"}, AuthoredAt: authored},
-		{ID: "pm-checkout", Kind: knowledge.KindPostmortem, Title: "Checkout outage",
+		{ID: "pm-checkout", Kind: knowledgedoc.KindPostmortem, Title: "Checkout outage",
 			Summary: "connection pool exhaustion after a rollout", LinkedEntityIDs: []string{"entity-checkout"}, AuthoredAt: authored},
-		{ID: "rb-checkout", Kind: knowledge.KindRunbook, Title: "Checkout runbook",
+		{ID: "rb-checkout", Kind: knowledgedoc.KindRunbook, Title: "Checkout runbook",
 			Summary: "how to page", LinkedEntityIDs: []string{"entity-checkout"}, AuthoredAt: authored},
 	}
 	w := knowledge.New(corpus{documents: docs})
@@ -291,9 +293,9 @@ func TestDeclaration(t *testing.T) {
 func TestLinkRegistersANodeAndItsEdgesAndNeverTheContent(t *testing.T) {
 	t.Parallel()
 
-	request := knowledge.LinkRequest{
+	request := knowledgedoc.LinkRequest{
 		DocumentRef: &graphv1.Ref{Namespace: "notion.page", Value: "9f2c"},
-		Kind:        knowledge.KindRunbook,
+		Kind:        knowledgedoc.KindRunbook,
 		Title:       "Checkout runbook",
 		Summary:     "How to page, how to roll back.",
 		Location:    "https://notion.example/9f2c",
@@ -340,9 +342,9 @@ func TestLinkRegistersANodeAndItsEdgesAndNeverTheContent(t *testing.T) {
 func TestLinkRefusesARegistrationThatCannotBeCited(t *testing.T) {
 	t.Parallel()
 
-	valid := knowledge.LinkRequest{
+	valid := knowledgedoc.LinkRequest{
 		DocumentRef:  &graphv1.Ref{Namespace: "notion.page", Value: "9f2c"},
-		Kind:         knowledge.KindRunbook,
+		Kind:         knowledgedoc.KindRunbook,
 		Title:        "Checkout runbook",
 		EntityRefs:   []*graphv1.Ref{{Namespace: "otel.service.name", Value: "checkout"}},
 		RegisteredBy: "sre@example.com",
@@ -353,14 +355,14 @@ func TestLinkRefusesARegistrationThatCannotBeCited(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		mutate func(*knowledge.LinkRequest)
+		mutate func(*knowledgedoc.LinkRequest)
 		want   string
 	}{
-		{"no document reference", func(r *knowledge.LinkRequest) { r.DocumentRef = nil }, "document reference"},
-		{"an unpublished kind", func(r *knowledge.LinkRequest) { r.Kind = "wiki" }, "not published"},
-		{"no entities", func(r *knowledge.LinkRequest) { r.EntityRefs = nil }, "linked to nothing"},
-		{"no principal", func(r *knowledge.LinkRequest) { r.RegisteredBy = "" }, "registering identity"},
-		{"no title", func(r *knowledge.LinkRequest) { r.Title = "" }, "title"},
+		{"no document reference", func(r *knowledgedoc.LinkRequest) { r.DocumentRef = nil }, "document reference"},
+		{"an unpublished kind", func(r *knowledgedoc.LinkRequest) { r.Kind = "wiki" }, "not published"},
+		{"no entities", func(r *knowledgedoc.LinkRequest) { r.EntityRefs = nil }, "linked to nothing"},
+		{"no principal", func(r *knowledgedoc.LinkRequest) { r.RegisteredBy = "" }, "registering identity"},
+		{"no title", func(r *knowledgedoc.LinkRequest) { r.Title = "" }, "title"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -383,10 +385,10 @@ func TestLinkRefusesARegistrationThatCannotBeCited(t *testing.T) {
 func TestEveryCandidateIsMatchedOnTheTextTheGraphHolds(t *testing.T) {
 	t.Parallel()
 	docs := []knowledge.Document{
-		{ID: "sre.investigation.id=inv-1", Kind: knowledge.KindInvestigation,
+		{ID: "sre.investigation.id=inv-1", Kind: knowledgedoc.KindInvestigation,
 			Title:           "payments rev7 exhausted checkout's connection pool",
 			LinkedEntityIDs: []string{"entity-checkout"}, AuthoredAt: authored},
-		{ID: "pm-1", Kind: knowledge.KindPostmortem, Title: "Checkout outage",
+		{ID: "pm-1", Kind: knowledgedoc.KindPostmortem, Title: "Checkout outage",
 			Summary: "connection pool exhaustion", LinkedEntityIDs: []string{"entity-checkout"}, AuthoredAt: authored},
 	}
 	items := search(t, knowledge.New(corpus{documents: docs}), []string{"entity-checkout"}, []string{"connection", "pool"})

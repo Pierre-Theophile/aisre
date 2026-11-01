@@ -8,12 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/logmine"
+
 	"cloud.google.com/go/logging/apiv2/loggingpb"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
 )
 
 // Reading Cloud Logging, bounded by necessity and honest about it (T100, T101; contract §4).
@@ -258,15 +259,15 @@ func statusOf(entry *loggingpb.LogEntry) string {
 
 // linesOf turns a sample into the miner's input. The lines never leave this process: what leaves
 // is the template.
-func linesOf(sample logSample) []logs.Line {
-	out := make([]logs.Line, 0, len(sample.Entries))
+func linesOf(sample logSample) []logmine.Line {
+	out := make([]logmine.Line, 0, len(sample.Entries))
 	for _, entry := range sample.Entries {
 		text := entryText(entry)
 		if text == "" {
 			continue
 		}
 		labels := entry.GetResource().GetLabels()
-		out = append(out, logs.Line{
+		out = append(out, logmine.Line{
 			At:        entryInstant(entry),
 			Text:      text,
 			Status:    statusOf(entry),

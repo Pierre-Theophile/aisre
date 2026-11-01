@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Pierre-Theophile/aisre/internal/logmine"
 	"github.com/Pierre-Theophile/aisre/internal/mask"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -183,7 +184,7 @@ func (w *Worker) label(ctx context.Context, digest *investigationv1.LogDigest) e
 	}
 	digest.ModelUsed = true
 	digest.ModelAdded = fmt.Sprintf("%s labelled %d of %d templates; every count, template and join key above is the miner's (%s). %s",
-		w.labeller.ModelID(), labelled, len(digest.GetPatterns()), MinerVersion, strings.TrimSpace(added))
+		w.labeller.ModelID(), labelled, len(digest.GetPatterns()), logmine.MinerVersion, strings.TrimSpace(added))
 	return nil
 }
 

@@ -30,8 +30,8 @@ Then decide where the package lives, because that decides what you may import:
 
 **The honest limitation, stated before you build on it.** The pieces this page tells you to use —
 `backend.NewResponse` (the only permitted response constructor), the coverage helpers,
-`ClampRequest`/`AnnotateHorizon`, `NewWindow`/`NewWindowPair`, `metrics.Separates` — are all under
-`internal/` today. `pkg/backend` exports the interfaces, the algebra, the digest rule, the recorder
+`ClampRequest`/`AnnotateHorizon`, `NewWindow`/`NewWindowPair` — are all under
+`internal/` today. `pkg/backend` exports the interfaces, the algebra, the digest rule, the separation rule (`Separates`), the recorder
 and the conformance suite, but not yet the means to *build* a conforming response. So write your
 backend inside this repository or under `examples/` until those are promoted to `pkg/`. That is a
 packaging gap rather than a design decision, and it is the one thing to check has changed before
@@ -175,7 +175,7 @@ reader stamps its own afterwards. See [the digest contract](../schema/digests.md
 
 The other half of the same trap: if your backend computes a value a worker also annotates — the
 comparison's `separable` flag is the one case in this feature — call the **same exported rule** the
-worker calls (`metrics.Separates`). Two spellings of one rule produce a recording whose
+worker calls (`backend.Separates`). Two spellings of one rule produce a recording whose
 `response_digest` its own content does not hash to.
 
 ## 6. Redaction happens before anything leaves the process

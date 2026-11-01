@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/logmine"
+
 	"github.com/Pierre-Theophile/aisre/internal/mask"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -16,7 +18,6 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/datadogx"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 )
@@ -51,8 +52,8 @@ func (b *Backend) newLogPatterns(ctx context.Context, term *investigationv1.NewL
 	}
 
 	key, _ := engine.TermKey(engine.NewLogPatterns(term.GetPointer(), term.GetWindow(), term.GetBaselineWindow()))
-	templates := logs.Diff(logs.Mine(s.lines), logs.Mine(base.lines))
-	patterns, counts := b.patternsOf(templates, sel, func(t logs.Template) *investigationv1.DrillDown {
+	templates := logmine.Diff(logmine.Mine(s.lines), logmine.Mine(base.lines))
+	patterns, counts := b.patternsOf(templates, sel, func(t logmine.Template) *investigationv1.DrillDown {
 		return b.mint(key, handlePattern, raw, facet, t.Text, window)
 	})
 
@@ -76,7 +77,7 @@ func (b *Backend) newLogPatterns(ctx context.Context, term *investigationv1.NewL
 	}
 	digest := &investigationv1.Digest{
 		Body: &investigationv1.Digest_Log{Log: &investigationv1.LogDigest{
-			Patterns: patterns, CountsByStatus: counts, MinerVersion: logs.MinerVersion,
+			Patterns: patterns, CountsByStatus: counts, MinerVersion: logmine.MinerVersion,
 		}},
 		Coverage: coverage,
 	}
@@ -86,8 +87,8 @@ func (b *Backend) newLogPatterns(ctx context.Context, term *investigationv1.NewL
 
 // patternsOf turns mined templates into digest rows. mint may return nil: a row at the recorded depth
 // carries no further handle.
-func (b *Backend) patternsOf(templates []logs.Template, sel selector,
-	mint func(logs.Template) *investigationv1.DrillDown,
+func (b *Backend) patternsOf(templates []logmine.Template, sel selector,
+	mint func(logmine.Template) *investigationv1.DrillDown,
 ) ([]*investigationv1.LogPattern, map[string]int64) {
 	counts := map[string]int64{}
 	patterns := make([]*investigationv1.LogPattern, 0, len(templates))
@@ -117,12 +118,12 @@ func (b *Backend) drillDown(ctx context.Context, term *investigationv1.DrillDown
 		return failed(err, sel.query(p.clause()...))
 	}
 
-	var templates []logs.Template
+	var templates []logmine.Template
 	switch p.Kind {
 	case handleVersion:
-		templates = logs.Mine(s.lines)
+		templates = logmine.Mine(s.lines)
 	default: // handlePattern: the template's lines, one row per host
-		byHost := map[string][]logs.Line{}
+		byHost := map[string][]logmine.Line{}
 		for _, line := range s.lines {
 			if matches(p.Group, line.Text) {
 				byHost[line.PodOrHost] = append(byHost[line.PodOrHost], line)
@@ -134,7 +135,7 @@ func (b *Backend) drillDown(ctx context.Context, term *investigationv1.DrillDown
 		}
 		sort.Strings(hosts)
 		for _, h := range hosts {
-			mined := logs.Mine(byHost[h])
+			mined := logmine.Mine(byHost[h])
 			if len(mined) == 0 {
 				continue
 			}
@@ -144,7 +145,7 @@ func (b *Backend) drillDown(ctx context.Context, term *investigationv1.DrillDown
 			templates = append(templates, t)
 		}
 	}
-	patterns, counts := b.patternsOf(templates, sel, func(logs.Template) *investigationv1.DrillDown { return nil })
+	patterns, counts := b.patternsOf(templates, sel, func(logmine.Template) *investigationv1.DrillDown { return nil })
 
 	coverage, err := b.sampleCoverage(sel, s, int64(len(s.lines)), s.truncation("drill-down"))
 	if err != nil {
@@ -152,7 +153,7 @@ func (b *Backend) drillDown(ctx context.Context, term *investigationv1.DrillDown
 	}
 	digest := &investigationv1.Digest{
 		Body: &investigationv1.Digest_Log{Log: &investigationv1.LogDigest{
-			Patterns: patterns, CountsByStatus: counts, MinerVersion: logs.MinerVersion,
+			Patterns: patterns, CountsByStatus: counts, MinerVersion: logmine.MinerVersion,
 		}},
 		Coverage: coverage,
 	}

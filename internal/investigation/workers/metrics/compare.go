@@ -11,6 +11,7 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	engine "github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers"
+	pkgbackend "github.com/Pierre-Theophile/aisre/pkg/backend"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
 
@@ -102,28 +103,6 @@ func annotate(_ context.Context, req worker.Request, resp *engine.Response) erro
 	return nil
 }
 
-// SeparationThreshold is the published relative difference below which a comparison is reported
-// as not separating the hypothesis. It is deliberately generous: reporting a real difference as
-// non-separable costs one more query, and reporting noise as separable exonerates or convicts a
-// change on nothing.
-const SeparationThreshold = 0.20
-
-// Separates is the rule itself, over the one number it reads: a relative difference of this
-// magnitude discriminates, and anything smaller does not.
-//
-// It is exported because it must be applied in exactly one place by everyone who applies it. A
-// backend that generates comparisons — pkg/backend/synthetic is the one in this feature — states
-// `separable` on the comparisons it produces, and the worker re-states it on every answer it
-// passes on. Two spellings of the same rule is one spelling too many: where they disagree, the
-// worker's annotation changes a digest that was already hashed, and the recording that results
-// carries a `response_digest` its own content does not hash to.
-func Separates(relativeDelta float64) bool {
-	if relativeDelta < 0 {
-		relativeDelta = -relativeDelta
-	}
-	return relativeDelta >= SeparationThreshold
-}
-
 func separates(comparison *investigationv1.Comparison, pair *investigationv1.WindowPair) bool {
 	if comparison.GetBaseline() == 0 && comparison.GetSymptom() == 0 {
 		return false
@@ -133,7 +112,7 @@ func separates(comparison *investigationv1.Comparison, pair *investigationv1.Win
 		// measurement, not a comparison.
 		return false
 	}
-	return Separates(comparison.GetRelativeDelta())
+	return pkgbackend.Separates(comparison.GetRelativeDelta())
 }
 
 // CompareTerm builds a `compare` request for a pointer, a window pair and a statistic, carrying
@@ -209,7 +188,7 @@ func Describe(comparison *investigationv1.Comparison) string {
 	if !comparison.GetSeparable() {
 		return fmt.Sprintf(
 			"%s moved %.1f%% between the windows, which is below the %.0f%% separation threshold: this comparison does not discriminate, and failing to discriminate is not evidence of innocence",
-			comparison.GetStatistic(), comparison.GetRelativeDelta()*100, SeparationThreshold*100)
+			comparison.GetStatistic(), comparison.GetRelativeDelta()*100, pkgbackend.SeparationThreshold*100)
 	}
 	return fmt.Sprintf("%s went %s %.1f%% (%.6f → %.6f)",
 		comparison.GetStatistic(), comparison.GetDirection(), comparison.GetRelativeDelta()*100,

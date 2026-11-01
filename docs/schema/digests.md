@@ -172,7 +172,7 @@ protobuf lowerCamel field names, no insignificant whitespace.
 ## `Separates` — one rule, one place
 
 A `Comparison` carries a boolean `separable`, and it is not a matter of taste. The rule is
-`internal/investigation/workers/metrics.Separates(relativeDelta)`: a comparison separates when
+`pkg/backend.Separates(relativeDelta)`: a comparison separates when
 `|relativeDelta| ≥ 0.20` — the published `SeparationThreshold` — and does not otherwise.
 
 The threshold is deliberately generous. Reporting a real difference as non-separable costs one

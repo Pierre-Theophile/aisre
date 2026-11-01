@@ -27,11 +27,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Pierre-Theophile/aisre/internal/knowledgedoc"
+
 	"google.golang.org/protobuf/types/known/structpb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/feeder"
 	knowledgestore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 )
@@ -271,7 +272,7 @@ func (f *Feeder) observe(ctx context.Context, em feeder.Emitter, b *Binding, rea
 	validAt = validAt.UTC().Truncate(time.Second)
 
 	summary, truncated := summarise(page.Parts)
-	request := knowledge.LinkRequest{
+	request := knowledgedoc.LinkRequest{
 		DocumentRef:      ref,
 		Kind:             b.Kind,
 		Title:            strings.TrimSpace(page.Title),
@@ -412,7 +413,7 @@ func (f *Feeder) id(ref *graphv1.Ref, parts ...string) string {
 }
 
 // contentDigest covers what a citation shows: title, summary, kind, location and authored instant.
-func contentDigest(r knowledge.LinkRequest, values ...string) string {
+func contentDigest(r knowledgedoc.LinkRequest, values ...string) string {
 	h := sha256.New()
 	for _, s := range append([]string{r.Title, r.Summary, r.Kind, r.Location, r.AuthoredAt.UTC().Format(time.RFC3339)}, values...) {
 		h.Write([]byte(s))

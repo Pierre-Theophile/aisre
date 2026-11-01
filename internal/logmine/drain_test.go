@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package logs_test
+package logmine_test
 
 import (
 	"fmt"
@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
+	"github.com/Pierre-Theophile/aisre/internal/logmine"
 )
 
 // The Drain-style miner (tasks.md T048, research §5).
 
 var origin = time.Date(2026, 9, 1, 14, 0, 0, 0, time.UTC)
 
-func line(offset int, text, status string) logs.Line {
-	return logs.Line{
+func line(offset int, text, status string) logmine.Line {
+	return logmine.Line{
 		At:        origin.Add(time.Duration(offset) * time.Second),
 		Text:      text,
 		Status:    status,
@@ -30,7 +30,7 @@ func line(offset int, text, status string) logs.Line {
 func TestMiningCollapsesVariablesAndKeepsStructure(t *testing.T) {
 	t.Parallel()
 
-	var lines []logs.Line
+	var lines []logmine.Line
 	for i := range 500 {
 		lines = append(lines, line(i, fmt.Sprintf("handled request id=%d for checkout in %dms", 100000+i, 3+i%7), "info"))
 	}
@@ -38,7 +38,7 @@ func TestMiningCollapsesVariablesAndKeepsStructure(t *testing.T) {
 		lines = append(lines, line(600+i, fmt.Sprintf("upstream call failed: deadline exceeded after %dms", 250+i), "error"))
 	}
 
-	templates := logs.Mine(lines)
+	templates := logmine.Mine(lines)
 	if len(templates) != 2 {
 		t.Fatalf("mined %d templates from two shapes of line: %v", len(templates), templates)
 	}
@@ -69,7 +69,7 @@ func TestMiningCollapsesVariablesAndKeepsStructure(t *testing.T) {
 func TestMiningIsDeterministic(t *testing.T) {
 	t.Parallel()
 
-	var lines []logs.Line
+	var lines []logmine.Line
 	for i := range 200 {
 		switch i % 3 {
 		case 0:
@@ -81,9 +81,9 @@ func TestMiningIsDeterministic(t *testing.T) {
 		}
 	}
 
-	want := logs.Mine(lines)
+	want := logmine.Mine(lines)
 	for range 20 {
-		got := logs.Mine(lines)
+		got := logmine.Mine(lines)
 		if len(got) != len(want) {
 			t.Fatalf("mined %d templates, then %d", len(want), len(got))
 		}
@@ -101,7 +101,7 @@ func TestMiningIsDeterministic(t *testing.T) {
 func TestDiffMarksWhatIsNew(t *testing.T) {
 	t.Parallel()
 
-	var baseline, window []logs.Line
+	var baseline, window []logmine.Line
 	for i := range 100 {
 		baseline = append(baseline, line(i, fmt.Sprintf("handled request id=%d", i), "info"))
 		window = append(window, line(1000+i, fmt.Sprintf("handled request id=%d", 5000+i), "info"))
@@ -110,7 +110,7 @@ func TestDiffMarksWhatIsNew(t *testing.T) {
 		window = append(window, line(2000+i, fmt.Sprintf("upstream call failed: deadline exceeded after %dms", 250+i), "error"))
 	}
 
-	diffed := logs.Diff(logs.Mine(window), logs.Mine(baseline))
+	diffed := logmine.Diff(logmine.Mine(window), logmine.Mine(baseline))
 	if len(diffed) != 2 {
 		t.Fatalf("diffed %d templates, want 2", len(diffed))
 	}
@@ -136,12 +136,12 @@ func TestDiffMarksWhatIsNew(t *testing.T) {
 func TestMiningIsBounded(t *testing.T) {
 	t.Parallel()
 
-	var lines []logs.Line
+	var lines []logmine.Line
 	for i := range 2000 {
 		// Every line has a different token count, which is the worst case for the tree.
 		lines = append(lines, line(i, strings.Repeat("word ", i%400+1)+"end", "info"))
 	}
-	templates := logs.Mine(lines)
+	templates := logmine.Mine(lines)
 
 	var total int
 	for _, template := range templates {
@@ -160,7 +160,7 @@ func TestMiningIsBounded(t *testing.T) {
 func TestRawValuesNeverReachATemplate(t *testing.T) {
 	t.Parallel()
 
-	templates := logs.Mine([]logs.Line{
+	templates := logmine.Mine([]logmine.Line{
 		line(0, "login failed for alice@example.com from 10.1.2.3", "error"),
 		line(1, "login failed for bob@example.com from 10.1.2.4", "error"),
 	})
@@ -179,7 +179,7 @@ func TestRawValuesNeverReachATemplate(t *testing.T) {
 
 func TestMinerVersionIsPublished(t *testing.T) {
 	t.Parallel()
-	if !strings.HasPrefix(logs.MinerVersion, "drain/") {
-		t.Errorf("miner version = %q, want a drain/<semver> spelling", logs.MinerVersion)
+	if !strings.HasPrefix(logmine.MinerVersion, "drain/") {
+		t.Errorf("miner version = %q, want a drain/<semver> spelling", logmine.MinerVersion)
 	}
 }

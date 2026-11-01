@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/knowledgedoc"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
@@ -29,7 +31,7 @@ var (
 )
 
 func postmortem(id, title string, linked ...string) knowledge.Document {
-	return knowledge.Document{ID: id, Kind: knowledge.KindPostmortem, Title: title,
+	return knowledge.Document{ID: id, Kind: knowledgedoc.KindPostmortem, Title: title,
 		Summary: "A short summary that names no symptom.", LinkedEntityIDs: linked,
 		LinkProvenance: "registered by sre@example.com", AuthoredAt: beforePin}
 }

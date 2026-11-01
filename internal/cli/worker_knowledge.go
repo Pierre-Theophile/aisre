@@ -8,10 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/knowledgedoc"
+
 	"github.com/spf13/cobra"
 
 	"github.com/Pierre-Theophile/aisre/internal/graph"
-	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 )
@@ -104,7 +105,7 @@ func runKnowledgeLink(cmd *cobra.Command, global *globalOptions, opts *knowledge
 	if err != nil {
 		return exitErrorf(ExitUsage, "document reference %q: %v", docRef, err)
 	}
-	request := knowledge.LinkRequest{
+	request := knowledgedoc.LinkRequest{
 		DocumentRef:  ref.Proto(),
 		Kind:         opts.kind,
 		Title:        opts.title,
@@ -167,7 +168,7 @@ func runKnowledgeLink(cmd *cobra.Command, global *globalOptions, opts *knowledge
 	return renderKnowledgeLink(p, request, len(events), false)
 }
 
-func renderKnowledgeLink(p *printer, request knowledge.LinkRequest, events int, dryRun bool) error {
+func renderKnowledgeLink(p *printer, request knowledgedoc.LinkRequest, events int, dryRun bool) error {
 	entities := make([]string, 0, len(request.EntityRefs))
 	for _, ref := range request.EntityRefs {
 		entities = append(entities, ref.GetNamespace()+"="+ref.GetValue())
