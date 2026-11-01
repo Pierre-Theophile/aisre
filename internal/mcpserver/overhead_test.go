@@ -20,8 +20,19 @@ import (
 // The same diff is asked directly through the API client and through the MCP tool; the budget
 // is generous on purpose (the measured overhead is a few milliseconds), so the test fails on a
 // regression, not on a slow CI runner.
-// budget is SC-004's bound on the time the adapter adds at p95.
-const budget = 50 * time.Millisecond
+// budget is SC-004's bound on the time the adapter adds at p95, in an ordinary build: the claim
+// docs/benchmarks/mcp-overhead-2026-11-01.md publishes. Do not raise it.
+//
+// CI's main `go test` runs with -race, which instruments every memory access, and the adapter's
+// work is almost all JSON: measured on one machine, 11 ms added in an ordinary build and 94 ms
+// under the detector, about 8.5×. Under -race the bound is scaled by raceBudgetFactor, inside Go's
+// documented 2–20× and just above that measurement, so a real regression still fails; the
+// ordinary-build bound is asserted by its own uninstrumented CI step (ci.yml), as the ledger's
+// performance budget is.
+const (
+	budget           = 50 * time.Millisecond
+	raceBudgetFactor = 10
+)
 
 func TestOverheadBudget(t *testing.T) {
 	if testing.Short() {
@@ -47,8 +58,12 @@ func TestOverheadBudget(t *testing.T) {
 		slices.Sort(d)
 		return d[(len(d)*95)/100-1]
 	}
+	limit, under := budget, "an ordinary build"
+	if raceDetectorEnabled {
+		limit, under = budget*raceBudgetFactor, "the race detector"
+	}
 	best := time.Duration(1<<63 - 1)
-	for round := 1; round <= rounds && best > budget; round++ {
+	for round := 1; round <= rounds && best > limit; round++ {
 		var direct, viaMCP []time.Duration
 		for i := 0; i < n; i++ {
 			start := time.Now()
@@ -65,7 +80,8 @@ func TestOverheadBudget(t *testing.T) {
 			round, n, p95(direct), p95(viaMCP), overhead)
 		best = min(best, overhead)
 	}
-	if best > budget {
-		t.Errorf("the MCP adapter adds %s at p95 in its best of %d rounds, budget %s (SC-004)", best, rounds, budget)
+	if best > limit {
+		t.Errorf("the MCP adapter adds %s at p95 in its best of %d rounds, budget %s under %s (SC-004)",
+			best, rounds, limit, under)
 	}
 }

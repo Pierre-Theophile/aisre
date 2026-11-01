@@ -269,6 +269,12 @@ jobs:
         # One test, milliseconds, no database. It is what keeps the number on that page true.
         run: go test -count=1 -run TestPosteriorsAreComputedWellInsideTheBudget ./internal/investigation/ledger/
 
+      - name: MCP adapter overhead budget, uninstrumented
+        # 010 SC-004: the MCP server adds at most 50 ms at p95 to the API call it wraps, a claim
+        # about an ordinary build (docs/benchmarks/mcp-overhead-2026-11-01.md). Under the -race run
+        # above the test scales its bound, so this step is what asserts the published one.
+        run: go test -count=1 -run TestOverheadBudget ./internal/mcpserver/
+
       - name: knowledge retrieval gate
         # 008 FR-042: recall@3 and MRR of the knowledge worker on fixtures/retrieval, per retrieval
         # mode, gated on the floors in internal/eval/retrieval/thresholds.go. No database, no model,
