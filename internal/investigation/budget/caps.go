@@ -84,6 +84,7 @@ const (
 	SettingRecordCalls      = "record_calls"
 	SettingVerificationPass = "verification_pass"
 	SettingSynthesisReserve = "synthesis_reserve_fraction"
+	SettingVerifierShare    = "verifier_share"
 )
 
 // configurable is the published set an operator may set.
@@ -107,6 +108,8 @@ var nonConfigurable = map[string]string{
 		"about itself — a number that drifted from the digest it came from (FR-022a)",
 	SettingSynthesisReserve: "the reserve is exactly 15% and is what makes an exhausted investigation " +
 		"still produce a written answer (FR-045, SC-005)",
+	SettingVerifierShare: "5% of the model tokens are held for the verifier and no investigator turn " +
+		"may spend them; without it an exhausted run concludes unverified (FR-022c)",
 }
 
 // ErrNotConfigurable is returned when a configuration tries to relax something that is not

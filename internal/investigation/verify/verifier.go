@@ -235,9 +235,14 @@ func RequestFor(claims []Claim, evidence []Evidence) (model.Request, error) {
 			Role:   model.RoleUser,
 			Blocks: []model.Block{{Kind: model.BlockText, Text: brief}},
 		}},
-		Format: &model.OutputFormat{Name: "verifier_verdicts", Schema: outputSchema()},
+		Format:    &model.OutputFormat{Name: "verifier_verdicts", Schema: outputSchema()},
+		MaxTokens: MaxTokens,
 	}, nil
 }
+
+// MaxTokens caps the verifier's answer: one short verdict per claim. It is what admission prices
+// the answer at, so it is what has to fit in the verifier's share of the budget (T122).
+const MaxTokens int64 = 4000
 
 // Apply removes and demotes the claims the findings condemn, returning what survives.
 func Apply(claims []Claim, findings []Finding) []Claim {

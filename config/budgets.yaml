@@ -12,11 +12,14 @@
 # cheap monitor read the same as an expensive span search, and the expensive one is what spends
 # the on-call's vendor quota.
 #
-# Three numbers here are NOT configurable, and the loader refuses a file that tries to move them:
+# Four settings here are NOT configurable, and the loader refuses a file that tries to move them:
 #
 #   synthesis_reserve_fraction   exactly 0.15 — it is what makes an exhausted investigation still
 #                                produce a written answer with a verifier pass behind it (FR-045,
 #                                SC-005)
+#   verifier_share               exactly 0.05 of cost_units, inside the reserve, that no
+#                                investigator turn may spend: the verification pass's own
+#                                tokens (FR-022c, 002 plan V5)
 #   the evidence requirement     a claim resting on nothing is not a claim this engine makes
 #   the read-only posture,       an engine that could act, or whose calls were not recorded, or
 #   the recording of calls,      whose claims were not verified, is a different product wearing
