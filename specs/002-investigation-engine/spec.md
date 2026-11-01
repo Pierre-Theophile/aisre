@@ -249,6 +249,42 @@ renumbered — only suffixed ids were added.
   outcomes are named `digest · no_data · not_yet_ingested · query_failed · partial · not_recorded`
   everywhere.
 
+### Session 2026-11-01
+
+Amendment after the RCA literature review
+([`docs/reviews/2026-11-01-literature-review-agentic-rca.md`](../../docs/reviews/2026-11-01-literature-review-agentic-rca.md))
+and a repository audit the same day, decided in
+[ADR-0019](../../docs/decisions/ADR-0019-roadmap-after-the-rca-literature-review.md) D1. It adds
+suffixed requirements only; nothing is renumbered. The defaults below await the owner's approval on
+the amendment PR.
+
+- Q: The verifier of FR-022a is implemented but no production path calls it. Is that a gap or a
+  choice? → **Default: a gap.** Every investigation's terminal path runs the deterministic checker,
+  then the fresh-context verifier, before the outcome is published; a verifier failure is a typed
+  stop, never a silent skip. (FR-022a, FR-022c)
+- Q: Must a conclusion say what was *not* looked at? → **Default: yes.** The dominant failure of LLM
+  investigators in the literature is omission: decisive evidence reachable and never queried, with
+  nothing in the answer saying so. The owner reported the same failure on his estate on 2026-11-01.
+  An investigation publishes an examination report: what it examined, what was reachable and not
+  examined, and which entities of the impact surface it never looked at. A hypothesis cannot be
+  *supported* while a signal family marked decisive for its cause category was reachable and
+  unqueried. (FR-022b)
+- Q: How does the first wave see a service that stops receiving calls? → **Default: absence is
+  compared like any other shift.** The first wave adds request rates of each candidate's callers and
+  callees before and after onset, and the edges `diff` reports as retracted inside the window. Error
+  rate and latency alone cannot see a silent callee. (FR-046b)
+- Q: Does a hypothesis carry its propagation path? → **Default: yes.** A *supported* hypothesis carries
+  the path from cause to symptom as typed graph edges, each cited or marked unverified. The
+  evaluation scores that path; the harness stops reconstructing one. (FR-019b, FR-059a)
+- Q: Where does the investigator learn the shape of the system before its first query? → **Default:
+  a search-space profile in its first brief**, built from the graph: the entities and layers in
+  scope, the edges with their provenance, which sources and signal families cover which entity, and
+  the known blind spots. Feature 012 enriches it; until 012 lands, it is built from what the graph
+  holds today. (FR-012a)
+- Q: May runbooks, postmortem lessons or any later learned procedure drive the investigation? →
+  **Default: as guidance only.** They are offered with their provenance and never compiled into a
+  fixed sequence; FR-013 already forbids a fixed order. (FR-013b)
+
 ## Personas
 
 - **Sam, on-call SRE.** Paged at 14:32, ten tabs open, four minutes of patience. Sam runs one
@@ -1072,12 +1108,26 @@ over it is reported.
   as-of, diff with ranked changes, impact, pointers, node history, resolution audit, extent — and
   MUST pass through both time dimensions. It MUST be deterministic: the same parameters against the
   same graph state MUST produce the same response.
+- **FR-012a**: The investigator's first brief MUST carry a **search-space profile** of the
+  investigation's scope, built deterministically from the graph as of the pinned instants: the
+  entities in scope with their type and layer; the edges between them with their provenance class
+  and confidence where the graph records them; for each entity, which connected sources and which
+  signal families (metrics, logs, traces, changes, knowledge) can be queried about it, from its
+  pointers; and the blind spots — entities with no pointer, edges known only from a declaration,
+  sources disconnected or lagging. The profile MUST be recorded with the investigation and MUST be
+  re-renderable from the replayed event log. *(Added 2026-11-01, ADR-0019 D1; feature 012 enriches
+  the provenance and reconciliation fields.)*
 - **FR-013**: The order of worker calls MUST NOT be fixed. The investigator decides what to ask
   next from what it has learned, subject only to budgets. No specific sequence may be required for
   an investigation to be valid, and the specification MUST NOT be read as prescribing one.
 - **FR-013a**: Exactly one belief state MUST exist per investigation, held by the investigator.
   Evidence gathering MAY be parallelised across workers; reasoning MUST NOT be forked, duplicated
   or delegated. Two components holding two opinions about the same hypothesis is a defect.
+- **FR-013b**: Procedures — runbooks, postmortem lessons, and any procedure a later feature may
+  learn — MUST reach the investigator as optional guidance, each with its provenance, and MUST NOT
+  be compiled into a fixed sequence of calls, a gating stage or a mandatory step. The deterministic
+  first wave (FR-046a, FR-046b) adds evidence before the first turn and removes no choice from the
+  investigator. *(Added 2026-11-01, ADR-0019 D1.)*
 - **FR-014**: Every worker response delivered to the investigator MUST be a structured, bounded
   digest: identifiers, parameters, aggregates, comparisons, mined patterns, exemplar references,
   pointers, join keys, drill-down handles and digests. Raw metric series, raw log bodies and raw
@@ -1116,6 +1166,13 @@ over it is reported.
   candidate causes, an explicit *no observed change explains this* hypothesis with its own prior
   and its own share of the probability mass, ranked, scored and rendered like any other. `unknown`
   is then a computed result rather than a behaviour of the reasoning layer.
+- **FR-019b**: Every hypothesis at status *supported* MUST carry its **propagation path**: an
+  ordered chain of typed graph edges from the candidate cause to the alerting entity, each edge as
+  of the pinned instants. Each edge MUST either cite the evidence items that show the fault crossed
+  it or be marked `unverified`. A path with an unverified edge MUST be rendered as such, and the
+  hypothesis's confidence MUST reflect it under FR-023. A hypothesis whose path cannot be drawn on
+  the graph MUST say so and name the missing link as a resolving action under FR-026. *(Added
+  2026-11-01, ADR-0019 D1.)*
 - **FR-020**: Every hypothesis MUST carry: a statement in plain language, its candidate cause (a
   change entity or a named condition), the target entities it concerns, a status (proposed,
   supported, refuted, inconclusive, untested), a numeric confidence, a rationale, and references to
@@ -1142,6 +1199,20 @@ over it is reported.
   investigator's reasoning. A claim whose citation does not support it, or whose numbers do not
   match the cited digest, MUST be removed or demoted, and the verifier's findings MUST be recorded
   as part of the investigation.
+- **FR-022b**: Every concluded investigation MUST publish an **examination report**, machine-readable
+  and rendered: for each hypothesis, the signal families and sources it queried; the signal families
+  and sources that were *reachable* for its target entities (a pointer or a connected source exists,
+  per FR-012a) and were never queried; and the entities of the impact surface that no call touched. A
+  published, versioned **expectation table** MUST name, for each cause category, the signal families
+  that are decisive for it. A hypothesis MUST NOT reach status *supported* while a decisive family for
+  its category was reachable and unqueried: it is held at *inconclusive*, and the unqueried family is
+  named as its resolving action. Unreachable families MUST be reported as coverage gaps under FR-027,
+  never as omissions. *(Added 2026-11-01, ADR-0019 D1.)*
+- **FR-022c**: The checker and the verifier of FR-022a MUST run on every investigation's terminal path,
+  live and in replay, before the outcome is published, and MUST enforce FR-019b and FR-022b. A
+  verifier that fails, times out or is unavailable MUST produce a typed stop reason under FR-045b and
+  a rendering that says the answer was not verified; it MUST never be skipped silently. *(Added
+  2026-11-01, ADR-0019 D1.)*
 - **FR-023**: Confidence MUST be computed, never verbalised. It MUST be a deterministic function of
   the hypothesis ledger — the priors and the likelihood ratios implied by the typed judgments — so
   that the same ledger always yields the same confidence; the model MUST NOT be the source of a
@@ -1320,6 +1391,12 @@ bulk is beside it, and the link between them is a digest.
   onset, new log patterns, error spans on the path edges, and errors split by version tag — so that
   the reasoning layer's first turn begins with evidence in hand. The first-wave queries MUST always
   be present in a fixture's recorded world.
+- **FR-046b**: The first wave MUST also compare, before and after onset, the **request rate** of each
+  top candidate's callers and callees on the graph, and MUST include every edge that the graph's
+  `diff` reports as retracted, or whose weight class fell, inside the investigation's window. A flow
+  that stopped MUST be eligible as a candidate cause or as a link of a propagation path, exactly like
+  a flow that started failing. A fall in rate MUST be scored by its magnitude, never ranked below
+  rises by sign alone. *(Added 2026-11-01, ADR-0019 D1.)*
 - **FR-047**: Budget profiles MUST be selectable by alert priority, the defaults MUST be published,
   and the profile applied MUST be recorded on every investigation. Two profiles MUST exist. `page`,
   for a live incident: the first tested hypothesis within 90–120 seconds, a substantive answer
@@ -1438,6 +1515,12 @@ bulk is beside it, and the link between them is a digest.
   hypothesis and to conclusion; worker calls and backend quota share per investigation; cost per
   investigation; the rate of `unknown` outcomes and the precision of non-`unknown` outcomes; and the
   replay-divergence rate.
+- **FR-059a**: Each evaluation run MUST also publish two process metrics, per fixture and over the
+  corpus: **propagation-path edge F1**, scored on the paths of FR-019b against the ground-truth causal
+  path of FR-061b; and the **omission rate**, the share of concluded investigations whose examination
+  report (FR-022b) lists a decisive family as reachable and unqueried for the hypothesis that matched
+  the ground truth. Both are reported from the first run and gated once the corpus has a baseline,
+  as pass@1 is. *(Added 2026-11-01, ADR-0019 D1.)*
 - **FR-060**: The **aggregate pass@1 threshold is set by the first full corpus run** and not
   before: it cannot be guessed ahead of the corpus that measures it, and setting it from a partial
   corpus would be inventing the number the gate exists to defend. Until that run has published it,
