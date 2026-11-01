@@ -83,6 +83,53 @@ type Conclusion struct {
 	DecisionEventID string
 	// OnsetEstimateEvidenceID is the onset estimate the ranking referenced, where there was one.
 	OnsetEstimateEvidenceID string
+	// VerificationStatus is VerificationVerified or VerificationNotVerified, and VerificationDetail
+	// says why in one sentence (FR-022c). Empty only on a path that never ran the engine.
+	VerificationStatus string
+	VerificationDetail string
+	// VerifierFindings is every claim's verdict, written in the same transaction as the
+	// conclusion: a removed claim is part of how the answer was reached (FR-022a).
+	VerifierFindings []VerifierFinding
+}
+
+// The published verification statuses (FR-022c), as the schema stores them.
+const (
+	VerificationVerified    = "verified"
+	VerificationNotVerified = "not_verified"
+)
+
+// VerifierFinding is one claim's verdict as `investigation.verifier_findings` stores it.
+type VerifierFinding struct {
+	ClaimRef        string
+	Verdict         string
+	OffendingValue  string
+	CitedEvidenceID string
+	Note            string
+	ActionTaken     string
+}
+
+// VerificationStatusProto maps the stored status onto the wire enum.
+func VerificationStatusProto(status string) investigationv1.VerificationStatus {
+	switch status {
+	case VerificationVerified:
+		return investigationv1.VerificationStatus_VERIFIED
+	case VerificationNotVerified:
+		return investigationv1.VerificationStatus_NOT_VERIFIED
+	default:
+		return investigationv1.VerificationStatus_VERIFICATION_STATUS_UNSPECIFIED
+	}
+}
+
+// VerificationStatusName maps the wire enum onto the stored status; unspecified is empty.
+func VerificationStatusName(status investigationv1.VerificationStatus) string {
+	switch status {
+	case investigationv1.VerificationStatus_VERIFIED:
+		return VerificationVerified
+	case investigationv1.VerificationStatus_NOT_VERIFIED:
+		return VerificationNotVerified
+	default:
+		return ""
+	}
 }
 
 // Validate checks the kind and outcome are ones the schema accepts and agree with each other.
@@ -100,6 +147,12 @@ func (c Conclusion) Validate() error {
 	}
 	if c.Outcome == OutcomeBudgetExhausted && c.Kind == ConclusionFinal {
 		return ErrBudgetExhaustedIsPartial
+	}
+	switch c.VerificationStatus {
+	case "", VerificationVerified, VerificationNotVerified:
+	default:
+		return fmt.Errorf("verification status %q: want %q or %q", c.VerificationStatus,
+			VerificationVerified, VerificationNotVerified)
 	}
 	return nil
 }

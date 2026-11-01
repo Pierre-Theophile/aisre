@@ -163,25 +163,12 @@ func (v *Verifier) Verify(ctx context.Context, claims []Claim, evidence []Eviden
 	if len(claims) == 0 {
 		return nil, nil, nil
 	}
-	index := make(map[string]Evidence, len(evidence))
-	for _, item := range evidence {
-		index[item.ID] = item
-	}
-
-	brief, err := Brief(claims, index)
+	request, err := RequestFor(claims, evidence)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	resp, err := v.client.Complete(ctx, model.Request{
-		Role:   model.RoleVerifier,
-		System: verifierPrompt,
-		Messages: []model.Message{{
-			Role:   model.RoleUser,
-			Blocks: []model.Block{{Kind: model.BlockText, Text: brief}},
-		}},
-		Format: &model.OutputFormat{Name: "verifier_verdicts", Schema: outputSchema()},
-	})
+	resp, err := v.client.Complete(ctx, request)
 	if err != nil {
 		return nil, nil, fmt.Errorf("verify: %w", err)
 	}
@@ -227,6 +214,29 @@ func (v *Verifier) Verify(ctx context.Context, claims []Claim, evidence []Eviden
 	}
 	sort.SliceStable(findings, func(i, j int) bool { return findings[i].ClaimRef < findings[j].ClaimRef })
 	return findings, resp, nil
+}
+
+// RequestFor is the one request the verifier issues for these claims. It is exported so that the
+// engine can pass it through budget admission before it is sent (FR-022c, FR-047a): admission
+// prices the request that will actually be issued, not an estimate of it.
+func RequestFor(claims []Claim, evidence []Evidence) (model.Request, error) {
+	index := make(map[string]Evidence, len(evidence))
+	for _, item := range evidence {
+		index[item.ID] = item
+	}
+	brief, err := Brief(claims, index)
+	if err != nil {
+		return model.Request{}, err
+	}
+	return model.Request{
+		Role:   model.RoleVerifier,
+		System: verifierPrompt,
+		Messages: []model.Message{{
+			Role:   model.RoleUser,
+			Blocks: []model.Block{{Kind: model.BlockText, Text: brief}},
+		}},
+		Format: &model.OutputFormat{Name: "verifier_verdicts", Schema: outputSchema()},
+	}, nil
 }
 
 // Apply removes and demotes the claims the findings condemn, returning what survives.

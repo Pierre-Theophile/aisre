@@ -16,6 +16,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/backend"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/verify"
 )
 
 // The rendering (T085, T086, FR-019, FR-026, FR-028, FR-057c, FR-057d, SC-025).
@@ -487,5 +488,57 @@ func TestARollbackJudgmentIsRenderedAsTheOperatorsJudgement(t *testing.T) {
 	line := render.NewReport(&investigationv1.Investigation{InvestigationId: "inv-render-01"}, l).VerdictLine()
 	if !strings.Contains(line, "rollback candidate: k8s.change=shop/payments@rev7 (already rolled back by an operator)") {
 		t.Errorf("verdict = %q, want the candidate named and marked as already rolled back", line)
+	}
+}
+
+// TestAWithheldTopStatementNamesNoRollbackCandidate is plan V4: the verification pass removed the
+// top hypothesis's statement, so the verdict line and the ranked list withhold it, and the line an
+// on-call acts on no longer points at the change.
+func TestAWithheldTopStatementNamesNoRollbackCandidate(t *testing.T) {
+	t.Parallel()
+
+	report := syntheticReport(t)
+	top := report.Ledger.Hypotheses[0]
+	report.Investigation.VerificationStatus = investigationv1.VerificationStatus_VERIFIED
+	report.Investigation.VerificationDetail = "1 claim(s): 0 kept, 0 demoted, 1 removed"
+	report.Investigation.VerifierFindings = []*investigationv1.VerifierFinding{{
+		ClaimRef: verify.HypothesisClaimRef(top.ID), Verdict: verify.VerdictUnsupported,
+		ActionTaken: verify.ActionRemoved,
+	}}
+
+	line := report.VerdictLine()
+	if strings.Contains(line, "rollback candidate:") || !strings.Contains(line, "there is no rollback candidate") {
+		t.Errorf("verdict = %q, want no rollback candidate once the top statement is withheld", line)
+	}
+	if strings.Contains(line, top.Statement) {
+		t.Errorf("verdict = %q still carries the withheld statement", line)
+	}
+	out, err := report.Human()
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(section(out, render.SectionRanked), "statement withheld (verifier: unsupported)") {
+		t.Errorf("the ranked list does not withhold the statement:\n%s", out)
+	}
+	if !strings.Contains(section(out, render.SectionVerdict), "verification: verified") {
+		t.Errorf("the verdict section does not carry the verification status:\n%s", out)
+	}
+}
+
+// TestADemotedStatementNamesItsUnverifiedFigure is the other action of plan V4.
+func TestADemotedStatementNamesItsUnverifiedFigure(t *testing.T) {
+	t.Parallel()
+
+	report := syntheticReport(t)
+	top := report.Ledger.Hypotheses[0]
+	report.Investigation.VerifierFindings = []*investigationv1.VerifierFinding{{
+		ClaimRef: verify.HypothesisClaimRef(top.ID), Verdict: verify.VerdictNumberMismatch,
+		OffendingValue: "0.99", ActionTaken: verify.ActionDemoted,
+	}}
+	if got := report.Statement(top); got != top.Statement+" [unverified figure: 0.99]" {
+		t.Errorf("statement = %q", got)
+	}
+	if !strings.Contains(report.VerdictLine(), "rollback candidate: ") {
+		t.Errorf("a demoted statement withheld the rollback candidate: %q", report.VerdictLine())
 	}
 }

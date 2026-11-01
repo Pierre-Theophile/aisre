@@ -642,6 +642,10 @@ values, and checking it against digests would test the template, not the investi
 task publishes more model prose (judgment rationales, a narrative), each sentence becomes a claim
 with its own evidence ids, and nothing else changes.
 
+An **untested** hypothesis is not sent. It has no judgment, so it cites nothing, and the report
+already publishes it as `untested` with what would test it (FR-026): it is a question the run
+leaves open, not an assertion, and withholding it would hide the next query from the on-call.
+
 ### V3. The typed verification status
 
 `Investigation` gains `verification_status` (`VERIFIED`, `NOT_VERIFIED`) and

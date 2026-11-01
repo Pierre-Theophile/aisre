@@ -407,7 +407,8 @@ const investigationSelect = `
 	       requester, model_config, algebra_version, ledger_rule_version, schema_version,
 	       coalesce(recording_key, ''), coalesce(recording_digest, ''),
 	       coalesce(decision_event_id, ''), coalesce(onset_estimate_evidence_id, ''),
-	       started_at, ended_at
+	       started_at, ended_at,
+	       coalesce(verification_status, ''), coalesce(verification_detail, '')
 	FROM investigation.investigations`
 
 func (d *InvestigationDAO) scanOne(ctx context.Context, where string, args ...any) (*investigationv1.Investigation, error) {
@@ -432,6 +433,7 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 		startedAt                                    time.Time
 		endedAt                                      *time.Time
 		lifecycle, conclusionKind, outcome, stopName string
+		verification                                 string
 		modelConfig                                  []byte
 		profile                                      string
 	)
@@ -446,6 +448,7 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 		&inv.SchemaVersion, &inv.RecordingKey, &inv.RecordingDigest,
 		&inv.DecisionEventId, &inv.OnsetEstimateEvidenceId,
 		&startedAt, &endedAt,
+		&verification, &inv.VerificationDetail,
 	); err != nil {
 		return nil, fmt.Errorf("investigation store: scan investigation: %w", err)
 	}
@@ -460,6 +463,7 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 	inv.ConclusionKind = record.ConclusionKindProto(conclusionKind)
 	inv.Outcome = record.OutcomeProto(outcome)
 	inv.StopReason = record.StopReasonFromName(stopName)
+	inv.VerificationStatus = record.VerificationStatusProto(verification)
 	inv.StartedAt = timestamppb.New(startedAt.UTC())
 	if endedAt != nil {
 		inv.EndedAt = timestamppb.New(endedAt.UTC())
@@ -510,7 +514,35 @@ func (d *InvestigationDAO) loadChildren(ctx context.Context, inv *investigationv
 		return err
 	}
 	inv.Deliveries = deliveries
+
+	findings, err := d.VerifierFindingsOf(ctx, inv.GetInvestigationId())
+	if err != nil {
+		return err
+	}
+	inv.VerifierFindings = findings
 	return nil
+}
+
+// VerifierFindingsOf reads every claim's verdict, in claim order (FR-022a).
+func (d *InvestigationDAO) VerifierFindingsOf(ctx context.Context, investigationID string) ([]*investigationv1.VerifierFinding, error) {
+	rows, err := d.store.Pool().Query(ctx, `
+		SELECT claim_ref, verdict, coalesce(offending_value, ''), coalesce(cited_evidence_id, ''), action_taken
+		FROM investigation.verifier_findings
+		WHERE investigation_id = $1
+		ORDER BY claim_ref`, investigationID)
+	if err != nil {
+		return nil, fmt.Errorf("investigation store: verifier findings of %s: %w", investigationID, err)
+	}
+	defer rows.Close()
+	var out []*investigationv1.VerifierFinding
+	for rows.Next() {
+		f := &investigationv1.VerifierFinding{}
+		if err := rows.Scan(&f.ClaimRef, &f.Verdict, &f.OffendingValue, &f.CitedEvidenceId, &f.ActionTaken); err != nil {
+			return nil, fmt.Errorf("investigation store: scan verifier finding: %w", err)
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 func (d *InvestigationDAO) symptomsOf(ctx context.Context, incidentID string) ([]*investigationv1.Symptom, error) {

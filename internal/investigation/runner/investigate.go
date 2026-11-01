@@ -444,7 +444,8 @@ func (r *Runner) conclude(
 		return nil, r.failed(writeCtx, rn.investigationID, fmt.Sprintf("persist: %v", err), err)
 	}
 
-	verdict, rollback, ranked := verdictOf(book)
+	verification := eng.Verification()
+	verdict, rollback, ranked := verdictOf(book, findingsOf(verification))
 	conclusion := record.Conclusion{
 		Kind:                    conclusionKindOf(stop),
 		Outcome:                 record.OutcomeName(stop.Outcome(ranked)),
@@ -455,6 +456,7 @@ func (r *Runner) conclude(
 		EndedAt:                 r.now(),
 		OnsetEstimateEvidenceID: onsetEvidenceOf(eng),
 	}
+	applyVerification(&conclusion, verification)
 	written := r.writeTrajectory(rn.investigationID, eng)
 	conclusion.RecordingKey = written.key
 	conclusion.RecordingDigest = written.digest
@@ -524,6 +526,10 @@ func (r *Runner) concludeUnresolved(ctx context.Context, rn *run) (*investigatio
 		StopDetail:  stop.Detail,
 		VerdictLine: unresolvedVerdict(rn),
 		EndedAt:     r.now(),
+		// No model ran and nothing was asserted, so there is nothing to check; the status says
+		// so rather than staying unspecified (FR-022c, plan V3).
+		VerificationStatus: record.VerificationVerified,
+		VerificationDetail: "no model-authored claim to verify; the intake named nothing to investigate",
 	}
 	eventID, err := r.emitDecisionRecordFrom(ctx, rn, book, nil, conclusion)
 	if err != nil {
@@ -655,7 +661,10 @@ func (r *Runner) failed(ctx context.Context, investigationID, detail string, cau
 //
 // Naming a rollback candidate is not proposing a remediation (FR-028): it names the change the
 // evidence points at and stops there.
-func verdictOf(book *ledger.Ledger) (verdict, rollback string, ranked bool) {
+//
+// findings are the verification pass's verdicts: a top statement it removed is withheld from the
+// line and names no rollback candidate (FR-022c, plan V4).
+func verdictOf(book *ledger.Ledger, findings []*investigationv1.VerifierFinding) (verdict, rollback string, ranked bool) {
 	hypotheses := book.Hypotheses()
 	if len(hypotheses) == 0 {
 		return "no hypotheses were formed; there is no rollback candidate", "", false
@@ -669,11 +678,45 @@ func verdictOf(book *ledger.Ledger) (verdict, rollback string, ranked bool) {
 			}
 		}
 	}
-	if ranked {
+	report := render.NewReport(&investigationv1.Investigation{VerifierFindings: findings}, book)
+	if ranked && report.Withheld(top.ID) == nil {
 		rollback = top.CandidateChangeEntityID
 	}
-	report := render.NewReport(&investigationv1.Investigation{}, book)
 	return report.VerdictLine(), rollback, ranked
+}
+
+// findingsOf is the verification pass's findings in their published shape.
+func findingsOf(v *engine.Verification) []*investigationv1.VerifierFinding {
+	if v == nil {
+		return nil
+	}
+	out := make([]*investigationv1.VerifierFinding, 0, len(v.Findings))
+	for _, f := range v.Findings {
+		out = append(out, f.Proto())
+	}
+	return out
+}
+
+// applyVerification copies the verification pass onto the conclusion that records it. An engine
+// that stopped always carries one; a nil one is recorded as not verified rather than left blank.
+func applyVerification(c *record.Conclusion, v *engine.Verification) {
+	if v == nil {
+		c.VerificationStatus = record.VerificationNotVerified
+		c.VerificationDetail = "the engine recorded no verification pass (FR-022c)"
+		return
+	}
+	c.VerificationStatus = record.VerificationStatusName(v.Status)
+	c.VerificationDetail = v.Detail
+	for _, f := range v.Findings {
+		c.VerifierFindings = append(c.VerifierFindings, record.VerifierFinding{
+			ClaimRef:        f.ClaimRef,
+			Verdict:         f.Verdict,
+			OffendingValue:  f.OffendingValue,
+			CitedEvidenceID: f.CitedEvidenceID,
+			Note:            f.Detail,
+			ActionTaken:     f.ActionTaken,
+		})
+	}
 }
 
 // conclusionKindOf maps a typed stop onto the conclusion kind (FR-006).

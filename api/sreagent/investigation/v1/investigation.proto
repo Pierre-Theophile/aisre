@@ -502,6 +502,9 @@ message Ledger {
 enum Lifecycle { LIFECYCLE_UNSPECIFIED = 0; RUNNING = 1; CONCLUDED = 2; REOPENED = 3; FAILED = 4; }
 enum ConclusionKind { CONCLUSION_KIND_UNSPECIFIED = 0; CONCLUSION_PARTIAL = 1; CONCLUSION_FINAL = 2; }
 enum InvestigationOutcome { INVESTIGATION_OUTCOME_UNSPECIFIED = 0; RANKED = 1; UNKNOWN = 2; BUDGET_EXHAUSTED = 3; INVESTIGATION_FAILED = 4; }
+// Whether the checker and the fresh-context verifier ran over the run's claims before it was
+// published (FR-022a, FR-022c). Never skipped silently: an unverified outcome says so and why.
+enum VerificationStatus { VERIFICATION_STATUS_UNSPECIFIED = 0; VERIFIED = 1; NOT_VERIFIED = 2; }
 enum StopReason {
   STOP_REASON_UNSPECIFIED = 0;
   COMPLETED = 1; BUDGET_EXHAUSTED_STOP = 2; DIMINISHING_RETURNS = 3;
@@ -635,6 +638,8 @@ message Investigation {
   string recording_key = 29; string recording_digest = 30; string decision_event_id = 31;
   google.protobuf.Timestamp started_at = 32; google.protobuf.Timestamp ended_at = 33;
   bool provisional = 34;                   // true while only the prior-only ranking exists (FR-046a)
+  VerificationStatus verification_status = 36;  // FR-022c; unspecified on runs concluded before it
+  string verification_detail = 37;         // why, in a sentence: counts kept/demoted/removed, or the reason
 }
 
 // ============================================================================
