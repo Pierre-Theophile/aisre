@@ -919,6 +919,40 @@ boundary spoke one vendor; it now speaks two, chosen **per role** by `provider:`
 
 ---
 
+## Phase 10: The 2026-11-01 amendment (ADR-0019)
+
+**Purpose**: the requirements added on 2026-11-01 (spec §Session 2026-11-01, plan §"The 2026-11-01
+amendment (ADR-0019)"). The phase does not reopen T120's closure: it is new work on a closed
+feature, ordered as the plan's "Order of work" says.
+
+### Verification on every terminal path (FR-022a, FR-022c)
+
+- [x] T121 Wire `verify.Check` and the fresh-context verifier into `Engine.Stop`, before the stop record: claims are the statements of model-proposed hypotheses cited by their judgments' evidence ids; the verifier exchange is recorded in the trajectory; `Investigation.verification_status`/`verification_detail` (proto, migration 0016, lifecycle) carry `VERIFIED` or `NOT_VERIFIED` with its reason; findings are written to `investigation.verifier_findings` (0016 widens its verdict CHECK to `uncited`) and returned on the wire; a removed statement is withheld in the ranked list and the verdict line → FR-022a, FR-022c, plan V1–V4; fixture: unit, rollout-regression-01-incident
+- [ ] T122 Reserve a published share of each budget profile's model budget for the verifier, which investigator turns may not consume; a verifier still refused yields `NOT_VERIFIED` naming the budget → FR-022c, FR-047, plan V5; fixture: unit
+
+### The search-space profile and the examination report (FR-012a, FR-022b)
+
+- [ ] T123 Build the search-space profile from the graph at the pinned instants (entities and layers in scope, edges with provenance where recorded, signal families per entity from its pointers, blind spots), cap it with the truncation stated, put it in the first brief and record it with the investigation → FR-012a; fixture: rollout-regression-01-incident, unknown-feeder-gap-01
+- [ ] T124 Publish `config/expectations/v1.yaml` (cause category → decisive signal families, mode `observe`) with its loader and schema test → FR-022b, plan V6; fixture: unit
+- [ ] T125 Compute and publish the examination report at conclusion (queried, reachable and unqueried, untouched impact-surface entities, per hypothesis); unreachable families are coverage gaps, never omissions; in `observe` mode no status changes → FR-022b, FR-027; fixture: rollout-regression-01-incident, unknown-feeder-gap-01
+
+### Absence in the first wave (FR-046b)
+
+- [ ] T126 Add RATE `compare` terms on each top candidate's callers and callees and the edges `diff` reports as retracted (or whose weight class fell) in the window to the first wave; a fall is scored by magnitude; a candidate with no caller or callee is a profile blind spot; extend the recorded worlds that lack the terms → FR-046b, FR-046a; fixture: rollout-regression-01-incident, distant-culprit-01
+- [ ] T127 Add the incident fixture `stopped-flow-01`, whose root cause is visible only as a callee that stops receiving calls, with its ground truth and decoys → FR-046b, FR-061b; fixture: stopped-flow-01
+
+### Paths and process metrics (FR-019b, FR-059a)
+
+- [ ] T128 Give every *supported* hypothesis its propagation path as typed graph edges, each citing evidence or marked `unverified`; an undrawable path names the missing link as a resolving action; the verifier enforces FR-019b → FR-019b, FR-022c, FR-023; fixture: rollout-regression-01-incident, distant-culprit-01
+- [ ] T129 Score the engine's path in the harness instead of `causalPathOf`; publish propagation-path edge F1 with the share of undrawable paths, the omission rate and the cost of enforcement → FR-059a, FR-019b; fixture: all incident fixtures
+
+### Baselines and modes (FR-059b, FR-022b, FR-013b)
+
+- [ ] T130 Score the telemetry-free floor (the prior-only ranking) beside each scheduled evaluation run, publish lift over it, and flag fixtures the floor solves → FR-059b, plan V8; fixture: all incident fixtures
+- [ ] T131 Score the simple-harness baseline through feature 010's read-only interface, after 010 ships → FR-059b, ADR-0019 D6; fixture: all incident fixtures
+- [ ] T132 Move an expectation-table version to `enforce` only after the dual gate passes on the corpus; in `enforce` mode a decisive reachable unqueried family holds a hypothesis at *inconclusive* and is named as its resolving action → FR-022b, ADR-0019 D4; fixture: all incident fixtures
+- [ ] T133 Offer runbooks and postmortem lessons in the brief as optional guidance with their provenance, never as a step or gate; a test asserts no tool call is required by them → FR-013b; fixture: knowledge-notion-01
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

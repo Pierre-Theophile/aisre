@@ -604,3 +604,113 @@ The reviewer's order of work, with the plan's additions, and nothing reordered f
 
 Intake (both front doors), the verifier, the renderer and the human channel interleave with 5;
 the report-delivery contract lands with 5 but its transport does not, because that is a connector.
+
+## The 2026-11-01 amendment (ADR-0019)
+
+The amendment adds FR-012a, FR-013b, FR-019b, FR-022b, FR-022c, FR-046b, FR-059a and FR-059b
+(spec §Session 2026-11-01) to a feature that is otherwise closed. Its tasks are Phase 10 of
+`tasks.md`. This section records the design choices those tasks rest on; nothing above is changed.
+
+### What the code had on 2026-11-01
+
+- `verify.Check` and `verify.NewVerifier` were implemented and tested (T074, T075) and called by
+  nothing outside their tests. `investigation.verifier_findings` existed in 0006 and was never
+  written, and its verdict CHECK did not admit the checker's own `uncited` verdict.
+- The only published sentences a model writes are the **statements of the hypotheses it proposes**
+  through `propose_hypothesis`. Hypothesis rationales are derived from the ledger, ranker
+  hypotheses carry a templated statement, and the `rationale` field of `propose_judgments` is
+  decoded and dropped. The verdict line is a deterministic rendering of the top hypothesis.
+- The evaluation harness reconstructs a causal path with a hard-coded `calls` edge
+  (`internal/eval/harness.go`, `causalPathOf`); the engine publishes none.
+
+### V1. Where verification runs: inside the engine, before the stop record
+
+The checker and the verifier run in `Engine.Stop`, after the verdict is settled and **before** the
+trajectory's stop record is written. Two reasons. The verifier's exchange is then an ordinary
+`model_request`/`model_response` pair of the trajectory, so layer-1 replay reissues it byte for
+byte like any investigator turn and no replay code changes. And every exit path (completed,
+diminishing returns, budget exhausted, refused, failed) passes through `Stop`, so none can skip the
+pass silently. Recordings made before the amendment carry no verifier exchange and replay
+unchanged, because layer-1 replay walks the recorded records rather than re-running the engine.
+
+### V2. What counts as a claim
+
+A claim is a sentence a **model** wrote and the report publishes. Today that is the statement of
+each model-proposed hypothesis, cited by the evidence ids of the judgments recorded on it. A
+templated statement or a ledger-derived rationale is not a claim: the engine composed it from typed
+values, and checking it against digests would test the template, not the investigator. When a later
+task publishes more model prose (judgment rationales, a narrative), each sentence becomes a claim
+with its own evidence ids, and nothing else changes.
+
+An **untested** hypothesis is not sent. It has no judgment, so it cites nothing, and the report
+already publishes it as `untested` with what would test it (FR-026): it is a question the run
+leaves open, not an assertion, and withholding it would hide the next query from the on-call.
+
+### V3. The typed verification status
+
+`Investigation` gains `verification_status` (`VERIFIED`, `NOT_VERIFIED`) and
+`verification_detail`, stored on `investigation.investigations` by migration 0016.
+
+| Situation | Status | Detail |
+| --- | --- | --- |
+| Every claim checked and the verifier answered | `VERIFIED` | how many claims were kept, demoted, removed |
+| No model-authored claim in the run (model-free run, or a model that proposed no hypothesis) | `VERIFIED` | "no model-authored claim to verify"; the checker still ran |
+| Claims exist and no verifier is configured, or the verifier is the investigator's model | `NOT_VERIFIED` | the configuration reason |
+| The verifier call failed, timed out, refused or was not admitted by the budget | `NOT_VERIFIED` | the error or the exhausted budget |
+| The run failed (`StopFailed`) | `NOT_VERIFIED` | "the run failed before its claims could be verified" |
+
+Findings are written to `investigation.verifier_findings` and returned on the wire, whatever the
+status: a removed claim is part of how the answer was reached.
+
+### V4. What a removed or demoted claim does
+
+The ledger is append-only and its confidence is computed from typed judgments, so verification
+never edits it. A **removed** statement is withheld wherever it would be rendered: the ranked list
+and the verdict line show the hypothesis with "statement withheld" and the reason, and a removed
+top statement means the verdict line names no rollback candidate. A **demoted** statement is
+rendered with its unmatched figure named, as `verify.Check` already writes it. Both renderings read
+the findings from the investigation, so a report rebuilt from the wire says the same thing.
+
+### V5. The verifier's share of the budget
+
+FR-022c asks for a reserved share so that a `page` run reaches its hard stop with the verifier run.
+The verifier call passes the same admission as an investigator turn; the reservation is a published
+share of each profile's model budget that investigator turns may not consume (T122). Until T122
+lands, a verifier refused by admission yields `NOT_VERIFIED` with the exhausted budget named,
+which is the FR-022c fallback rather than a silent skip.
+
+### V6. The examination report and the expectation table (FR-022b)
+
+The expectation table is a checked-in, versioned file (`config/expectations/v1.yaml`): for each
+cause category, the decisive signal families, and the table's mode (`observe` or `enforce`). The
+report is computed at conclusion from three inputs the engine already holds: the search-space
+profile (FR-012a), the worker calls made (term class and target entity per call), and the ledger.
+In `observe` mode it is published and changes no status. A version moves to `enforce` only through
+ADR-0019 D4's dual gate, run by the evaluation job on the corpus; the cost of enforcement is
+published from the first run (FR-059a).
+
+### V7. Absence and paths (FR-046b, FR-019b)
+
+FR-046b adds RATE `compare` terms on each top candidate's graph callers and callees, and the edges
+`diff` reports as retracted in the window, to the first wave. A fall is scored by its magnitude.
+The fixtures' recorded worlds are extended under FR-046a; one new fixture, `stopped-flow-01`,
+carries a root cause visible only as a callee that stops receiving calls. FR-019b's path is built
+from the graph's typed edges between the candidate's targets and the subject, each edge citing the
+evidence that shows the fault crossed it; the harness scores that path and `causalPathOf` is
+retired.
+
+### V8. Baselines (FR-059b)
+
+The telemetry-free floor is the prior-only ranking the engine already publishes (FR-046a), scored
+as its own run. The simple harness needs a read-only interface a general agent can use; it is built
+on feature 010's MCP server and is therefore scheduled after 010 (ADR-0019 D3).
+
+### Order of work
+
+1. T121 (verification wired, typed status, findings persisted and rendered), then T122 (reserved
+   share). This closes the defect the audit found.
+2. T123–T125 (profile, expectation table in observe mode, examination report).
+3. T126–T127 (absence in the first wave, the stopped-flow fixture).
+4. T128–T129 (paths, process metrics, harness reads the engine's path).
+5. T130 (telemetry-free floor). T131 (simple harness) follows 010. T132 (enforce mode) follows a
+   baseline run. T133 (FR-013b) rides with the first change that adds a procedure to the brief.

@@ -52,6 +52,9 @@ const MaxSilentTurns = 2
 
 // Run carries the investigation from intake to a typed stop.
 func (e *Engine) Run(ctx context.Context) (Stop, error) {
+	e.mu.Lock()
+	e.runCtx = ctx
+	e.mu.Unlock()
 	if _, err := e.Publish(ctx); err != nil {
 		return e.fail(err)
 	}
@@ -369,6 +372,9 @@ func (e *Engine) applyHypothesis(input []byte) (string, error) {
 	if err := e.ledger.AddHypothesis(h, score); err != nil {
 		return "", err
 	}
+	e.mu.Lock()
+	e.modelHypotheses[id] = true
+	e.mu.Unlock()
 	updated, _ := e.ledger.Hypothesis(id)
 	return fmt.Sprintf("%s added with prior %.6f, assigned by the engine from %s. Its confidence will move "+
 		"only through judgments resting on evidence ids.",

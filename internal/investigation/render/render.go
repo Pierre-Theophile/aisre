@@ -10,6 +10,7 @@ import (
 
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/verify"
 )
 
 // The published rendering order (T085, FR-019, FR-028, FR-057c, FR-057d, SC-025).
@@ -234,19 +235,63 @@ func (r *Report) VerdictLine() string {
 	}
 	decisive := r.decisiveFact(top)
 	candidate := top.CandidateChangeEntityID
-	if candidate == "" {
+	statement := r.Statement(top)
+	// A statement the verifier removed names no rollback candidate (FR-022c, plan V4): the line an
+	// on-call acts on does not point at a change on the strength of a sentence nobody could cite.
+	if candidate == "" || r.Withheld(top.ID) != nil {
 		return fmt.Sprintf("%s (%s); %s; there is no rollback candidate",
-			top.Statement, bucket, decisive)
+			statement, bucket, decisive)
 	}
 	// An operator already rolled production back from it (004 T155): the change is still the one the
 	// evidence points at, but an on-call reading "rollback candidate" would reach for a button someone
 	// already pressed, so the line says so.
 	if r.rolledBack(top) {
 		return fmt.Sprintf("%s (%s); %s; rollback candidate: %s (already rolled back by an operator)",
-			top.Statement, bucket, decisive, candidate)
+			statement, bucket, decisive, candidate)
 	}
 	return fmt.Sprintf("%s (%s); %s; rollback candidate: %s",
-		top.Statement, bucket, decisive, candidate)
+		statement, bucket, decisive, candidate)
+}
+
+// finding returns the verifier's finding on hypothesis id's statement, if there is one.
+func (r *Report) finding(id string) *investigationv1.VerifierFinding {
+	ref := verify.HypothesisClaimRef(id)
+	for _, f := range r.Investigation.GetVerifierFindings() {
+		if f.GetClaimRef() == ref {
+			return f
+		}
+	}
+	return nil
+}
+
+// Withheld returns the finding that removed hypothesis id's statement, or nil when it was not
+// removed (FR-022c, plan V4).
+func (r *Report) Withheld(id string) *investigationv1.VerifierFinding {
+	if f := r.finding(id); f != nil && f.GetActionTaken() == verify.ActionRemoved {
+		return f
+	}
+	return nil
+}
+
+// Statement is the hypothesis's statement as it may be published. A statement the verification
+// pass removed is withheld with its reason; a demoted one carries the figure no cited evidence
+// holds. Both read the findings from the investigation, so a report rebuilt from the wire says
+// the same as the one the engine rendered (plan V4).
+func (r *Report) Statement(h HypothesisView) string {
+	f := r.finding(h.ID)
+	if f == nil {
+		return h.Statement
+	}
+	switch f.GetActionTaken() {
+	case verify.ActionRemoved:
+		return fmt.Sprintf("statement withheld (verifier: %s)", f.GetVerdict())
+	case verify.ActionDemoted:
+		if v := f.GetOffendingValue(); v != "" {
+			return fmt.Sprintf("%s [unverified figure: %s]", h.Statement, v)
+		}
+		return fmt.Sprintf("%s [unverified: %s]", h.Statement, f.GetVerdict())
+	}
+	return h.Statement
 }
 
 // rolledBack reports whether a platform-stated rollback away from the hypothesis's change supports it.
@@ -299,6 +344,12 @@ func (r *Report) writeVerdict(b *strings.Builder) {
 	if r.Investigation.GetProvisional() {
 		b.WriteString("provisional: this is the prior-only ranking; nothing has been tested yet\n")
 	}
+	switch r.Investigation.GetVerificationStatus() {
+	case investigationv1.VerificationStatus_VERIFIED:
+		fmt.Fprintf(b, "verification: verified — %s\n", r.Investigation.GetVerificationDetail())
+	case investigationv1.VerificationStatus_NOT_VERIFIED:
+		fmt.Fprintf(b, "verification: NOT VERIFIED — %s\n", r.Investigation.GetVerificationDetail())
+	}
 	for _, note := range r.Notes {
 		fmt.Fprintf(b, "note: %s\n", note)
 	}
@@ -311,7 +362,7 @@ func (r *Report) writeRanked(b *strings.Builder) {
 		// The id is printed beside the rank because it is what a reviewer types into
 		// `investigate review --amend <id>=<status>`: a ranked list nobody can refer to is a
 		// list nobody can correct (FR-054).
-		fmt.Fprintf(b, "%d. [%s] %s — %s (%s)\n", h.Rank, h.Status, h.Statement, h.Bucket, h.ID)
+		fmt.Fprintf(b, "%d. [%s] %s — %s (%s)\n", h.Rank, h.Status, r.Statement(h), h.Bucket, h.ID)
 		if h.Widened {
 			fmt.Fprintf(b, "   bucket widened %s: %s\n", h.WidenedDirection, h.WidenedReason)
 		}

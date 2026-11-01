@@ -96,18 +96,40 @@ func ConcludeInTx(ctx context.Context, tx pgx.Tx, investigationID string, c reco
 			recording_key = coalesce(nullif($10, ''), recording_key),
 			recording_digest = coalesce(nullif($11, ''), recording_digest),
 			decision_event_id = coalesce(nullif($12, ''), decision_event_id),
-			onset_estimate_evidence_id = coalesce(nullif($13, ''), onset_estimate_evidence_id)
+			onset_estimate_evidence_id = coalesce(nullif($13, ''), onset_estimate_evidence_id),
+			verification_status = $15,
+			verification_detail = $16
 		WHERE investigation_id = $1 AND lifecycle = $14`,
 		investigationID, record.LifecycleConcluded, c.Kind, c.Outcome,
 		record.StopReasonName(c.StopReason), c.StopDetail, nullable(c.VerdictLine),
 		nullable(c.RollbackCandidate), endedAt.UTC(),
 		c.RecordingKey, c.RecordingDigest, c.DecisionEventID, c.OnsetEstimateEvidenceID,
-		record.LifecycleRunning)
+		record.LifecycleRunning, nullable(c.VerificationStatus), nullable(c.VerificationDetail))
 	if err != nil {
 		return fmt.Errorf("investigation store: conclude %s: %w", investigationID, err)
 	}
 	if tag.RowsAffected() == 0 {
 		return guardFailure(ctx, tx, investigationID, record.ErrNotRunning)
+	}
+	return insertVerifierFindings(ctx, tx, investigationID, c.VerifierFindings)
+}
+
+// insertVerifierFindings writes every claim's verdict beside the conclusion (FR-022a). A finding
+// is keyed by its claim within the investigation, so a retried conclusion writes nothing twice.
+func insertVerifierFindings(ctx context.Context, tx pgx.Tx, investigationID string, findings []record.VerifierFinding) error {
+	for _, f := range findings {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO investigation.verifier_findings
+				(finding_id, investigation_id, claim_ref, verdict, offending_value,
+				 cited_evidence_id, note, action_taken)
+			VALUES ($1, $2, $3, $4, $5,
+			        (SELECT evidence_id FROM investigation.evidence_items WHERE evidence_id = nullif($6, '')),
+			        $7, $8)
+			ON CONFLICT (finding_id) DO NOTHING`,
+			investigationID+":"+f.ClaimRef, investigationID, f.ClaimRef, f.Verdict,
+			nullable(f.OffendingValue), f.CitedEvidenceID, nullable(f.Note), f.ActionTaken); err != nil {
+			return fmt.Errorf("investigation store: verifier finding %s of %s: %w", f.ClaimRef, investigationID, err)
+		}
 	}
 	return nil
 }

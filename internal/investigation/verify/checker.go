@@ -139,6 +139,14 @@ const (
 	ActionRemoved = "removed"
 )
 
+// HypothesisClaimPrefix prefixes the claim ref of a hypothesis statement the investigator wrote:
+// `hypothesis.<id>`. The engine sends claims under it and the renderer reads findings back by it,
+// to withhold or annotate the statement they condemn (FR-022c).
+const HypothesisClaimPrefix = "hypothesis."
+
+// HypothesisClaimRef is the claim ref of hypothesis id's statement.
+func HypothesisClaimRef(id string) string { return HypothesisClaimPrefix + id }
+
 // Finding is one claim's verdict, in the shape the investigation records (FR-022a).
 type Finding struct {
 	// ClaimRef is the claim.

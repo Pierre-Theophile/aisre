@@ -3,6 +3,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -176,6 +177,19 @@ type Engine struct {
 	provisional *Provisional
 
 	stopped *Stop
+
+	// runCtx is the context Run was called with, kept so that Stop — which every exit path calls
+	// and which takes none — can run the verification pass under it (FR-022c).
+	runCtx context.Context
+	// verifier is the fresh-context pass; nil when none can run, with verifierUnavailable saying
+	// why, which a run with claims reports as NOT_VERIFIED rather than skipping (FR-022c).
+	verifier            *verify.Verifier
+	verifierUnavailable string
+	// modelHypotheses are the hypotheses the investigator proposed: their statements are the
+	// sentences a model wrote, and so the claims the pass checks.
+	modelHypotheses map[string]bool
+	// verification is the pass's outcome, set once by Stop.
+	verification *Verification
 }
 
 // New opens an investigation.
@@ -220,6 +234,22 @@ func New(cfg Config) (*Engine, error) {
 	catalogue := NewCatalogue()
 	catalogue.SetChatChannel(cfg.Subject.ChatChannel)
 
+	// The verifier is built here rather than injected: it is a second role of the same client, and
+	// NewVerifier is what refuses a configuration where it would be the investigator's own model.
+	// A refusal is not an error for the engine. It is the reason a run with claims ends
+	// NOT_VERIFIED, said in the run's own record (FR-022c).
+	var verifier *verify.Verifier
+	unavailable := "no model is configured"
+	if cfg.Client != nil {
+		v, err := verify.NewVerifier(cfg.Client)
+		if err != nil {
+			unavailable = err.Error()
+		} else {
+			verifier = v
+			unavailable = ""
+		}
+	}
+
 	return &Engine{
 		id:            cfg.InvestigationID,
 		subject:       cfg.Subject,
@@ -238,6 +268,10 @@ func New(cfg Config) (*Engine, error) {
 		digests:       map[string]*investigationv1.Digest{},
 		rankerScores:  map[string]float64{},
 		changeOffsets: map[string]int64{},
+
+		verifier:            verifier,
+		verifierUnavailable: unavailable,
+		modelHypotheses:     map[string]bool{},
 	}, nil
 }
 
@@ -302,6 +336,13 @@ func (e *Engine) Stop(stop Stop) error {
 	if err := e.concludeVerdict(stop); err != nil {
 		return err
 	}
+	// The verification pass runs on every exit, before the stop record, so that its exchange is
+	// part of the trajectory and no exit can skip it silently (FR-022c).
+	ctx := e.runContext()
+	verification := e.verifyClaims(ctx, stop)
+	e.mu.Lock()
+	e.verification = &verification
+	e.mu.Unlock()
 	e.trajectory.Stop(stop, e.FinalLedger())
 	return nil
 }
@@ -335,6 +376,19 @@ func (e *Engine) FinalLedger() []*investigationv1.FinalHypothesis {
 }
 
 func (e *Engine) now() time.Time { return e.clock().UTC() }
+
+// runContext is the context Run was called with, or a background one for a Stop called outside
+// Run. A context the caller already cancelled is not inherited: the pass runs on work already
+// paid for, under a context detached from the caller's patience, as the conclusion's writes do.
+func (e *Engine) runContext() context.Context {
+	e.mu.Lock()
+	ctx := e.runCtx
+	e.mu.Unlock()
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithoutCancel(ctx)
+}
 
 func (e *Engine) nextEvidenceID() string {
 	e.mu.Lock()

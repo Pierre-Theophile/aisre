@@ -824,6 +824,57 @@ func (InvestigationOutcome) EnumDescriptor() ([]byte, []int) {
 	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{13}
 }
 
+// Whether the checker and the fresh-context verifier ran over the run's claims before it was
+// published (FR-022a, FR-022c). Never skipped silently: an unverified outcome says so and why.
+type VerificationStatus int32
+
+const (
+	VerificationStatus_VERIFICATION_STATUS_UNSPECIFIED VerificationStatus = 0
+	VerificationStatus_VERIFIED                        VerificationStatus = 1
+	VerificationStatus_NOT_VERIFIED                    VerificationStatus = 2
+)
+
+// Enum value maps for VerificationStatus.
+var (
+	VerificationStatus_name = map[int32]string{
+		0: "VERIFICATION_STATUS_UNSPECIFIED",
+		1: "VERIFIED",
+		2: "NOT_VERIFIED",
+	}
+	VerificationStatus_value = map[string]int32{
+		"VERIFICATION_STATUS_UNSPECIFIED": 0,
+		"VERIFIED":                        1,
+		"NOT_VERIFIED":                    2,
+	}
+)
+
+func (x VerificationStatus) Enum() *VerificationStatus {
+	p := new(VerificationStatus)
+	*p = x
+	return p
+}
+
+func (x VerificationStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (VerificationStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_sreagent_investigation_v1_investigation_proto_enumTypes[14].Descriptor()
+}
+
+func (VerificationStatus) Type() protoreflect.EnumType {
+	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[14]
+}
+
+func (x VerificationStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use VerificationStatus.Descriptor instead.
+func (VerificationStatus) EnumDescriptor() ([]byte, []int) {
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{14}
+}
+
 type StopReason int32
 
 const (
@@ -869,11 +920,11 @@ func (x StopReason) String() string {
 }
 
 func (StopReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_sreagent_investigation_v1_investigation_proto_enumTypes[14].Descriptor()
+	return file_sreagent_investigation_v1_investigation_proto_enumTypes[15].Descriptor()
 }
 
 func (StopReason) Type() protoreflect.EnumType {
-	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[14]
+	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[15]
 }
 
 func (x StopReason) Number() protoreflect.EnumNumber {
@@ -882,7 +933,7 @@ func (x StopReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use StopReason.Descriptor instead.
 func (StopReason) EnumDescriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{14}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{15}
 }
 
 // Origin of an intake, separate from the change actor kind: a monitor transition carries no
@@ -920,11 +971,11 @@ func (x IntakeOrigin) String() string {
 }
 
 func (IntakeOrigin) Descriptor() protoreflect.EnumDescriptor {
-	return file_sreagent_investigation_v1_investigation_proto_enumTypes[15].Descriptor()
+	return file_sreagent_investigation_v1_investigation_proto_enumTypes[16].Descriptor()
 }
 
 func (IntakeOrigin) Type() protoreflect.EnumType {
-	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[15]
+	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[16]
 }
 
 func (x IntakeOrigin) Number() protoreflect.EnumNumber {
@@ -933,7 +984,7 @@ func (x IntakeOrigin) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use IntakeOrigin.Descriptor instead.
 func (IntakeOrigin) EnumDescriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{15}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{16}
 }
 
 type TargetRefProvenance int32
@@ -975,11 +1026,11 @@ func (x TargetRefProvenance) String() string {
 }
 
 func (TargetRefProvenance) Descriptor() protoreflect.EnumDescriptor {
-	return file_sreagent_investigation_v1_investigation_proto_enumTypes[16].Descriptor()
+	return file_sreagent_investigation_v1_investigation_proto_enumTypes[17].Descriptor()
 }
 
 func (TargetRefProvenance) Type() protoreflect.EnumType {
-	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[16]
+	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[17]
 }
 
 func (x TargetRefProvenance) Number() protoreflect.EnumNumber {
@@ -988,7 +1039,7 @@ func (x TargetRefProvenance) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TargetRefProvenance.Descriptor instead.
 func (TargetRefProvenance) EnumDescriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{16}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{17}
 }
 
 type CulpritKind int32
@@ -1027,11 +1078,11 @@ func (x CulpritKind) String() string {
 }
 
 func (CulpritKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_sreagent_investigation_v1_investigation_proto_enumTypes[17].Descriptor()
+	return file_sreagent_investigation_v1_investigation_proto_enumTypes[18].Descriptor()
 }
 
 func (CulpritKind) Type() protoreflect.EnumType {
-	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[17]
+	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[18]
 }
 
 func (x CulpritKind) Number() protoreflect.EnumNumber {
@@ -1040,7 +1091,7 @@ func (x CulpritKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CulpritKind.Descriptor instead.
 func (CulpritKind) EnumDescriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{17}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{18}
 }
 
 type Provenance int32
@@ -1079,11 +1130,11 @@ func (x Provenance) String() string {
 }
 
 func (Provenance) Descriptor() protoreflect.EnumDescriptor {
-	return file_sreagent_investigation_v1_investigation_proto_enumTypes[18].Descriptor()
+	return file_sreagent_investigation_v1_investigation_proto_enumTypes[19].Descriptor()
 }
 
 func (Provenance) Type() protoreflect.EnumType {
-	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[18]
+	return &file_sreagent_investigation_v1_investigation_proto_enumTypes[19]
 }
 
 func (x Provenance) Number() protoreflect.EnumNumber {
@@ -1092,7 +1143,7 @@ func (x Provenance) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Provenance.Descriptor instead.
 func (Provenance) EnumDescriptor() ([]byte, []int) {
-	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{18}
+	return file_sreagent_investigation_v1_investigation_proto_rawDescGZIP(), []int{19}
 }
 
 // A window is either an explicit interval or a before/after pair around a reference instant.
@@ -6766,7 +6817,9 @@ type Investigation struct {
 	DecisionEventId         string                 `protobuf:"bytes,31,opt,name=decision_event_id,json=decisionEventId,proto3" json:"decision_event_id,omitempty"`
 	StartedAt               *timestamppb.Timestamp `protobuf:"bytes,32,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	EndedAt                 *timestamppb.Timestamp `protobuf:"bytes,33,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
-	Provisional             bool                   `protobuf:"varint,34,opt,name=provisional,proto3" json:"provisional,omitempty"` // true while only the prior-only ranking exists (FR-046a)
+	Provisional             bool                   `protobuf:"varint,34,opt,name=provisional,proto3" json:"provisional,omitempty"`                                                                                           // true while only the prior-only ranking exists (FR-046a)
+	VerificationStatus      VerificationStatus     `protobuf:"varint,36,opt,name=verification_status,json=verificationStatus,proto3,enum=sreagent.investigation.v1.VerificationStatus" json:"verification_status,omitempty"` // FR-022c; unspecified on runs concluded before it
+	VerificationDetail      string                 `protobuf:"bytes,37,opt,name=verification_detail,json=verificationDetail,proto3" json:"verification_detail,omitempty"`                                                    // why, in a sentence: counts kept/demoted/removed, or the reason
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -7044,6 +7097,20 @@ func (x *Investigation) GetProvisional() bool {
 		return x.Provisional
 	}
 	return false
+}
+
+func (x *Investigation) GetVerificationStatus() VerificationStatus {
+	if x != nil {
+		return x.VerificationStatus
+	}
+	return VerificationStatus_VERIFICATION_STATUS_UNSPECIFIED
+}
+
+func (x *Investigation) GetVerificationDetail() string {
+	if x != nil {
+		return x.VerificationDetail
+	}
+	return ""
 }
 
 type DeclareRequest struct {
@@ -9504,7 +9571,7 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\n" +
 	"next_query\x18\x03 \x01(\v2&.sreagent.investigation.v1.AlgebraTermR\tnextQuery\x12\x1b\n" +
 	"\tdeep_link\x18\x04 \x01(\tR\bdeepLink\x12#\n" +
-	"\rhypothesis_id\x18\x05 \x01(\tR\fhypothesisId\"\x88\x0f\n" +
+	"\rhypothesis_id\x18\x05 \x01(\tR\fhypothesisId\"\x99\x10\n" +
 	"\rInvestigation\x12)\n" +
 	"\x10investigation_id\x18\x01 \x01(\tR\x0finvestigationId\x12\x1f\n" +
 	"\vincident_id\x18\x02 \x01(\tR\n" +
@@ -9549,7 +9616,9 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\n" +
 	"started_at\x18  \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
 	"\bended_at\x18! \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12 \n" +
-	"\vprovisional\x18\" \x01(\bR\vprovisional\"\x9b\x01\n" +
+	"\vprovisional\x18\" \x01(\bR\vprovisional\x12^\n" +
+	"\x13verification_status\x18$ \x01(\x0e2-.sreagent.investigation.v1.VerificationStatusR\x12verificationStatus\x12/\n" +
+	"\x13verification_detail\x18% \x01(\tR\x12verificationDetail\"\x9b\x01\n" +
 	"\x0eDeclareRequest\x12D\n" +
 	"\vdeclaration\x18\x01 \x01(\v2\".sreagent.investigation.v1.SymptomR\vdeclaration\x12)\n" +
 	"\x10lookback_seconds\x18\x02 \x01(\x03R\x0flookbackSeconds\x12\x18\n" +
@@ -9808,7 +9877,11 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\x06RANKED\x10\x01\x12\v\n" +
 	"\aUNKNOWN\x10\x02\x12\x14\n" +
 	"\x10BUDGET_EXHAUSTED\x10\x03\x12\x18\n" +
-	"\x14INVESTIGATION_FAILED\x10\x04*\xa4\x01\n" +
+	"\x14INVESTIGATION_FAILED\x10\x04*Y\n" +
+	"\x12VerificationStatus\x12#\n" +
+	"\x1fVERIFICATION_STATUS_UNSPECIFIED\x10\x00\x12\f\n" +
+	"\bVERIFIED\x10\x01\x12\x10\n" +
+	"\fNOT_VERIFIED\x10\x02*\xa4\x01\n" +
 	"\n" +
 	"StopReason\x12\x1b\n" +
 	"\x17STOP_REASON_UNSPECIFIED\x10\x00\x12\r\n" +
@@ -9867,7 +9940,7 @@ func file_sreagent_investigation_v1_investigation_proto_rawDescGZIP() []byte {
 	return file_sreagent_investigation_v1_investigation_proto_rawDescData
 }
 
-var file_sreagent_investigation_v1_investigation_proto_enumTypes = make([]protoimpl.EnumInfo, 19)
+var file_sreagent_investigation_v1_investigation_proto_enumTypes = make([]protoimpl.EnumInfo, 20)
 var file_sreagent_investigation_v1_investigation_proto_msgTypes = make([]protoimpl.MessageInfo, 107)
 var file_sreagent_investigation_v1_investigation_proto_goTypes = []any{
 	(Statistic)(0),                     // 0: sreagent.investigation.v1.Statistic
@@ -9884,378 +9957,380 @@ var file_sreagent_investigation_v1_investigation_proto_goTypes = []any{
 	(Lifecycle)(0),                     // 11: sreagent.investigation.v1.Lifecycle
 	(ConclusionKind)(0),                // 12: sreagent.investigation.v1.ConclusionKind
 	(InvestigationOutcome)(0),          // 13: sreagent.investigation.v1.InvestigationOutcome
-	(StopReason)(0),                    // 14: sreagent.investigation.v1.StopReason
-	(IntakeOrigin)(0),                  // 15: sreagent.investigation.v1.IntakeOrigin
-	(TargetRefProvenance)(0),           // 16: sreagent.investigation.v1.TargetRefProvenance
-	(CulpritKind)(0),                   // 17: sreagent.investigation.v1.CulpritKind
-	(Provenance)(0),                    // 18: sreagent.investigation.v1.Provenance
-	(*Window)(nil),                     // 19: sreagent.investigation.v1.Window
-	(*WindowPair)(nil),                 // 20: sreagent.investigation.v1.WindowPair
-	(*Handle)(nil),                     // 21: sreagent.investigation.v1.Handle
-	(*GraphTerm)(nil),                  // 22: sreagent.investigation.v1.GraphTerm
-	(*CompareTerm)(nil),                // 23: sreagent.investigation.v1.CompareTerm
-	(*OnsetTerm)(nil),                  // 24: sreagent.investigation.v1.OnsetTerm
-	(*NewLogPatternsTerm)(nil),         // 25: sreagent.investigation.v1.NewLogPatternsTerm
-	(*ErrorSpansTerm)(nil),             // 26: sreagent.investigation.v1.ErrorSpansTerm
-	(*ErrorsByVersionTerm)(nil),        // 27: sreagent.investigation.v1.ErrorsByVersionTerm
-	(*MonitorStateTerm)(nil),           // 28: sreagent.investigation.v1.MonitorStateTerm
-	(*ExemplarsTerm)(nil),              // 29: sreagent.investigation.v1.ExemplarsTerm
-	(*DrillDownTerm)(nil),              // 30: sreagent.investigation.v1.DrillDownTerm
-	(*KnowledgeSearchTerm)(nil),        // 31: sreagent.investigation.v1.KnowledgeSearchTerm
-	(*ChatMentionsTerm)(nil),           // 32: sreagent.investigation.v1.ChatMentionsTerm
-	(*ChatTimelineTerm)(nil),           // 33: sreagent.investigation.v1.ChatTimelineTerm
-	(*AlgebraTerm)(nil),                // 34: sreagent.investigation.v1.AlgebraTerm
-	(*Coverage)(nil),                   // 35: sreagent.investigation.v1.Coverage
-	(*JoinKeys)(nil),                   // 36: sreagent.investigation.v1.JoinKeys
-	(*DrillDown)(nil),                  // 37: sreagent.investigation.v1.DrillDown
-	(*Truncated)(nil),                  // 38: sreagent.investigation.v1.Truncated
-	(*SeriesSummary)(nil),              // 39: sreagent.investigation.v1.SeriesSummary
-	(*Comparison)(nil),                 // 40: sreagent.investigation.v1.Comparison
-	(*MetricDigest)(nil),               // 41: sreagent.investigation.v1.MetricDigest
-	(*LogPattern)(nil),                 // 42: sreagent.investigation.v1.LogPattern
-	(*LogDigest)(nil),                  // 43: sreagent.investigation.v1.LogDigest
-	(*SpanGroup)(nil),                  // 44: sreagent.investigation.v1.SpanGroup
-	(*TraceDigest)(nil),                // 45: sreagent.investigation.v1.TraceDigest
-	(*MonitorTransition)(nil),          // 46: sreagent.investigation.v1.MonitorTransition
-	(*MonitorStateDigest)(nil),         // 47: sreagent.investigation.v1.MonitorStateDigest
-	(*OnsetDigest)(nil),                // 48: sreagent.investigation.v1.OnsetDigest
-	(*VersionBreakdown)(nil),           // 49: sreagent.investigation.v1.VersionBreakdown
-	(*ErrorsByVersionDigest)(nil),      // 50: sreagent.investigation.v1.ErrorsByVersionDigest
-	(*Exemplar)(nil),                   // 51: sreagent.investigation.v1.Exemplar
-	(*ExemplarDigest)(nil),             // 52: sreagent.investigation.v1.ExemplarDigest
-	(*KnowledgeItem)(nil),              // 53: sreagent.investigation.v1.KnowledgeItem
-	(*KnowledgeDigest)(nil),            // 54: sreagent.investigation.v1.KnowledgeDigest
-	(*ChatMentionsDigest)(nil),         // 55: sreagent.investigation.v1.ChatMentionsDigest
-	(*ChatBucket)(nil),                 // 56: sreagent.investigation.v1.ChatBucket
-	(*ChatTimelineDigest)(nil),         // 57: sreagent.investigation.v1.ChatTimelineDigest
-	(*Digest)(nil),                     // 58: sreagent.investigation.v1.Digest
-	(*AlgebraRequest)(nil),             // 59: sreagent.investigation.v1.AlgebraRequest
-	(*AlgebraResponse)(nil),            // 60: sreagent.investigation.v1.AlgebraResponse
-	(*Capability)(nil),                 // 61: sreagent.investigation.v1.Capability
-	(*RedactionPolicy)(nil),            // 62: sreagent.investigation.v1.RedactionPolicy
-	(*WorkerDescription)(nil),          // 63: sreagent.investigation.v1.WorkerDescription
-	(*BackendDescription)(nil),         // 64: sreagent.investigation.v1.BackendDescription
-	(*DescribeBackendRequest)(nil),     // 65: sreagent.investigation.v1.DescribeBackendRequest
-	(*ConfidenceBucket)(nil),           // 66: sreagent.investigation.v1.ConfidenceBucket
-	(*Hypothesis)(nil),                 // 67: sreagent.investigation.v1.Hypothesis
-	(*Judgment)(nil),                   // 68: sreagent.investigation.v1.Judgment
-	(*EvidenceItem)(nil),               // 69: sreagent.investigation.v1.EvidenceItem
-	(*Ledger)(nil),                     // 70: sreagent.investigation.v1.Ledger
-	(*TargetRef)(nil),                  // 71: sreagent.investigation.v1.TargetRef
-	(*Symptom)(nil),                    // 72: sreagent.investigation.v1.Symptom
-	(*ReportDelivery)(nil),             // 73: sreagent.investigation.v1.ReportDelivery
-	(*BudgetProfile)(nil),              // 74: sreagent.investigation.v1.BudgetProfile
-	(*BudgetSpend)(nil),                // 75: sreagent.investigation.v1.BudgetSpend
-	(*HumanFact)(nil),                  // 76: sreagent.investigation.v1.HumanFact
-	(*HumanReview)(nil),                // 77: sreagent.investigation.v1.HumanReview
-	(*Label)(nil),                      // 78: sreagent.investigation.v1.Label
-	(*VerifierFinding)(nil),            // 79: sreagent.investigation.v1.VerifierFinding
-	(*Resolution)(nil),                 // 80: sreagent.investigation.v1.Resolution
-	(*Investigation)(nil),              // 81: sreagent.investigation.v1.Investigation
-	(*DeclareRequest)(nil),             // 82: sreagent.investigation.v1.DeclareRequest
-	(*InvestigateRequest)(nil),         // 83: sreagent.investigation.v1.InvestigateRequest
-	(*GetRequest)(nil),                 // 84: sreagent.investigation.v1.GetRequest
-	(*ReplayRequest)(nil),              // 85: sreagent.investigation.v1.ReplayRequest
-	(*ReplayResponse)(nil),             // 86: sreagent.investigation.v1.ReplayResponse
-	(*ReopenRequest)(nil),              // 87: sreagent.investigation.v1.ReopenRequest
-	(*SubmitHumanFactRequest)(nil),     // 88: sreagent.investigation.v1.SubmitHumanFactRequest
-	(*LabelRequest)(nil),               // 89: sreagent.investigation.v1.LabelRequest
-	(*ReviewRequest)(nil),              // 90: sreagent.investigation.v1.ReviewRequest
-	(*ListInvestigationsRequest)(nil),  // 91: sreagent.investigation.v1.ListInvestigationsRequest
-	(*ListInvestigationsResponse)(nil), // 92: sreagent.investigation.v1.ListInvestigationsResponse
-	(*ExportRequest)(nil),              // 93: sreagent.investigation.v1.ExportRequest
-	(*ExportResponse)(nil),             // 94: sreagent.investigation.v1.ExportResponse
-	(*ModelRequestRecord)(nil),         // 95: sreagent.investigation.v1.ModelRequestRecord
-	(*ModelResponseRecord)(nil),        // 96: sreagent.investigation.v1.ModelResponseRecord
-	(*WorkerRequestRecord)(nil),        // 97: sreagent.investigation.v1.WorkerRequestRecord
-	(*WorkerResponseRecord)(nil),       // 98: sreagent.investigation.v1.WorkerResponseRecord
-	(*LedgerUpdateRecord)(nil),         // 99: sreagent.investigation.v1.LedgerUpdateRecord
-	(*FinalHypothesis)(nil),            // 100: sreagent.investigation.v1.FinalHypothesis
-	(*StopRecord)(nil),                 // 101: sreagent.investigation.v1.StopRecord
-	(*TrajectoryRecord)(nil),           // 102: sreagent.investigation.v1.TrajectoryRecord
-	(*WorldIndex)(nil),                 // 103: sreagent.investigation.v1.WorldIndex
-	(*CausalStep)(nil),                 // 104: sreagent.investigation.v1.CausalStep
-	(*EvidencePredicate)(nil),          // 105: sreagent.investigation.v1.EvidencePredicate
-	(*GroundTruth)(nil),                // 106: sreagent.investigation.v1.GroundTruth
-	(*EvidencePredicateList)(nil),      // 107: sreagent.investigation.v1.EvidencePredicateList
-	nil,                                // 108: sreagent.investigation.v1.SeriesSummary.TagsEntry
-	nil,                                // 109: sreagent.investigation.v1.SeriesSummary.StatisticsEntry
-	nil,                                // 110: sreagent.investigation.v1.LogDigest.CountsByStatusEntry
-	nil,                                // 111: sreagent.investigation.v1.SpanGroup.LatencyEntry
-	nil,                                // 112: sreagent.investigation.v1.MonitorStateDigest.PerGroupStateEntry
-	nil,                                // 113: sreagent.investigation.v1.OnsetDigest.MethodParametersEntry
-	nil,                                // 114: sreagent.investigation.v1.BackendDescription.CostClassesEntry
-	nil,                                // 115: sreagent.investigation.v1.BudgetProfile.CallsPerBackendEntry
-	nil,                                // 116: sreagent.investigation.v1.BudgetProfile.CallsPerCostClassEntry
-	nil,                                // 117: sreagent.investigation.v1.BudgetSpend.TokensByModelAndClassEntry
-	nil,                                // 118: sreagent.investigation.v1.BudgetSpend.CallsByWorkerEntry
-	nil,                                // 119: sreagent.investigation.v1.BudgetSpend.CallsByBackendEntry
-	nil,                                // 120: sreagent.investigation.v1.BudgetSpend.CallsByCostClassEntry
-	nil,                                // 121: sreagent.investigation.v1.BudgetSpend.QuotaShareUsedEntry
-	nil,                                // 122: sreagent.investigation.v1.BudgetSpend.RemainingQuotaObservedEntry
-	nil,                                // 123: sreagent.investigation.v1.ModelResponseRecord.UsageEntry
-	nil,                                // 124: sreagent.investigation.v1.WorldIndex.TermKeyToFileEntry
-	nil,                                // 125: sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry
-	(*timestamppb.Timestamp)(nil),      // 126: google.protobuf.Timestamp
-	(*v1.SubgraphRequest)(nil),         // 127: sreagent.graph.v1.SubgraphRequest
-	(*v1.DiffRequest)(nil),             // 128: sreagent.graph.v1.DiffRequest
-	(*v1.ImpactRequest)(nil),           // 129: sreagent.graph.v1.ImpactRequest
-	(*v1.PointersRequest)(nil),         // 130: sreagent.graph.v1.PointersRequest
-	(*v1.NodeHistoryRequest)(nil),      // 131: sreagent.graph.v1.NodeHistoryRequest
-	(*v1.ResolutionAuditRequest)(nil),  // 132: sreagent.graph.v1.ResolutionAuditRequest
-	(*v1.ExtentRequest)(nil),           // 133: sreagent.graph.v1.ExtentRequest
-	(*v1.Pointer)(nil),                 // 134: sreagent.graph.v1.Pointer
-	(v1.EdgeType)(0),                   // 135: sreagent.graph.v1.EdgeType
-	(*v1.Ref)(nil),                     // 136: sreagent.graph.v1.Ref
-	(*v1.Interval)(nil),                // 137: sreagent.graph.v1.Interval
-	(*structpb.Struct)(nil),            // 138: google.protobuf.Struct
-	(*structpb.Value)(nil),             // 139: google.protobuf.Value
+	(VerificationStatus)(0),            // 14: sreagent.investigation.v1.VerificationStatus
+	(StopReason)(0),                    // 15: sreagent.investigation.v1.StopReason
+	(IntakeOrigin)(0),                  // 16: sreagent.investigation.v1.IntakeOrigin
+	(TargetRefProvenance)(0),           // 17: sreagent.investigation.v1.TargetRefProvenance
+	(CulpritKind)(0),                   // 18: sreagent.investigation.v1.CulpritKind
+	(Provenance)(0),                    // 19: sreagent.investigation.v1.Provenance
+	(*Window)(nil),                     // 20: sreagent.investigation.v1.Window
+	(*WindowPair)(nil),                 // 21: sreagent.investigation.v1.WindowPair
+	(*Handle)(nil),                     // 22: sreagent.investigation.v1.Handle
+	(*GraphTerm)(nil),                  // 23: sreagent.investigation.v1.GraphTerm
+	(*CompareTerm)(nil),                // 24: sreagent.investigation.v1.CompareTerm
+	(*OnsetTerm)(nil),                  // 25: sreagent.investigation.v1.OnsetTerm
+	(*NewLogPatternsTerm)(nil),         // 26: sreagent.investigation.v1.NewLogPatternsTerm
+	(*ErrorSpansTerm)(nil),             // 27: sreagent.investigation.v1.ErrorSpansTerm
+	(*ErrorsByVersionTerm)(nil),        // 28: sreagent.investigation.v1.ErrorsByVersionTerm
+	(*MonitorStateTerm)(nil),           // 29: sreagent.investigation.v1.MonitorStateTerm
+	(*ExemplarsTerm)(nil),              // 30: sreagent.investigation.v1.ExemplarsTerm
+	(*DrillDownTerm)(nil),              // 31: sreagent.investigation.v1.DrillDownTerm
+	(*KnowledgeSearchTerm)(nil),        // 32: sreagent.investigation.v1.KnowledgeSearchTerm
+	(*ChatMentionsTerm)(nil),           // 33: sreagent.investigation.v1.ChatMentionsTerm
+	(*ChatTimelineTerm)(nil),           // 34: sreagent.investigation.v1.ChatTimelineTerm
+	(*AlgebraTerm)(nil),                // 35: sreagent.investigation.v1.AlgebraTerm
+	(*Coverage)(nil),                   // 36: sreagent.investigation.v1.Coverage
+	(*JoinKeys)(nil),                   // 37: sreagent.investigation.v1.JoinKeys
+	(*DrillDown)(nil),                  // 38: sreagent.investigation.v1.DrillDown
+	(*Truncated)(nil),                  // 39: sreagent.investigation.v1.Truncated
+	(*SeriesSummary)(nil),              // 40: sreagent.investigation.v1.SeriesSummary
+	(*Comparison)(nil),                 // 41: sreagent.investigation.v1.Comparison
+	(*MetricDigest)(nil),               // 42: sreagent.investigation.v1.MetricDigest
+	(*LogPattern)(nil),                 // 43: sreagent.investigation.v1.LogPattern
+	(*LogDigest)(nil),                  // 44: sreagent.investigation.v1.LogDigest
+	(*SpanGroup)(nil),                  // 45: sreagent.investigation.v1.SpanGroup
+	(*TraceDigest)(nil),                // 46: sreagent.investigation.v1.TraceDigest
+	(*MonitorTransition)(nil),          // 47: sreagent.investigation.v1.MonitorTransition
+	(*MonitorStateDigest)(nil),         // 48: sreagent.investigation.v1.MonitorStateDigest
+	(*OnsetDigest)(nil),                // 49: sreagent.investigation.v1.OnsetDigest
+	(*VersionBreakdown)(nil),           // 50: sreagent.investigation.v1.VersionBreakdown
+	(*ErrorsByVersionDigest)(nil),      // 51: sreagent.investigation.v1.ErrorsByVersionDigest
+	(*Exemplar)(nil),                   // 52: sreagent.investigation.v1.Exemplar
+	(*ExemplarDigest)(nil),             // 53: sreagent.investigation.v1.ExemplarDigest
+	(*KnowledgeItem)(nil),              // 54: sreagent.investigation.v1.KnowledgeItem
+	(*KnowledgeDigest)(nil),            // 55: sreagent.investigation.v1.KnowledgeDigest
+	(*ChatMentionsDigest)(nil),         // 56: sreagent.investigation.v1.ChatMentionsDigest
+	(*ChatBucket)(nil),                 // 57: sreagent.investigation.v1.ChatBucket
+	(*ChatTimelineDigest)(nil),         // 58: sreagent.investigation.v1.ChatTimelineDigest
+	(*Digest)(nil),                     // 59: sreagent.investigation.v1.Digest
+	(*AlgebraRequest)(nil),             // 60: sreagent.investigation.v1.AlgebraRequest
+	(*AlgebraResponse)(nil),            // 61: sreagent.investigation.v1.AlgebraResponse
+	(*Capability)(nil),                 // 62: sreagent.investigation.v1.Capability
+	(*RedactionPolicy)(nil),            // 63: sreagent.investigation.v1.RedactionPolicy
+	(*WorkerDescription)(nil),          // 64: sreagent.investigation.v1.WorkerDescription
+	(*BackendDescription)(nil),         // 65: sreagent.investigation.v1.BackendDescription
+	(*DescribeBackendRequest)(nil),     // 66: sreagent.investigation.v1.DescribeBackendRequest
+	(*ConfidenceBucket)(nil),           // 67: sreagent.investigation.v1.ConfidenceBucket
+	(*Hypothesis)(nil),                 // 68: sreagent.investigation.v1.Hypothesis
+	(*Judgment)(nil),                   // 69: sreagent.investigation.v1.Judgment
+	(*EvidenceItem)(nil),               // 70: sreagent.investigation.v1.EvidenceItem
+	(*Ledger)(nil),                     // 71: sreagent.investigation.v1.Ledger
+	(*TargetRef)(nil),                  // 72: sreagent.investigation.v1.TargetRef
+	(*Symptom)(nil),                    // 73: sreagent.investigation.v1.Symptom
+	(*ReportDelivery)(nil),             // 74: sreagent.investigation.v1.ReportDelivery
+	(*BudgetProfile)(nil),              // 75: sreagent.investigation.v1.BudgetProfile
+	(*BudgetSpend)(nil),                // 76: sreagent.investigation.v1.BudgetSpend
+	(*HumanFact)(nil),                  // 77: sreagent.investigation.v1.HumanFact
+	(*HumanReview)(nil),                // 78: sreagent.investigation.v1.HumanReview
+	(*Label)(nil),                      // 79: sreagent.investigation.v1.Label
+	(*VerifierFinding)(nil),            // 80: sreagent.investigation.v1.VerifierFinding
+	(*Resolution)(nil),                 // 81: sreagent.investigation.v1.Resolution
+	(*Investigation)(nil),              // 82: sreagent.investigation.v1.Investigation
+	(*DeclareRequest)(nil),             // 83: sreagent.investigation.v1.DeclareRequest
+	(*InvestigateRequest)(nil),         // 84: sreagent.investigation.v1.InvestigateRequest
+	(*GetRequest)(nil),                 // 85: sreagent.investigation.v1.GetRequest
+	(*ReplayRequest)(nil),              // 86: sreagent.investigation.v1.ReplayRequest
+	(*ReplayResponse)(nil),             // 87: sreagent.investigation.v1.ReplayResponse
+	(*ReopenRequest)(nil),              // 88: sreagent.investigation.v1.ReopenRequest
+	(*SubmitHumanFactRequest)(nil),     // 89: sreagent.investigation.v1.SubmitHumanFactRequest
+	(*LabelRequest)(nil),               // 90: sreagent.investigation.v1.LabelRequest
+	(*ReviewRequest)(nil),              // 91: sreagent.investigation.v1.ReviewRequest
+	(*ListInvestigationsRequest)(nil),  // 92: sreagent.investigation.v1.ListInvestigationsRequest
+	(*ListInvestigationsResponse)(nil), // 93: sreagent.investigation.v1.ListInvestigationsResponse
+	(*ExportRequest)(nil),              // 94: sreagent.investigation.v1.ExportRequest
+	(*ExportResponse)(nil),             // 95: sreagent.investigation.v1.ExportResponse
+	(*ModelRequestRecord)(nil),         // 96: sreagent.investigation.v1.ModelRequestRecord
+	(*ModelResponseRecord)(nil),        // 97: sreagent.investigation.v1.ModelResponseRecord
+	(*WorkerRequestRecord)(nil),        // 98: sreagent.investigation.v1.WorkerRequestRecord
+	(*WorkerResponseRecord)(nil),       // 99: sreagent.investigation.v1.WorkerResponseRecord
+	(*LedgerUpdateRecord)(nil),         // 100: sreagent.investigation.v1.LedgerUpdateRecord
+	(*FinalHypothesis)(nil),            // 101: sreagent.investigation.v1.FinalHypothesis
+	(*StopRecord)(nil),                 // 102: sreagent.investigation.v1.StopRecord
+	(*TrajectoryRecord)(nil),           // 103: sreagent.investigation.v1.TrajectoryRecord
+	(*WorldIndex)(nil),                 // 104: sreagent.investigation.v1.WorldIndex
+	(*CausalStep)(nil),                 // 105: sreagent.investigation.v1.CausalStep
+	(*EvidencePredicate)(nil),          // 106: sreagent.investigation.v1.EvidencePredicate
+	(*GroundTruth)(nil),                // 107: sreagent.investigation.v1.GroundTruth
+	(*EvidencePredicateList)(nil),      // 108: sreagent.investigation.v1.EvidencePredicateList
+	nil,                                // 109: sreagent.investigation.v1.SeriesSummary.TagsEntry
+	nil,                                // 110: sreagent.investigation.v1.SeriesSummary.StatisticsEntry
+	nil,                                // 111: sreagent.investigation.v1.LogDigest.CountsByStatusEntry
+	nil,                                // 112: sreagent.investigation.v1.SpanGroup.LatencyEntry
+	nil,                                // 113: sreagent.investigation.v1.MonitorStateDigest.PerGroupStateEntry
+	nil,                                // 114: sreagent.investigation.v1.OnsetDigest.MethodParametersEntry
+	nil,                                // 115: sreagent.investigation.v1.BackendDescription.CostClassesEntry
+	nil,                                // 116: sreagent.investigation.v1.BudgetProfile.CallsPerBackendEntry
+	nil,                                // 117: sreagent.investigation.v1.BudgetProfile.CallsPerCostClassEntry
+	nil,                                // 118: sreagent.investigation.v1.BudgetSpend.TokensByModelAndClassEntry
+	nil,                                // 119: sreagent.investigation.v1.BudgetSpend.CallsByWorkerEntry
+	nil,                                // 120: sreagent.investigation.v1.BudgetSpend.CallsByBackendEntry
+	nil,                                // 121: sreagent.investigation.v1.BudgetSpend.CallsByCostClassEntry
+	nil,                                // 122: sreagent.investigation.v1.BudgetSpend.QuotaShareUsedEntry
+	nil,                                // 123: sreagent.investigation.v1.BudgetSpend.RemainingQuotaObservedEntry
+	nil,                                // 124: sreagent.investigation.v1.ModelResponseRecord.UsageEntry
+	nil,                                // 125: sreagent.investigation.v1.WorldIndex.TermKeyToFileEntry
+	nil,                                // 126: sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry
+	(*timestamppb.Timestamp)(nil),      // 127: google.protobuf.Timestamp
+	(*v1.SubgraphRequest)(nil),         // 128: sreagent.graph.v1.SubgraphRequest
+	(*v1.DiffRequest)(nil),             // 129: sreagent.graph.v1.DiffRequest
+	(*v1.ImpactRequest)(nil),           // 130: sreagent.graph.v1.ImpactRequest
+	(*v1.PointersRequest)(nil),         // 131: sreagent.graph.v1.PointersRequest
+	(*v1.NodeHistoryRequest)(nil),      // 132: sreagent.graph.v1.NodeHistoryRequest
+	(*v1.ResolutionAuditRequest)(nil),  // 133: sreagent.graph.v1.ResolutionAuditRequest
+	(*v1.ExtentRequest)(nil),           // 134: sreagent.graph.v1.ExtentRequest
+	(*v1.Pointer)(nil),                 // 135: sreagent.graph.v1.Pointer
+	(v1.EdgeType)(0),                   // 136: sreagent.graph.v1.EdgeType
+	(*v1.Ref)(nil),                     // 137: sreagent.graph.v1.Ref
+	(*v1.Interval)(nil),                // 138: sreagent.graph.v1.Interval
+	(*structpb.Struct)(nil),            // 139: google.protobuf.Struct
+	(*structpb.Value)(nil),             // 140: google.protobuf.Value
 }
 var file_sreagent_investigation_v1_investigation_proto_depIdxs = []int32{
-	126, // 0: sreagent.investigation.v1.Window.start:type_name -> google.protobuf.Timestamp
-	126, // 1: sreagent.investigation.v1.Window.end:type_name -> google.protobuf.Timestamp
-	126, // 2: sreagent.investigation.v1.WindowPair.reference_at:type_name -> google.protobuf.Timestamp
-	19,  // 3: sreagent.investigation.v1.WindowPair.baseline:type_name -> sreagent.investigation.v1.Window
-	19,  // 4: sreagent.investigation.v1.WindowPair.symptom:type_name -> sreagent.investigation.v1.Window
-	127, // 5: sreagent.investigation.v1.GraphTerm.subgraph:type_name -> sreagent.graph.v1.SubgraphRequest
-	128, // 6: sreagent.investigation.v1.GraphTerm.diff:type_name -> sreagent.graph.v1.DiffRequest
-	129, // 7: sreagent.investigation.v1.GraphTerm.impact:type_name -> sreagent.graph.v1.ImpactRequest
-	130, // 8: sreagent.investigation.v1.GraphTerm.pointers:type_name -> sreagent.graph.v1.PointersRequest
-	131, // 9: sreagent.investigation.v1.GraphTerm.node_history:type_name -> sreagent.graph.v1.NodeHistoryRequest
-	132, // 10: sreagent.investigation.v1.GraphTerm.resolution_audit:type_name -> sreagent.graph.v1.ResolutionAuditRequest
-	133, // 11: sreagent.investigation.v1.GraphTerm.extent:type_name -> sreagent.graph.v1.ExtentRequest
-	134, // 12: sreagent.investigation.v1.CompareTerm.pointer:type_name -> sreagent.graph.v1.Pointer
-	20,  // 13: sreagent.investigation.v1.CompareTerm.windows:type_name -> sreagent.investigation.v1.WindowPair
+	127, // 0: sreagent.investigation.v1.Window.start:type_name -> google.protobuf.Timestamp
+	127, // 1: sreagent.investigation.v1.Window.end:type_name -> google.protobuf.Timestamp
+	127, // 2: sreagent.investigation.v1.WindowPair.reference_at:type_name -> google.protobuf.Timestamp
+	20,  // 3: sreagent.investigation.v1.WindowPair.baseline:type_name -> sreagent.investigation.v1.Window
+	20,  // 4: sreagent.investigation.v1.WindowPair.symptom:type_name -> sreagent.investigation.v1.Window
+	128, // 5: sreagent.investigation.v1.GraphTerm.subgraph:type_name -> sreagent.graph.v1.SubgraphRequest
+	129, // 6: sreagent.investigation.v1.GraphTerm.diff:type_name -> sreagent.graph.v1.DiffRequest
+	130, // 7: sreagent.investigation.v1.GraphTerm.impact:type_name -> sreagent.graph.v1.ImpactRequest
+	131, // 8: sreagent.investigation.v1.GraphTerm.pointers:type_name -> sreagent.graph.v1.PointersRequest
+	132, // 9: sreagent.investigation.v1.GraphTerm.node_history:type_name -> sreagent.graph.v1.NodeHistoryRequest
+	133, // 10: sreagent.investigation.v1.GraphTerm.resolution_audit:type_name -> sreagent.graph.v1.ResolutionAuditRequest
+	134, // 11: sreagent.investigation.v1.GraphTerm.extent:type_name -> sreagent.graph.v1.ExtentRequest
+	135, // 12: sreagent.investigation.v1.CompareTerm.pointer:type_name -> sreagent.graph.v1.Pointer
+	21,  // 13: sreagent.investigation.v1.CompareTerm.windows:type_name -> sreagent.investigation.v1.WindowPair
 	0,   // 14: sreagent.investigation.v1.CompareTerm.statistic:type_name -> sreagent.investigation.v1.Statistic
-	134, // 15: sreagent.investigation.v1.OnsetTerm.pointer:type_name -> sreagent.graph.v1.Pointer
-	19,  // 16: sreagent.investigation.v1.OnsetTerm.search_window:type_name -> sreagent.investigation.v1.Window
+	135, // 15: sreagent.investigation.v1.OnsetTerm.pointer:type_name -> sreagent.graph.v1.Pointer
+	20,  // 16: sreagent.investigation.v1.OnsetTerm.search_window:type_name -> sreagent.investigation.v1.Window
 	1,   // 17: sreagent.investigation.v1.OnsetTerm.method:type_name -> sreagent.investigation.v1.OnsetMethod
-	134, // 18: sreagent.investigation.v1.NewLogPatternsTerm.pointer:type_name -> sreagent.graph.v1.Pointer
-	19,  // 19: sreagent.investigation.v1.NewLogPatternsTerm.window:type_name -> sreagent.investigation.v1.Window
-	19,  // 20: sreagent.investigation.v1.NewLogPatternsTerm.baseline_window:type_name -> sreagent.investigation.v1.Window
-	135, // 21: sreagent.investigation.v1.ErrorSpansTerm.edge_type:type_name -> sreagent.graph.v1.EdgeType
-	19,  // 22: sreagent.investigation.v1.ErrorSpansTerm.window:type_name -> sreagent.investigation.v1.Window
-	134, // 23: sreagent.investigation.v1.ErrorsByVersionTerm.pointer:type_name -> sreagent.graph.v1.Pointer
-	19,  // 24: sreagent.investigation.v1.ErrorsByVersionTerm.window:type_name -> sreagent.investigation.v1.Window
-	134, // 25: sreagent.investigation.v1.MonitorStateTerm.pointer:type_name -> sreagent.graph.v1.Pointer
-	19,  // 26: sreagent.investigation.v1.MonitorStateTerm.window:type_name -> sreagent.investigation.v1.Window
-	21,  // 27: sreagent.investigation.v1.ExemplarsTerm.handle:type_name -> sreagent.investigation.v1.Handle
-	21,  // 28: sreagent.investigation.v1.DrillDownTerm.handle:type_name -> sreagent.investigation.v1.Handle
-	19,  // 29: sreagent.investigation.v1.ChatMentionsTerm.window:type_name -> sreagent.investigation.v1.Window
-	19,  // 30: sreagent.investigation.v1.ChatTimelineTerm.window:type_name -> sreagent.investigation.v1.Window
-	22,  // 31: sreagent.investigation.v1.AlgebraTerm.graph:type_name -> sreagent.investigation.v1.GraphTerm
-	23,  // 32: sreagent.investigation.v1.AlgebraTerm.compare:type_name -> sreagent.investigation.v1.CompareTerm
-	24,  // 33: sreagent.investigation.v1.AlgebraTerm.onset:type_name -> sreagent.investigation.v1.OnsetTerm
-	25,  // 34: sreagent.investigation.v1.AlgebraTerm.new_log_patterns:type_name -> sreagent.investigation.v1.NewLogPatternsTerm
-	26,  // 35: sreagent.investigation.v1.AlgebraTerm.error_spans:type_name -> sreagent.investigation.v1.ErrorSpansTerm
-	27,  // 36: sreagent.investigation.v1.AlgebraTerm.errors_by_version:type_name -> sreagent.investigation.v1.ErrorsByVersionTerm
-	28,  // 37: sreagent.investigation.v1.AlgebraTerm.monitor_state:type_name -> sreagent.investigation.v1.MonitorStateTerm
-	29,  // 38: sreagent.investigation.v1.AlgebraTerm.exemplars:type_name -> sreagent.investigation.v1.ExemplarsTerm
-	30,  // 39: sreagent.investigation.v1.AlgebraTerm.drill_down:type_name -> sreagent.investigation.v1.DrillDownTerm
-	31,  // 40: sreagent.investigation.v1.AlgebraTerm.knowledge_search:type_name -> sreagent.investigation.v1.KnowledgeSearchTerm
-	32,  // 41: sreagent.investigation.v1.AlgebraTerm.chat_mentions:type_name -> sreagent.investigation.v1.ChatMentionsTerm
-	33,  // 42: sreagent.investigation.v1.AlgebraTerm.chat_timeline:type_name -> sreagent.investigation.v1.ChatTimelineTerm
-	19,  // 43: sreagent.investigation.v1.Coverage.window_actually_covered:type_name -> sreagent.investigation.v1.Window
-	126, // 44: sreagent.investigation.v1.Coverage.executed_at:type_name -> google.protobuf.Timestamp
-	126, // 45: sreagent.investigation.v1.Coverage.horizon:type_name -> google.protobuf.Timestamp
-	126, // 46: sreagent.investigation.v1.JoinKeys.first_seen:type_name -> google.protobuf.Timestamp
-	21,  // 47: sreagent.investigation.v1.DrillDown.handle:type_name -> sreagent.investigation.v1.Handle
-	108, // 48: sreagent.investigation.v1.SeriesSummary.tags:type_name -> sreagent.investigation.v1.SeriesSummary.TagsEntry
-	19,  // 49: sreagent.investigation.v1.SeriesSummary.interval_covered:type_name -> sreagent.investigation.v1.Window
-	109, // 50: sreagent.investigation.v1.SeriesSummary.statistics:type_name -> sreagent.investigation.v1.SeriesSummary.StatisticsEntry
-	36,  // 51: sreagent.investigation.v1.SeriesSummary.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
-	37,  // 52: sreagent.investigation.v1.SeriesSummary.drill_down:type_name -> sreagent.investigation.v1.DrillDown
+	135, // 18: sreagent.investigation.v1.NewLogPatternsTerm.pointer:type_name -> sreagent.graph.v1.Pointer
+	20,  // 19: sreagent.investigation.v1.NewLogPatternsTerm.window:type_name -> sreagent.investigation.v1.Window
+	20,  // 20: sreagent.investigation.v1.NewLogPatternsTerm.baseline_window:type_name -> sreagent.investigation.v1.Window
+	136, // 21: sreagent.investigation.v1.ErrorSpansTerm.edge_type:type_name -> sreagent.graph.v1.EdgeType
+	20,  // 22: sreagent.investigation.v1.ErrorSpansTerm.window:type_name -> sreagent.investigation.v1.Window
+	135, // 23: sreagent.investigation.v1.ErrorsByVersionTerm.pointer:type_name -> sreagent.graph.v1.Pointer
+	20,  // 24: sreagent.investigation.v1.ErrorsByVersionTerm.window:type_name -> sreagent.investigation.v1.Window
+	135, // 25: sreagent.investigation.v1.MonitorStateTerm.pointer:type_name -> sreagent.graph.v1.Pointer
+	20,  // 26: sreagent.investigation.v1.MonitorStateTerm.window:type_name -> sreagent.investigation.v1.Window
+	22,  // 27: sreagent.investigation.v1.ExemplarsTerm.handle:type_name -> sreagent.investigation.v1.Handle
+	22,  // 28: sreagent.investigation.v1.DrillDownTerm.handle:type_name -> sreagent.investigation.v1.Handle
+	20,  // 29: sreagent.investigation.v1.ChatMentionsTerm.window:type_name -> sreagent.investigation.v1.Window
+	20,  // 30: sreagent.investigation.v1.ChatTimelineTerm.window:type_name -> sreagent.investigation.v1.Window
+	23,  // 31: sreagent.investigation.v1.AlgebraTerm.graph:type_name -> sreagent.investigation.v1.GraphTerm
+	24,  // 32: sreagent.investigation.v1.AlgebraTerm.compare:type_name -> sreagent.investigation.v1.CompareTerm
+	25,  // 33: sreagent.investigation.v1.AlgebraTerm.onset:type_name -> sreagent.investigation.v1.OnsetTerm
+	26,  // 34: sreagent.investigation.v1.AlgebraTerm.new_log_patterns:type_name -> sreagent.investigation.v1.NewLogPatternsTerm
+	27,  // 35: sreagent.investigation.v1.AlgebraTerm.error_spans:type_name -> sreagent.investigation.v1.ErrorSpansTerm
+	28,  // 36: sreagent.investigation.v1.AlgebraTerm.errors_by_version:type_name -> sreagent.investigation.v1.ErrorsByVersionTerm
+	29,  // 37: sreagent.investigation.v1.AlgebraTerm.monitor_state:type_name -> sreagent.investigation.v1.MonitorStateTerm
+	30,  // 38: sreagent.investigation.v1.AlgebraTerm.exemplars:type_name -> sreagent.investigation.v1.ExemplarsTerm
+	31,  // 39: sreagent.investigation.v1.AlgebraTerm.drill_down:type_name -> sreagent.investigation.v1.DrillDownTerm
+	32,  // 40: sreagent.investigation.v1.AlgebraTerm.knowledge_search:type_name -> sreagent.investigation.v1.KnowledgeSearchTerm
+	33,  // 41: sreagent.investigation.v1.AlgebraTerm.chat_mentions:type_name -> sreagent.investigation.v1.ChatMentionsTerm
+	34,  // 42: sreagent.investigation.v1.AlgebraTerm.chat_timeline:type_name -> sreagent.investigation.v1.ChatTimelineTerm
+	20,  // 43: sreagent.investigation.v1.Coverage.window_actually_covered:type_name -> sreagent.investigation.v1.Window
+	127, // 44: sreagent.investigation.v1.Coverage.executed_at:type_name -> google.protobuf.Timestamp
+	127, // 45: sreagent.investigation.v1.Coverage.horizon:type_name -> google.protobuf.Timestamp
+	127, // 46: sreagent.investigation.v1.JoinKeys.first_seen:type_name -> google.protobuf.Timestamp
+	22,  // 47: sreagent.investigation.v1.DrillDown.handle:type_name -> sreagent.investigation.v1.Handle
+	109, // 48: sreagent.investigation.v1.SeriesSummary.tags:type_name -> sreagent.investigation.v1.SeriesSummary.TagsEntry
+	20,  // 49: sreagent.investigation.v1.SeriesSummary.interval_covered:type_name -> sreagent.investigation.v1.Window
+	110, // 50: sreagent.investigation.v1.SeriesSummary.statistics:type_name -> sreagent.investigation.v1.SeriesSummary.StatisticsEntry
+	37,  // 51: sreagent.investigation.v1.SeriesSummary.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
+	38,  // 52: sreagent.investigation.v1.SeriesSummary.drill_down:type_name -> sreagent.investigation.v1.DrillDown
 	0,   // 53: sreagent.investigation.v1.Comparison.statistic:type_name -> sreagent.investigation.v1.Statistic
-	39,  // 54: sreagent.investigation.v1.MetricDigest.series:type_name -> sreagent.investigation.v1.SeriesSummary
-	40,  // 55: sreagent.investigation.v1.MetricDigest.comparisons:type_name -> sreagent.investigation.v1.Comparison
-	36,  // 56: sreagent.investigation.v1.LogPattern.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
-	37,  // 57: sreagent.investigation.v1.LogPattern.drill_down:type_name -> sreagent.investigation.v1.DrillDown
-	42,  // 58: sreagent.investigation.v1.LogDigest.patterns:type_name -> sreagent.investigation.v1.LogPattern
-	110, // 59: sreagent.investigation.v1.LogDigest.counts_by_status:type_name -> sreagent.investigation.v1.LogDigest.CountsByStatusEntry
-	111, // 60: sreagent.investigation.v1.SpanGroup.latency:type_name -> sreagent.investigation.v1.SpanGroup.LatencyEntry
-	36,  // 61: sreagent.investigation.v1.SpanGroup.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
-	37,  // 62: sreagent.investigation.v1.SpanGroup.drill_down:type_name -> sreagent.investigation.v1.DrillDown
-	44,  // 63: sreagent.investigation.v1.TraceDigest.groups:type_name -> sreagent.investigation.v1.SpanGroup
-	40,  // 64: sreagent.investigation.v1.TraceDigest.comparisons:type_name -> sreagent.investigation.v1.Comparison
-	126, // 65: sreagent.investigation.v1.MonitorTransition.at:type_name -> google.protobuf.Timestamp
-	46,  // 66: sreagent.investigation.v1.MonitorStateDigest.transitions:type_name -> sreagent.investigation.v1.MonitorTransition
-	112, // 67: sreagent.investigation.v1.MonitorStateDigest.per_group_state:type_name -> sreagent.investigation.v1.MonitorStateDigest.PerGroupStateEntry
-	126, // 68: sreagent.investigation.v1.OnsetDigest.estimated_onset:type_name -> google.protobuf.Timestamp
+	40,  // 54: sreagent.investigation.v1.MetricDigest.series:type_name -> sreagent.investigation.v1.SeriesSummary
+	41,  // 55: sreagent.investigation.v1.MetricDigest.comparisons:type_name -> sreagent.investigation.v1.Comparison
+	37,  // 56: sreagent.investigation.v1.LogPattern.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
+	38,  // 57: sreagent.investigation.v1.LogPattern.drill_down:type_name -> sreagent.investigation.v1.DrillDown
+	43,  // 58: sreagent.investigation.v1.LogDigest.patterns:type_name -> sreagent.investigation.v1.LogPattern
+	111, // 59: sreagent.investigation.v1.LogDigest.counts_by_status:type_name -> sreagent.investigation.v1.LogDigest.CountsByStatusEntry
+	112, // 60: sreagent.investigation.v1.SpanGroup.latency:type_name -> sreagent.investigation.v1.SpanGroup.LatencyEntry
+	37,  // 61: sreagent.investigation.v1.SpanGroup.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
+	38,  // 62: sreagent.investigation.v1.SpanGroup.drill_down:type_name -> sreagent.investigation.v1.DrillDown
+	45,  // 63: sreagent.investigation.v1.TraceDigest.groups:type_name -> sreagent.investigation.v1.SpanGroup
+	41,  // 64: sreagent.investigation.v1.TraceDigest.comparisons:type_name -> sreagent.investigation.v1.Comparison
+	127, // 65: sreagent.investigation.v1.MonitorTransition.at:type_name -> google.protobuf.Timestamp
+	47,  // 66: sreagent.investigation.v1.MonitorStateDigest.transitions:type_name -> sreagent.investigation.v1.MonitorTransition
+	113, // 67: sreagent.investigation.v1.MonitorStateDigest.per_group_state:type_name -> sreagent.investigation.v1.MonitorStateDigest.PerGroupStateEntry
+	127, // 68: sreagent.investigation.v1.OnsetDigest.estimated_onset:type_name -> google.protobuf.Timestamp
 	1,   // 69: sreagent.investigation.v1.OnsetDigest.method:type_name -> sreagent.investigation.v1.OnsetMethod
-	113, // 70: sreagent.investigation.v1.OnsetDigest.method_parameters:type_name -> sreagent.investigation.v1.OnsetDigest.MethodParametersEntry
-	19,  // 71: sreagent.investigation.v1.OnsetDigest.examined:type_name -> sreagent.investigation.v1.Window
-	36,  // 72: sreagent.investigation.v1.VersionBreakdown.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
-	37,  // 73: sreagent.investigation.v1.VersionBreakdown.drill_down:type_name -> sreagent.investigation.v1.DrillDown
-	136, // 74: sreagent.investigation.v1.VersionBreakdown.deploy_ref:type_name -> sreagent.graph.v1.Ref
+	114, // 70: sreagent.investigation.v1.OnsetDigest.method_parameters:type_name -> sreagent.investigation.v1.OnsetDigest.MethodParametersEntry
+	20,  // 71: sreagent.investigation.v1.OnsetDigest.examined:type_name -> sreagent.investigation.v1.Window
+	37,  // 72: sreagent.investigation.v1.VersionBreakdown.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
+	38,  // 73: sreagent.investigation.v1.VersionBreakdown.drill_down:type_name -> sreagent.investigation.v1.DrillDown
+	137, // 74: sreagent.investigation.v1.VersionBreakdown.deploy_ref:type_name -> sreagent.graph.v1.Ref
 	4,   // 75: sreagent.investigation.v1.VersionBreakdown.deploy_ref_absent_reason:type_name -> sreagent.investigation.v1.DeployRefAbsentReason
-	49,  // 76: sreagent.investigation.v1.ErrorsByVersionDigest.versions:type_name -> sreagent.investigation.v1.VersionBreakdown
-	36,  // 77: sreagent.investigation.v1.Exemplar.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
-	51,  // 78: sreagent.investigation.v1.ExemplarDigest.exemplars:type_name -> sreagent.investigation.v1.Exemplar
-	126, // 79: sreagent.investigation.v1.KnowledgeItem.authored_at:type_name -> google.protobuf.Timestamp
-	53,  // 80: sreagent.investigation.v1.KnowledgeDigest.items:type_name -> sreagent.investigation.v1.KnowledgeItem
-	126, // 81: sreagent.investigation.v1.ChatMentionsDigest.first_at:type_name -> google.protobuf.Timestamp
-	126, // 82: sreagent.investigation.v1.ChatMentionsDigest.last_at:type_name -> google.protobuf.Timestamp
-	126, // 83: sreagent.investigation.v1.ChatBucket.start:type_name -> google.protobuf.Timestamp
-	56,  // 84: sreagent.investigation.v1.ChatTimelineDigest.buckets:type_name -> sreagent.investigation.v1.ChatBucket
-	41,  // 85: sreagent.investigation.v1.Digest.metric:type_name -> sreagent.investigation.v1.MetricDigest
-	43,  // 86: sreagent.investigation.v1.Digest.log:type_name -> sreagent.investigation.v1.LogDigest
-	45,  // 87: sreagent.investigation.v1.Digest.trace:type_name -> sreagent.investigation.v1.TraceDigest
-	47,  // 88: sreagent.investigation.v1.Digest.monitor_state:type_name -> sreagent.investigation.v1.MonitorStateDigest
-	48,  // 89: sreagent.investigation.v1.Digest.onset:type_name -> sreagent.investigation.v1.OnsetDigest
-	50,  // 90: sreagent.investigation.v1.Digest.errors_by_version:type_name -> sreagent.investigation.v1.ErrorsByVersionDigest
-	52,  // 91: sreagent.investigation.v1.Digest.exemplars:type_name -> sreagent.investigation.v1.ExemplarDigest
-	54,  // 92: sreagent.investigation.v1.Digest.knowledge:type_name -> sreagent.investigation.v1.KnowledgeDigest
-	55,  // 93: sreagent.investigation.v1.Digest.chat_mentions:type_name -> sreagent.investigation.v1.ChatMentionsDigest
-	57,  // 94: sreagent.investigation.v1.Digest.chat_timeline:type_name -> sreagent.investigation.v1.ChatTimelineDigest
-	35,  // 95: sreagent.investigation.v1.Digest.coverage:type_name -> sreagent.investigation.v1.Coverage
-	38,  // 96: sreagent.investigation.v1.Digest.truncation:type_name -> sreagent.investigation.v1.Truncated
-	34,  // 97: sreagent.investigation.v1.AlgebraRequest.term:type_name -> sreagent.investigation.v1.AlgebraTerm
-	126, // 98: sreagent.investigation.v1.AlgebraRequest.valid_at:type_name -> google.protobuf.Timestamp
-	126, // 99: sreagent.investigation.v1.AlgebraRequest.observed_at:type_name -> google.protobuf.Timestamp
+	50,  // 76: sreagent.investigation.v1.ErrorsByVersionDigest.versions:type_name -> sreagent.investigation.v1.VersionBreakdown
+	37,  // 77: sreagent.investigation.v1.Exemplar.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
+	52,  // 78: sreagent.investigation.v1.ExemplarDigest.exemplars:type_name -> sreagent.investigation.v1.Exemplar
+	127, // 79: sreagent.investigation.v1.KnowledgeItem.authored_at:type_name -> google.protobuf.Timestamp
+	54,  // 80: sreagent.investigation.v1.KnowledgeDigest.items:type_name -> sreagent.investigation.v1.KnowledgeItem
+	127, // 81: sreagent.investigation.v1.ChatMentionsDigest.first_at:type_name -> google.protobuf.Timestamp
+	127, // 82: sreagent.investigation.v1.ChatMentionsDigest.last_at:type_name -> google.protobuf.Timestamp
+	127, // 83: sreagent.investigation.v1.ChatBucket.start:type_name -> google.protobuf.Timestamp
+	57,  // 84: sreagent.investigation.v1.ChatTimelineDigest.buckets:type_name -> sreagent.investigation.v1.ChatBucket
+	42,  // 85: sreagent.investigation.v1.Digest.metric:type_name -> sreagent.investigation.v1.MetricDigest
+	44,  // 86: sreagent.investigation.v1.Digest.log:type_name -> sreagent.investigation.v1.LogDigest
+	46,  // 87: sreagent.investigation.v1.Digest.trace:type_name -> sreagent.investigation.v1.TraceDigest
+	48,  // 88: sreagent.investigation.v1.Digest.monitor_state:type_name -> sreagent.investigation.v1.MonitorStateDigest
+	49,  // 89: sreagent.investigation.v1.Digest.onset:type_name -> sreagent.investigation.v1.OnsetDigest
+	51,  // 90: sreagent.investigation.v1.Digest.errors_by_version:type_name -> sreagent.investigation.v1.ErrorsByVersionDigest
+	53,  // 91: sreagent.investigation.v1.Digest.exemplars:type_name -> sreagent.investigation.v1.ExemplarDigest
+	55,  // 92: sreagent.investigation.v1.Digest.knowledge:type_name -> sreagent.investigation.v1.KnowledgeDigest
+	56,  // 93: sreagent.investigation.v1.Digest.chat_mentions:type_name -> sreagent.investigation.v1.ChatMentionsDigest
+	58,  // 94: sreagent.investigation.v1.Digest.chat_timeline:type_name -> sreagent.investigation.v1.ChatTimelineDigest
+	36,  // 95: sreagent.investigation.v1.Digest.coverage:type_name -> sreagent.investigation.v1.Coverage
+	39,  // 96: sreagent.investigation.v1.Digest.truncation:type_name -> sreagent.investigation.v1.Truncated
+	35,  // 97: sreagent.investigation.v1.AlgebraRequest.term:type_name -> sreagent.investigation.v1.AlgebraTerm
+	127, // 98: sreagent.investigation.v1.AlgebraRequest.valid_at:type_name -> google.protobuf.Timestamp
+	127, // 99: sreagent.investigation.v1.AlgebraRequest.observed_at:type_name -> google.protobuf.Timestamp
 	2,   // 100: sreagent.investigation.v1.AlgebraResponse.outcome:type_name -> sreagent.investigation.v1.TermOutcome
-	58,  // 101: sreagent.investigation.v1.AlgebraResponse.digest:type_name -> sreagent.investigation.v1.Digest
+	59,  // 101: sreagent.investigation.v1.AlgebraResponse.digest:type_name -> sreagent.investigation.v1.Digest
 	3,   // 102: sreagent.investigation.v1.AlgebraResponse.failure_reason:type_name -> sreagent.investigation.v1.FailureReason
 	5,   // 103: sreagent.investigation.v1.AlgebraResponse.cost_class:type_name -> sreagent.investigation.v1.CostClass
-	126, // 104: sreagent.investigation.v1.AlgebraResponse.retention_horizon:type_name -> google.protobuf.Timestamp
+	127, // 104: sreagent.investigation.v1.AlgebraResponse.retention_horizon:type_name -> google.protobuf.Timestamp
 	5,   // 105: sreagent.investigation.v1.Capability.cost_class:type_name -> sreagent.investigation.v1.CostClass
-	61,  // 106: sreagent.investigation.v1.WorkerDescription.capabilities:type_name -> sreagent.investigation.v1.Capability
-	62,  // 107: sreagent.investigation.v1.WorkerDescription.redaction:type_name -> sreagent.investigation.v1.RedactionPolicy
-	114, // 108: sreagent.investigation.v1.BackendDescription.cost_classes:type_name -> sreagent.investigation.v1.BackendDescription.CostClassesEntry
-	62,  // 109: sreagent.investigation.v1.BackendDescription.redaction:type_name -> sreagent.investigation.v1.RedactionPolicy
+	62,  // 106: sreagent.investigation.v1.WorkerDescription.capabilities:type_name -> sreagent.investigation.v1.Capability
+	63,  // 107: sreagent.investigation.v1.WorkerDescription.redaction:type_name -> sreagent.investigation.v1.RedactionPolicy
+	115, // 108: sreagent.investigation.v1.BackendDescription.cost_classes:type_name -> sreagent.investigation.v1.BackendDescription.CostClassesEntry
+	63,  // 109: sreagent.investigation.v1.BackendDescription.redaction:type_name -> sreagent.investigation.v1.RedactionPolicy
 	6,   // 110: sreagent.investigation.v1.Hypothesis.kind:type_name -> sreagent.investigation.v1.HypothesisKind
 	8,   // 111: sreagent.investigation.v1.Hypothesis.causal_role:type_name -> sreagent.investigation.v1.CausalRole
 	7,   // 112: sreagent.investigation.v1.Hypothesis.status:type_name -> sreagent.investigation.v1.HypothesisStatus
-	66,  // 113: sreagent.investigation.v1.Hypothesis.bucket:type_name -> sreagent.investigation.v1.ConfidenceBucket
-	34,  // 114: sreagent.investigation.v1.Hypothesis.next_query:type_name -> sreagent.investigation.v1.AlgebraTerm
+	67,  // 113: sreagent.investigation.v1.Hypothesis.bucket:type_name -> sreagent.investigation.v1.ConfidenceBucket
+	35,  // 114: sreagent.investigation.v1.Hypothesis.next_query:type_name -> sreagent.investigation.v1.AlgebraTerm
 	9,   // 115: sreagent.investigation.v1.Judgment.direction:type_name -> sreagent.investigation.v1.JudgmentDirection
 	10,  // 116: sreagent.investigation.v1.Judgment.strength:type_name -> sreagent.investigation.v1.JudgmentStrength
-	126, // 117: sreagent.investigation.v1.Judgment.recorded_at:type_name -> google.protobuf.Timestamp
-	34,  // 118: sreagent.investigation.v1.EvidenceItem.term:type_name -> sreagent.investigation.v1.AlgebraTerm
-	126, // 119: sreagent.investigation.v1.EvidenceItem.valid_at:type_name -> google.protobuf.Timestamp
-	126, // 120: sreagent.investigation.v1.EvidenceItem.observed_at:type_name -> google.protobuf.Timestamp
-	126, // 121: sreagent.investigation.v1.EvidenceItem.called_at:type_name -> google.protobuf.Timestamp
+	127, // 117: sreagent.investigation.v1.Judgment.recorded_at:type_name -> google.protobuf.Timestamp
+	35,  // 118: sreagent.investigation.v1.EvidenceItem.term:type_name -> sreagent.investigation.v1.AlgebraTerm
+	127, // 119: sreagent.investigation.v1.EvidenceItem.valid_at:type_name -> google.protobuf.Timestamp
+	127, // 120: sreagent.investigation.v1.EvidenceItem.observed_at:type_name -> google.protobuf.Timestamp
+	127, // 121: sreagent.investigation.v1.EvidenceItem.called_at:type_name -> google.protobuf.Timestamp
 	2,   // 122: sreagent.investigation.v1.EvidenceItem.outcome:type_name -> sreagent.investigation.v1.TermOutcome
-	35,  // 123: sreagent.investigation.v1.EvidenceItem.coverage:type_name -> sreagent.investigation.v1.Coverage
-	36,  // 124: sreagent.investigation.v1.EvidenceItem.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
-	67,  // 125: sreagent.investigation.v1.Ledger.hypotheses:type_name -> sreagent.investigation.v1.Hypothesis
-	68,  // 126: sreagent.investigation.v1.Ledger.judgments:type_name -> sreagent.investigation.v1.Judgment
-	69,  // 127: sreagent.investigation.v1.Ledger.evidence:type_name -> sreagent.investigation.v1.EvidenceItem
-	66,  // 128: sreagent.investigation.v1.Ledger.buckets:type_name -> sreagent.investigation.v1.ConfidenceBucket
-	136, // 129: sreagent.investigation.v1.TargetRef.ref:type_name -> sreagent.graph.v1.Ref
-	16,  // 130: sreagent.investigation.v1.TargetRef.provenance:type_name -> sreagent.investigation.v1.TargetRefProvenance
-	126, // 131: sreagent.investigation.v1.Symptom.fired_at:type_name -> google.protobuf.Timestamp
-	136, // 132: sreagent.investigation.v1.Symptom.named_identifiers:type_name -> sreagent.graph.v1.Ref
-	15,  // 133: sreagent.investigation.v1.Symptom.origin:type_name -> sreagent.investigation.v1.IntakeOrigin
-	71,  // 134: sreagent.investigation.v1.Symptom.target_refs:type_name -> sreagent.investigation.v1.TargetRef
-	126, // 135: sreagent.investigation.v1.ReportDelivery.first_delivered_at:type_name -> google.protobuf.Timestamp
-	126, // 136: sreagent.investigation.v1.ReportDelivery.last_updated_at:type_name -> google.protobuf.Timestamp
-	115, // 137: sreagent.investigation.v1.BudgetProfile.calls_per_backend:type_name -> sreagent.investigation.v1.BudgetProfile.CallsPerBackendEntry
-	116, // 138: sreagent.investigation.v1.BudgetProfile.calls_per_cost_class:type_name -> sreagent.investigation.v1.BudgetProfile.CallsPerCostClassEntry
-	74,  // 139: sreagent.investigation.v1.BudgetSpend.limits:type_name -> sreagent.investigation.v1.BudgetProfile
-	117, // 140: sreagent.investigation.v1.BudgetSpend.tokens_by_model_and_class:type_name -> sreagent.investigation.v1.BudgetSpend.TokensByModelAndClassEntry
-	118, // 141: sreagent.investigation.v1.BudgetSpend.calls_by_worker:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByWorkerEntry
-	119, // 142: sreagent.investigation.v1.BudgetSpend.calls_by_backend:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByBackendEntry
-	120, // 143: sreagent.investigation.v1.BudgetSpend.calls_by_cost_class:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByCostClassEntry
-	121, // 144: sreagent.investigation.v1.BudgetSpend.quota_share_used:type_name -> sreagent.investigation.v1.BudgetSpend.QuotaShareUsedEntry
-	122, // 145: sreagent.investigation.v1.BudgetSpend.remaining_quota_observed:type_name -> sreagent.investigation.v1.BudgetSpend.RemainingQuotaObservedEntry
-	126, // 146: sreagent.investigation.v1.BudgetSpend.reserve_entered_at:type_name -> google.protobuf.Timestamp
-	137, // 147: sreagent.investigation.v1.HumanFact.concerns:type_name -> sreagent.graph.v1.Interval
-	126, // 148: sreagent.investigation.v1.HumanFact.submitted_at:type_name -> google.protobuf.Timestamp
-	67,  // 149: sreagent.investigation.v1.HumanReview.amendments:type_name -> sreagent.investigation.v1.Hypothesis
-	126, // 150: sreagent.investigation.v1.HumanReview.decided_at:type_name -> google.protobuf.Timestamp
-	126, // 151: sreagent.investigation.v1.Label.labelled_at:type_name -> google.protobuf.Timestamp
-	34,  // 152: sreagent.investigation.v1.Resolution.next_query:type_name -> sreagent.investigation.v1.AlgebraTerm
-	72,  // 153: sreagent.investigation.v1.Investigation.symptoms:type_name -> sreagent.investigation.v1.Symptom
-	126, // 154: sreagent.investigation.v1.Investigation.valid_at:type_name -> google.protobuf.Timestamp
-	126, // 155: sreagent.investigation.v1.Investigation.observed_at:type_name -> google.protobuf.Timestamp
-	19,  // 156: sreagent.investigation.v1.Investigation.window:type_name -> sreagent.investigation.v1.Window
+	36,  // 123: sreagent.investigation.v1.EvidenceItem.coverage:type_name -> sreagent.investigation.v1.Coverage
+	37,  // 124: sreagent.investigation.v1.EvidenceItem.join_keys:type_name -> sreagent.investigation.v1.JoinKeys
+	68,  // 125: sreagent.investigation.v1.Ledger.hypotheses:type_name -> sreagent.investigation.v1.Hypothesis
+	69,  // 126: sreagent.investigation.v1.Ledger.judgments:type_name -> sreagent.investigation.v1.Judgment
+	70,  // 127: sreagent.investigation.v1.Ledger.evidence:type_name -> sreagent.investigation.v1.EvidenceItem
+	67,  // 128: sreagent.investigation.v1.Ledger.buckets:type_name -> sreagent.investigation.v1.ConfidenceBucket
+	137, // 129: sreagent.investigation.v1.TargetRef.ref:type_name -> sreagent.graph.v1.Ref
+	17,  // 130: sreagent.investigation.v1.TargetRef.provenance:type_name -> sreagent.investigation.v1.TargetRefProvenance
+	127, // 131: sreagent.investigation.v1.Symptom.fired_at:type_name -> google.protobuf.Timestamp
+	137, // 132: sreagent.investigation.v1.Symptom.named_identifiers:type_name -> sreagent.graph.v1.Ref
+	16,  // 133: sreagent.investigation.v1.Symptom.origin:type_name -> sreagent.investigation.v1.IntakeOrigin
+	72,  // 134: sreagent.investigation.v1.Symptom.target_refs:type_name -> sreagent.investigation.v1.TargetRef
+	127, // 135: sreagent.investigation.v1.ReportDelivery.first_delivered_at:type_name -> google.protobuf.Timestamp
+	127, // 136: sreagent.investigation.v1.ReportDelivery.last_updated_at:type_name -> google.protobuf.Timestamp
+	116, // 137: sreagent.investigation.v1.BudgetProfile.calls_per_backend:type_name -> sreagent.investigation.v1.BudgetProfile.CallsPerBackendEntry
+	117, // 138: sreagent.investigation.v1.BudgetProfile.calls_per_cost_class:type_name -> sreagent.investigation.v1.BudgetProfile.CallsPerCostClassEntry
+	75,  // 139: sreagent.investigation.v1.BudgetSpend.limits:type_name -> sreagent.investigation.v1.BudgetProfile
+	118, // 140: sreagent.investigation.v1.BudgetSpend.tokens_by_model_and_class:type_name -> sreagent.investigation.v1.BudgetSpend.TokensByModelAndClassEntry
+	119, // 141: sreagent.investigation.v1.BudgetSpend.calls_by_worker:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByWorkerEntry
+	120, // 142: sreagent.investigation.v1.BudgetSpend.calls_by_backend:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByBackendEntry
+	121, // 143: sreagent.investigation.v1.BudgetSpend.calls_by_cost_class:type_name -> sreagent.investigation.v1.BudgetSpend.CallsByCostClassEntry
+	122, // 144: sreagent.investigation.v1.BudgetSpend.quota_share_used:type_name -> sreagent.investigation.v1.BudgetSpend.QuotaShareUsedEntry
+	123, // 145: sreagent.investigation.v1.BudgetSpend.remaining_quota_observed:type_name -> sreagent.investigation.v1.BudgetSpend.RemainingQuotaObservedEntry
+	127, // 146: sreagent.investigation.v1.BudgetSpend.reserve_entered_at:type_name -> google.protobuf.Timestamp
+	138, // 147: sreagent.investigation.v1.HumanFact.concerns:type_name -> sreagent.graph.v1.Interval
+	127, // 148: sreagent.investigation.v1.HumanFact.submitted_at:type_name -> google.protobuf.Timestamp
+	68,  // 149: sreagent.investigation.v1.HumanReview.amendments:type_name -> sreagent.investigation.v1.Hypothesis
+	127, // 150: sreagent.investigation.v1.HumanReview.decided_at:type_name -> google.protobuf.Timestamp
+	127, // 151: sreagent.investigation.v1.Label.labelled_at:type_name -> google.protobuf.Timestamp
+	35,  // 152: sreagent.investigation.v1.Resolution.next_query:type_name -> sreagent.investigation.v1.AlgebraTerm
+	73,  // 153: sreagent.investigation.v1.Investigation.symptoms:type_name -> sreagent.investigation.v1.Symptom
+	127, // 154: sreagent.investigation.v1.Investigation.valid_at:type_name -> google.protobuf.Timestamp
+	127, // 155: sreagent.investigation.v1.Investigation.observed_at:type_name -> google.protobuf.Timestamp
+	20,  // 156: sreagent.investigation.v1.Investigation.window:type_name -> sreagent.investigation.v1.Window
 	11,  // 157: sreagent.investigation.v1.Investigation.lifecycle:type_name -> sreagent.investigation.v1.Lifecycle
 	12,  // 158: sreagent.investigation.v1.Investigation.conclusion_kind:type_name -> sreagent.investigation.v1.ConclusionKind
 	13,  // 159: sreagent.investigation.v1.Investigation.outcome:type_name -> sreagent.investigation.v1.InvestigationOutcome
-	14,  // 160: sreagent.investigation.v1.Investigation.stop_reason:type_name -> sreagent.investigation.v1.StopReason
-	70,  // 161: sreagent.investigation.v1.Investigation.ledger:type_name -> sreagent.investigation.v1.Ledger
-	80,  // 162: sreagent.investigation.v1.Investigation.resolutions:type_name -> sreagent.investigation.v1.Resolution
-	75,  // 163: sreagent.investigation.v1.Investigation.spend:type_name -> sreagent.investigation.v1.BudgetSpend
-	76,  // 164: sreagent.investigation.v1.Investigation.facts:type_name -> sreagent.investigation.v1.HumanFact
-	77,  // 165: sreagent.investigation.v1.Investigation.reviews:type_name -> sreagent.investigation.v1.HumanReview
-	78,  // 166: sreagent.investigation.v1.Investigation.labels:type_name -> sreagent.investigation.v1.Label
-	79,  // 167: sreagent.investigation.v1.Investigation.verifier_findings:type_name -> sreagent.investigation.v1.VerifierFinding
-	73,  // 168: sreagent.investigation.v1.Investigation.deliveries:type_name -> sreagent.investigation.v1.ReportDelivery
-	138, // 169: sreagent.investigation.v1.Investigation.model_config:type_name -> google.protobuf.Struct
-	126, // 170: sreagent.investigation.v1.Investigation.started_at:type_name -> google.protobuf.Timestamp
-	126, // 171: sreagent.investigation.v1.Investigation.ended_at:type_name -> google.protobuf.Timestamp
-	72,  // 172: sreagent.investigation.v1.DeclareRequest.declaration:type_name -> sreagent.investigation.v1.Symptom
-	72,  // 173: sreagent.investigation.v1.InvestigateRequest.symptom:type_name -> sreagent.investigation.v1.Symptom
-	126, // 174: sreagent.investigation.v1.InvestigateRequest.valid_at:type_name -> google.protobuf.Timestamp
-	126, // 175: sreagent.investigation.v1.InvestigateRequest.observed_at:type_name -> google.protobuf.Timestamp
-	81,  // 176: sreagent.investigation.v1.ReplayResponse.investigation:type_name -> sreagent.investigation.v1.Investigation
-	76,  // 177: sreagent.investigation.v1.ReopenRequest.fact:type_name -> sreagent.investigation.v1.HumanFact
-	76,  // 178: sreagent.investigation.v1.SubmitHumanFactRequest.fact:type_name -> sreagent.investigation.v1.HumanFact
-	77,  // 179: sreagent.investigation.v1.ReviewRequest.review:type_name -> sreagent.investigation.v1.HumanReview
-	126, // 180: sreagent.investigation.v1.ListInvestigationsRequest.since:type_name -> google.protobuf.Timestamp
-	81,  // 181: sreagent.investigation.v1.ListInvestigationsResponse.investigations:type_name -> sreagent.investigation.v1.Investigation
-	138, // 182: sreagent.investigation.v1.ModelRequestRecord.body:type_name -> google.protobuf.Struct
-	138, // 183: sreagent.investigation.v1.ModelResponseRecord.body:type_name -> google.protobuf.Struct
-	123, // 184: sreagent.investigation.v1.ModelResponseRecord.usage:type_name -> sreagent.investigation.v1.ModelResponseRecord.UsageEntry
-	59,  // 185: sreagent.investigation.v1.WorkerRequestRecord.request:type_name -> sreagent.investigation.v1.AlgebraRequest
-	60,  // 186: sreagent.investigation.v1.WorkerResponseRecord.response:type_name -> sreagent.investigation.v1.AlgebraResponse
-	68,  // 187: sreagent.investigation.v1.LedgerUpdateRecord.judgments:type_name -> sreagent.investigation.v1.Judgment
-	66,  // 188: sreagent.investigation.v1.FinalHypothesis.bucket:type_name -> sreagent.investigation.v1.ConfidenceBucket
-	7,   // 189: sreagent.investigation.v1.FinalHypothesis.status:type_name -> sreagent.investigation.v1.HypothesisStatus
-	6,   // 190: sreagent.investigation.v1.FinalHypothesis.kind:type_name -> sreagent.investigation.v1.HypothesisKind
-	14,  // 191: sreagent.investigation.v1.StopRecord.reason:type_name -> sreagent.investigation.v1.StopReason
-	100, // 192: sreagent.investigation.v1.StopRecord.final_ledger:type_name -> sreagent.investigation.v1.FinalHypothesis
-	126, // 193: sreagent.investigation.v1.TrajectoryRecord.at:type_name -> google.protobuf.Timestamp
-	95,  // 194: sreagent.investigation.v1.TrajectoryRecord.model_request:type_name -> sreagent.investigation.v1.ModelRequestRecord
-	96,  // 195: sreagent.investigation.v1.TrajectoryRecord.model_response:type_name -> sreagent.investigation.v1.ModelResponseRecord
-	97,  // 196: sreagent.investigation.v1.TrajectoryRecord.worker_request:type_name -> sreagent.investigation.v1.WorkerRequestRecord
-	98,  // 197: sreagent.investigation.v1.TrajectoryRecord.worker_response:type_name -> sreagent.investigation.v1.WorkerResponseRecord
-	99,  // 198: sreagent.investigation.v1.TrajectoryRecord.ledger_update:type_name -> sreagent.investigation.v1.LedgerUpdateRecord
-	76,  // 199: sreagent.investigation.v1.TrajectoryRecord.human_fact:type_name -> sreagent.investigation.v1.HumanFact
-	101, // 200: sreagent.investigation.v1.TrajectoryRecord.stop:type_name -> sreagent.investigation.v1.StopRecord
-	20,  // 201: sreagent.investigation.v1.WorldIndex.window_grid:type_name -> sreagent.investigation.v1.WindowPair
-	124, // 202: sreagent.investigation.v1.WorldIndex.term_key_to_file:type_name -> sreagent.investigation.v1.WorldIndex.TermKeyToFileEntry
-	135, // 203: sreagent.investigation.v1.CausalStep.via:type_name -> sreagent.graph.v1.EdgeType
-	34,  // 204: sreagent.investigation.v1.EvidencePredicate.term:type_name -> sreagent.investigation.v1.AlgebraTerm
-	139, // 205: sreagent.investigation.v1.EvidencePredicate.value:type_name -> google.protobuf.Value
-	17,  // 206: sreagent.investigation.v1.GroundTruth.culprit_kind:type_name -> sreagent.investigation.v1.CulpritKind
-	104, // 207: sreagent.investigation.v1.GroundTruth.causal_path:type_name -> sreagent.investigation.v1.CausalStep
-	105, // 208: sreagent.investigation.v1.GroundTruth.decisive_evidence:type_name -> sreagent.investigation.v1.EvidencePredicate
-	125, // 209: sreagent.investigation.v1.GroundTruth.exonerating_evidence_by_decoy:type_name -> sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry
-	126, // 210: sreagent.investigation.v1.GroundTruth.knowability_time:type_name -> google.protobuf.Timestamp
-	18,  // 211: sreagent.investigation.v1.GroundTruth.provenance:type_name -> sreagent.investigation.v1.Provenance
-	105, // 212: sreagent.investigation.v1.EvidencePredicateList.predicates:type_name -> sreagent.investigation.v1.EvidencePredicate
-	5,   // 213: sreagent.investigation.v1.BackendDescription.CostClassesEntry.value:type_name -> sreagent.investigation.v1.CostClass
-	107, // 214: sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry.value:type_name -> sreagent.investigation.v1.EvidencePredicateList
-	65,  // 215: sreagent.investigation.v1.TelemetryBackendService.Describe:input_type -> sreagent.investigation.v1.DescribeBackendRequest
-	59,  // 216: sreagent.investigation.v1.TelemetryBackendService.Execute:input_type -> sreagent.investigation.v1.AlgebraRequest
-	83,  // 217: sreagent.investigation.v1.InvestigationService.Investigate:input_type -> sreagent.investigation.v1.InvestigateRequest
-	82,  // 218: sreagent.investigation.v1.InvestigationService.Declare:input_type -> sreagent.investigation.v1.DeclareRequest
-	84,  // 219: sreagent.investigation.v1.InvestigationService.Get:input_type -> sreagent.investigation.v1.GetRequest
-	85,  // 220: sreagent.investigation.v1.InvestigationService.Replay:input_type -> sreagent.investigation.v1.ReplayRequest
-	87,  // 221: sreagent.investigation.v1.InvestigationService.Reopen:input_type -> sreagent.investigation.v1.ReopenRequest
-	88,  // 222: sreagent.investigation.v1.InvestigationService.SubmitHumanFact:input_type -> sreagent.investigation.v1.SubmitHumanFactRequest
-	90,  // 223: sreagent.investigation.v1.InvestigationService.Review:input_type -> sreagent.investigation.v1.ReviewRequest
-	89,  // 224: sreagent.investigation.v1.InvestigationService.Label:input_type -> sreagent.investigation.v1.LabelRequest
-	91,  // 225: sreagent.investigation.v1.InvestigationService.List:input_type -> sreagent.investigation.v1.ListInvestigationsRequest
-	93,  // 226: sreagent.investigation.v1.InvestigationService.Export:input_type -> sreagent.investigation.v1.ExportRequest
-	64,  // 227: sreagent.investigation.v1.TelemetryBackendService.Describe:output_type -> sreagent.investigation.v1.BackendDescription
-	60,  // 228: sreagent.investigation.v1.TelemetryBackendService.Execute:output_type -> sreagent.investigation.v1.AlgebraResponse
-	81,  // 229: sreagent.investigation.v1.InvestigationService.Investigate:output_type -> sreagent.investigation.v1.Investigation
-	81,  // 230: sreagent.investigation.v1.InvestigationService.Declare:output_type -> sreagent.investigation.v1.Investigation
-	81,  // 231: sreagent.investigation.v1.InvestigationService.Get:output_type -> sreagent.investigation.v1.Investigation
-	86,  // 232: sreagent.investigation.v1.InvestigationService.Replay:output_type -> sreagent.investigation.v1.ReplayResponse
-	81,  // 233: sreagent.investigation.v1.InvestigationService.Reopen:output_type -> sreagent.investigation.v1.Investigation
-	81,  // 234: sreagent.investigation.v1.InvestigationService.SubmitHumanFact:output_type -> sreagent.investigation.v1.Investigation
-	81,  // 235: sreagent.investigation.v1.InvestigationService.Review:output_type -> sreagent.investigation.v1.Investigation
-	81,  // 236: sreagent.investigation.v1.InvestigationService.Label:output_type -> sreagent.investigation.v1.Investigation
-	92,  // 237: sreagent.investigation.v1.InvestigationService.List:output_type -> sreagent.investigation.v1.ListInvestigationsResponse
-	94,  // 238: sreagent.investigation.v1.InvestigationService.Export:output_type -> sreagent.investigation.v1.ExportResponse
-	227, // [227:239] is the sub-list for method output_type
-	215, // [215:227] is the sub-list for method input_type
-	215, // [215:215] is the sub-list for extension type_name
-	215, // [215:215] is the sub-list for extension extendee
-	0,   // [0:215] is the sub-list for field type_name
+	15,  // 160: sreagent.investigation.v1.Investigation.stop_reason:type_name -> sreagent.investigation.v1.StopReason
+	71,  // 161: sreagent.investigation.v1.Investigation.ledger:type_name -> sreagent.investigation.v1.Ledger
+	81,  // 162: sreagent.investigation.v1.Investigation.resolutions:type_name -> sreagent.investigation.v1.Resolution
+	76,  // 163: sreagent.investigation.v1.Investigation.spend:type_name -> sreagent.investigation.v1.BudgetSpend
+	77,  // 164: sreagent.investigation.v1.Investigation.facts:type_name -> sreagent.investigation.v1.HumanFact
+	78,  // 165: sreagent.investigation.v1.Investigation.reviews:type_name -> sreagent.investigation.v1.HumanReview
+	79,  // 166: sreagent.investigation.v1.Investigation.labels:type_name -> sreagent.investigation.v1.Label
+	80,  // 167: sreagent.investigation.v1.Investigation.verifier_findings:type_name -> sreagent.investigation.v1.VerifierFinding
+	74,  // 168: sreagent.investigation.v1.Investigation.deliveries:type_name -> sreagent.investigation.v1.ReportDelivery
+	139, // 169: sreagent.investigation.v1.Investigation.model_config:type_name -> google.protobuf.Struct
+	127, // 170: sreagent.investigation.v1.Investigation.started_at:type_name -> google.protobuf.Timestamp
+	127, // 171: sreagent.investigation.v1.Investigation.ended_at:type_name -> google.protobuf.Timestamp
+	14,  // 172: sreagent.investigation.v1.Investigation.verification_status:type_name -> sreagent.investigation.v1.VerificationStatus
+	73,  // 173: sreagent.investigation.v1.DeclareRequest.declaration:type_name -> sreagent.investigation.v1.Symptom
+	73,  // 174: sreagent.investigation.v1.InvestigateRequest.symptom:type_name -> sreagent.investigation.v1.Symptom
+	127, // 175: sreagent.investigation.v1.InvestigateRequest.valid_at:type_name -> google.protobuf.Timestamp
+	127, // 176: sreagent.investigation.v1.InvestigateRequest.observed_at:type_name -> google.protobuf.Timestamp
+	82,  // 177: sreagent.investigation.v1.ReplayResponse.investigation:type_name -> sreagent.investigation.v1.Investigation
+	77,  // 178: sreagent.investigation.v1.ReopenRequest.fact:type_name -> sreagent.investigation.v1.HumanFact
+	77,  // 179: sreagent.investigation.v1.SubmitHumanFactRequest.fact:type_name -> sreagent.investigation.v1.HumanFact
+	78,  // 180: sreagent.investigation.v1.ReviewRequest.review:type_name -> sreagent.investigation.v1.HumanReview
+	127, // 181: sreagent.investigation.v1.ListInvestigationsRequest.since:type_name -> google.protobuf.Timestamp
+	82,  // 182: sreagent.investigation.v1.ListInvestigationsResponse.investigations:type_name -> sreagent.investigation.v1.Investigation
+	139, // 183: sreagent.investigation.v1.ModelRequestRecord.body:type_name -> google.protobuf.Struct
+	139, // 184: sreagent.investigation.v1.ModelResponseRecord.body:type_name -> google.protobuf.Struct
+	124, // 185: sreagent.investigation.v1.ModelResponseRecord.usage:type_name -> sreagent.investigation.v1.ModelResponseRecord.UsageEntry
+	60,  // 186: sreagent.investigation.v1.WorkerRequestRecord.request:type_name -> sreagent.investigation.v1.AlgebraRequest
+	61,  // 187: sreagent.investigation.v1.WorkerResponseRecord.response:type_name -> sreagent.investigation.v1.AlgebraResponse
+	69,  // 188: sreagent.investigation.v1.LedgerUpdateRecord.judgments:type_name -> sreagent.investigation.v1.Judgment
+	67,  // 189: sreagent.investigation.v1.FinalHypothesis.bucket:type_name -> sreagent.investigation.v1.ConfidenceBucket
+	7,   // 190: sreagent.investigation.v1.FinalHypothesis.status:type_name -> sreagent.investigation.v1.HypothesisStatus
+	6,   // 191: sreagent.investigation.v1.FinalHypothesis.kind:type_name -> sreagent.investigation.v1.HypothesisKind
+	15,  // 192: sreagent.investigation.v1.StopRecord.reason:type_name -> sreagent.investigation.v1.StopReason
+	101, // 193: sreagent.investigation.v1.StopRecord.final_ledger:type_name -> sreagent.investigation.v1.FinalHypothesis
+	127, // 194: sreagent.investigation.v1.TrajectoryRecord.at:type_name -> google.protobuf.Timestamp
+	96,  // 195: sreagent.investigation.v1.TrajectoryRecord.model_request:type_name -> sreagent.investigation.v1.ModelRequestRecord
+	97,  // 196: sreagent.investigation.v1.TrajectoryRecord.model_response:type_name -> sreagent.investigation.v1.ModelResponseRecord
+	98,  // 197: sreagent.investigation.v1.TrajectoryRecord.worker_request:type_name -> sreagent.investigation.v1.WorkerRequestRecord
+	99,  // 198: sreagent.investigation.v1.TrajectoryRecord.worker_response:type_name -> sreagent.investigation.v1.WorkerResponseRecord
+	100, // 199: sreagent.investigation.v1.TrajectoryRecord.ledger_update:type_name -> sreagent.investigation.v1.LedgerUpdateRecord
+	77,  // 200: sreagent.investigation.v1.TrajectoryRecord.human_fact:type_name -> sreagent.investigation.v1.HumanFact
+	102, // 201: sreagent.investigation.v1.TrajectoryRecord.stop:type_name -> sreagent.investigation.v1.StopRecord
+	21,  // 202: sreagent.investigation.v1.WorldIndex.window_grid:type_name -> sreagent.investigation.v1.WindowPair
+	125, // 203: sreagent.investigation.v1.WorldIndex.term_key_to_file:type_name -> sreagent.investigation.v1.WorldIndex.TermKeyToFileEntry
+	136, // 204: sreagent.investigation.v1.CausalStep.via:type_name -> sreagent.graph.v1.EdgeType
+	35,  // 205: sreagent.investigation.v1.EvidencePredicate.term:type_name -> sreagent.investigation.v1.AlgebraTerm
+	140, // 206: sreagent.investigation.v1.EvidencePredicate.value:type_name -> google.protobuf.Value
+	18,  // 207: sreagent.investigation.v1.GroundTruth.culprit_kind:type_name -> sreagent.investigation.v1.CulpritKind
+	105, // 208: sreagent.investigation.v1.GroundTruth.causal_path:type_name -> sreagent.investigation.v1.CausalStep
+	106, // 209: sreagent.investigation.v1.GroundTruth.decisive_evidence:type_name -> sreagent.investigation.v1.EvidencePredicate
+	126, // 210: sreagent.investigation.v1.GroundTruth.exonerating_evidence_by_decoy:type_name -> sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry
+	127, // 211: sreagent.investigation.v1.GroundTruth.knowability_time:type_name -> google.protobuf.Timestamp
+	19,  // 212: sreagent.investigation.v1.GroundTruth.provenance:type_name -> sreagent.investigation.v1.Provenance
+	106, // 213: sreagent.investigation.v1.EvidencePredicateList.predicates:type_name -> sreagent.investigation.v1.EvidencePredicate
+	5,   // 214: sreagent.investigation.v1.BackendDescription.CostClassesEntry.value:type_name -> sreagent.investigation.v1.CostClass
+	108, // 215: sreagent.investigation.v1.GroundTruth.ExoneratingEvidenceByDecoyEntry.value:type_name -> sreagent.investigation.v1.EvidencePredicateList
+	66,  // 216: sreagent.investigation.v1.TelemetryBackendService.Describe:input_type -> sreagent.investigation.v1.DescribeBackendRequest
+	60,  // 217: sreagent.investigation.v1.TelemetryBackendService.Execute:input_type -> sreagent.investigation.v1.AlgebraRequest
+	84,  // 218: sreagent.investigation.v1.InvestigationService.Investigate:input_type -> sreagent.investigation.v1.InvestigateRequest
+	83,  // 219: sreagent.investigation.v1.InvestigationService.Declare:input_type -> sreagent.investigation.v1.DeclareRequest
+	85,  // 220: sreagent.investigation.v1.InvestigationService.Get:input_type -> sreagent.investigation.v1.GetRequest
+	86,  // 221: sreagent.investigation.v1.InvestigationService.Replay:input_type -> sreagent.investigation.v1.ReplayRequest
+	88,  // 222: sreagent.investigation.v1.InvestigationService.Reopen:input_type -> sreagent.investigation.v1.ReopenRequest
+	89,  // 223: sreagent.investigation.v1.InvestigationService.SubmitHumanFact:input_type -> sreagent.investigation.v1.SubmitHumanFactRequest
+	91,  // 224: sreagent.investigation.v1.InvestigationService.Review:input_type -> sreagent.investigation.v1.ReviewRequest
+	90,  // 225: sreagent.investigation.v1.InvestigationService.Label:input_type -> sreagent.investigation.v1.LabelRequest
+	92,  // 226: sreagent.investigation.v1.InvestigationService.List:input_type -> sreagent.investigation.v1.ListInvestigationsRequest
+	94,  // 227: sreagent.investigation.v1.InvestigationService.Export:input_type -> sreagent.investigation.v1.ExportRequest
+	65,  // 228: sreagent.investigation.v1.TelemetryBackendService.Describe:output_type -> sreagent.investigation.v1.BackendDescription
+	61,  // 229: sreagent.investigation.v1.TelemetryBackendService.Execute:output_type -> sreagent.investigation.v1.AlgebraResponse
+	82,  // 230: sreagent.investigation.v1.InvestigationService.Investigate:output_type -> sreagent.investigation.v1.Investigation
+	82,  // 231: sreagent.investigation.v1.InvestigationService.Declare:output_type -> sreagent.investigation.v1.Investigation
+	82,  // 232: sreagent.investigation.v1.InvestigationService.Get:output_type -> sreagent.investigation.v1.Investigation
+	87,  // 233: sreagent.investigation.v1.InvestigationService.Replay:output_type -> sreagent.investigation.v1.ReplayResponse
+	82,  // 234: sreagent.investigation.v1.InvestigationService.Reopen:output_type -> sreagent.investigation.v1.Investigation
+	82,  // 235: sreagent.investigation.v1.InvestigationService.SubmitHumanFact:output_type -> sreagent.investigation.v1.Investigation
+	82,  // 236: sreagent.investigation.v1.InvestigationService.Review:output_type -> sreagent.investigation.v1.Investigation
+	82,  // 237: sreagent.investigation.v1.InvestigationService.Label:output_type -> sreagent.investigation.v1.Investigation
+	93,  // 238: sreagent.investigation.v1.InvestigationService.List:output_type -> sreagent.investigation.v1.ListInvestigationsResponse
+	95,  // 239: sreagent.investigation.v1.InvestigationService.Export:output_type -> sreagent.investigation.v1.ExportResponse
+	228, // [228:240] is the sub-list for method output_type
+	216, // [216:228] is the sub-list for method input_type
+	216, // [216:216] is the sub-list for extension type_name
+	216, // [216:216] is the sub-list for extension extendee
+	0,   // [0:216] is the sub-list for field type_name
 }
 
 func init() { file_sreagent_investigation_v1_investigation_proto_init() }
@@ -10312,7 +10387,7 @@ func file_sreagent_investigation_v1_investigation_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sreagent_investigation_v1_investigation_proto_rawDesc), len(file_sreagent_investigation_v1_investigation_proto_rawDesc)),
-			NumEnums:      19,
+			NumEnums:      20,
 			NumMessages:   107,
 			NumExtensions: 0,
 			NumServices:   2,
