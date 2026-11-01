@@ -13,8 +13,10 @@ cmd/aisre ──► internal/cli (composition root: wires everything, owns no ru
                  │
                  ▼
   adapters ──► application (use cases) ──► domain ◄── ports (pkg/, consumer-side interfaces)
-  postgres,     runner, intake, engine,      graph, event, ledger,
-  vendor SDKs,  projector, query, catalog    resolution, mask, knowledge
+  postgres,     runner, intake, engine,      graph, event, ledger, record,
+  projector,    server, catalog              resolution, mask, knowledge
+  query, pg*,
+  vendor SDKs,
   connectors
 ```
 
@@ -31,10 +33,11 @@ cmd/aisre ──► internal/cli (composition root: wires everything, owns no ru
 
 | Context | Domain | Application | Adapters | Ports |
 |---|---|---|---|---|
-| Graph and ingestion | `internal/graph`, `internal/event`, `internal/resolution` | `internal/projector`, `internal/query` | `internal/log` (Postgres event log), `internal/feeders/*`, `internal/store/postgres` | `pkg/feeder` |
-| Investigation | `internal/investigation/ledger`, `internal/mask`, `internal/injection`, `internal/logmine` | `intake`, `engine`, `verify`, `runner`, `workers/*`, `render` | `internal/backends/*`, `investigation/store`, `investigation/model/anthropic` and the built-in `mistral` and `openai_compatible` adapters, `render/slacksink` | `model.Adapter` (registered with `model.RegisterProvider`), `pkg/backend`, `pkg/worker`, consumer-side interfaces (`graph.QueryService`, `chat.History`, `render.Sink`, …) |
+| Graph and ingestion | `internal/graph`, `internal/event`, `internal/resolution` | — | `internal/projector` (Postgres write side), `internal/query` (Postgres read side), `internal/log` (Postgres event log), `internal/feeders/*`, `internal/store/postgres` | `pkg/feeder` |
+| Investigation | `internal/investigation/ledger`, `internal/investigation/record`, `internal/mask`, `internal/injection`, `internal/logmine` | `intake`, `engine`, `verify`, `runner`, `workers/*`, `render` | `internal/backends/*`, `investigation/store` and `investigation/pginvestigation` (Postgres, projector, query engine), `investigation/model/anthropic` and the built-in `mistral` and `openai_compatible` adapters, `render/slacksink` | `model.Adapter` (registered with `model.RegisterProvider`), `pkg/backend`, `pkg/worker`, `runner.Persistence` (`Investigations`, `Ledgers`, `Lifecycle`, `Evidence`, `DecisionLog`), `knowledge.Corpus`, consumer-side interfaces (`graph.QueryService`, `chat.History`, `render.Sink`, …) |
 | Knowledge | `pkg/knowledge`, `internal/knowledgedoc` | `internal/embedding` (indexer) | `internal/store/postgres`, `pkg/knowledge/memory`, `embedding` OpenAI-compatible adapter | `knowledge.Store`, `knowledge.Embedder` |
 | Catalog and attribution | `pkg/attribution`, `internal/catalog` (rules, discovery, decision model) | `catalog.Attributor` | `internal/catalog/pgcatalog` (Postgres and the projector), `internal/catalog/classify` | `catalog.Store`, `catalog.EventLog`, `attribution.Classifier` |
+| API (`serve`) | — | `internal/server` (handlers: auth, validation, metrics) | `internal/server/pgserver` (projector, query engine, store) | `server.Backends` (`EventLog`, `GraphReader`, `CatalogReader`, `PrincipalRecorder`, `Database`) |
 | Evaluation | — | `internal/eval`, `internal/fixture`, `internal/investigation/replay` | `internal/fixture/graphquery` | — |
 | Shared vendor clients | — | — | `internal/datadogx`, `internal/gcpx`, `internal/slackx`, `internal/notionx` | — |
 
@@ -49,6 +52,10 @@ Cross-context rules:
   engine that orchestrates it.
 - A shared vendor client (`datadogx`, `gcpx`) may import the feeder whose source interfaces it
   implements: that is the adapter depending on the port, which is the allowed direction.
+- Application packages (`runner`, `record`, the investigation workers, `server`, `catalog`) reach
+  storage only through ports they declare. The `pg*` adapter packages (`pginvestigation`,
+  `pgserver`, `pgcatalog`) wire Postgres, the projector and the query engine in, and only the
+  composition roots (`internal/cli`, `internal/eval`) and tests import them.
 - Every external dependency an operator might want to replace (LLM, embeddings, knowledge store,
   telemetry backends, feeders) sits behind a port and ships at least one adapter that can run
   self-hosted.
@@ -57,9 +64,7 @@ Cross-context rules:
 
 These are tracked and not yet enforced:
 
-- `investigation/runner` still takes `*postgres.Store` and calls the DAOs in
-  `investigation/store` directly. The catalog (`catalog.Store`, `catalog.EventLog`) and the server's
-  principal registry (`server.PrincipalRecorder`) now go through consumer-side interfaces; the
-  runner is next, and needs the pure parts of `investigation/store` split from its SQL first.
+- The projector's folding rules are written in SQL, so a second read model would have to
+  re-implement them (ADR-0018). Move a rule into `internal/graph` when it is next changed.
 - Protobuf types double as the domain model (ADR-0002). This is a deliberate trade-off; new
   aggregates should keep the generated types at their edges.

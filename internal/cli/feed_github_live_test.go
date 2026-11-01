@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Pierre-Theophile/aisre/internal/server/pgserver"
+
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/sanitise"
 	"github.com/Pierre-Theophile/aisre/internal/server"
@@ -26,7 +28,7 @@ func emptyGraph(t *testing.T) string {
 	t.Helper()
 	store := pgtest.Open(t)
 	srv, err := server.New(server.Config{
-		Listen: "127.0.0.1:0", Auth: devAuthenticator(t), Projector: projector.New(store), Logger: discardLogger(),
+		Listen: "127.0.0.1:0", Auth: devAuthenticator(t), Backends: pgserver.Backends(projector.New(store)), Logger: discardLogger(),
 	})
 	if err != nil {
 		t.Fatalf("build server: %v", err)

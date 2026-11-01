@@ -620,3 +620,14 @@ func (p *Projector) logSize(ctx context.Context) (int64, error) {
 	}
 	return total, nil
 }
+
+// ApplyAs appends a human decision on behalf of the authenticated principal (FR-041).
+func (p *Projector) ApplyAs(ctx context.Context, env *graphv1.EventEnvelope, principal string) (*graphv1.IngestResult, error) {
+	return p.ApplyWithOptions(ctx, env, ApplyOptions{Principal: principal})
+}
+
+// Extent reports the observed-time span of the log and each source's coverage (FR-032, FR-052).
+func (p *Projector) Extent(ctx context.Context) (*graphv1.Extent, error) { return p.log.Extent(ctx) }
+
+// SchemaVersions are the event schema versions the log accepts.
+func (p *Projector) SchemaVersions() event.SchemaVersions { return p.log.SchemaVersions() }

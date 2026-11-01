@@ -70,7 +70,7 @@ func newGraphServer(t *testing.T) *graphServer {
 		Knowledge:       sections,
 		Listen:          "127.0.0.1:0",
 		Auth:            auth,
-		Projector:       proj,
+		Backends:        backendsFor(proj),
 		Logger:          logger,
 		ShutdownTimeout: 2 * time.Second,
 	})
@@ -546,7 +546,7 @@ func TestNewRejectsIncompleteConfig(t *testing.T) {
 		t.Fatalf("dev authenticator: %v", err)
 	}
 
-	if _, err := New(Config{Listen: "127.0.0.1:0", Projector: projector.New(store)}); err == nil {
+	if _, err := New(Config{Listen: "127.0.0.1:0", Backends: backendsFor(projector.New(store))}); err == nil {
 		t.Error("New accepted a config with no authenticator")
 	}
 	if _, err := New(Config{Listen: "127.0.0.1:0", Auth: auth}); err == nil {

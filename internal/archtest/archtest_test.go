@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -138,6 +139,22 @@ var rules = []rule{
 		},
 	},
 	{
+		why: "application packages reach storage only through their own ports: the runner, the " +
+			"server and the investigation workers never link Postgres, the event log, the projector " +
+			"or the query engine; pginvestigation, pgserver and pgcatalog wire those in",
+		packages: []string{
+			"internal/investigation/runner",
+			"internal/investigation/record",
+			"internal/investigation/workers/...",
+			"internal/server",
+			"internal/catalog",
+		},
+		forbidden: append(append([]string{}, infrastructure...),
+			module+"internal/projector",
+			module+"internal/query",
+		),
+	},
+	{
 		why: "shared utilities are leaves: they do not depend on an application layer",
 		packages: []string{
 			"internal/sanitise",
@@ -194,4 +211,52 @@ func listDeps(t *testing.T, root, pkg string) []string {
 		}
 	}
 	return deps
+}
+
+// wiring are the adapter packages that join application ports to Postgres, the projector and the
+// query engine. They are the composition root's to import.
+var wiring = []string{
+	module + "internal/investigation/pginvestigation",
+	module + "internal/server/pgserver",
+	module + "internal/catalog/pgcatalog",
+}
+
+// roots may import the wiring packages: the CLI that builds `serve`, the evaluation harness, and
+// the wiring packages themselves.
+var roots = []string{
+	module + "cmd/",
+	module + "internal/cli",
+	module + "internal/eval",
+	module + "internal/investigation/pginvestigation",
+	module + "internal/server/pgserver",
+	module + "internal/catalog/pgcatalog",
+}
+
+// TestWiringStaysAtTheRoot fails when a package other than a composition root imports a wiring
+// package: an application that imports its own adapter has a port in name only.
+func TestWiringStaysAtTheRoot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("lists the module's packages with the go tool")
+	}
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "list", "-f", "{{.ImportPath}} {{join .Imports \" \"}}", "./...")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || slices.ContainsFunc(roots, func(r string) bool { return strings.HasPrefix(fields[0], r) }) {
+			continue
+		}
+		for _, imp := range fields[1:] {
+			if slices.Contains(wiring, imp) {
+				t.Errorf("%s imports %s; only a composition root (%v) may", fields[0], imp, roots)
+			}
+		}
+	}
 }

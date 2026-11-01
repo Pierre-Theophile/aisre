@@ -14,6 +14,7 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
@@ -27,14 +28,14 @@ var (
 )
 
 // decisionInput is a concluded investigation ready to be recorded.
-func decisionInput(t *testing.T) investigationstore.DecisionInput {
+func decisionInput(t *testing.T) record.DecisionInput {
 	t.Helper()
 
 	l := savedLedger(t)
 	if err := l.SetStatus("h1", ledger.StatusSupported, ledger.StatusUpdate{}); err != nil {
 		t.Fatalf("set supported: %v", err)
 	}
-	return investigationstore.DecisionInput{
+	return record.DecisionInput{
 		Ledger:         l,
 		Subjects:       []*graphv1.Ref{{Namespace: "otel.service.name", Value: "checkout"}},
 		TargetEntities: []*graphv1.Ref{{Namespace: "otel.service.name", Value: "payments"}},
@@ -217,7 +218,7 @@ func TestDecisionRecordStaysInsideThePropertyCap(t *testing.T) {
 
 	body := env.GetBody().(*graphv1.EventEnvelope_RecordInvestigation).RecordInvestigation
 	hypotheses := body.GetHypotheses().GetFields()["sre.investigation.hypotheses"].GetStructValue().AsMap()
-	if hypotheses["detail_level"] == investigationstore.DetailFull {
+	if hypotheses["detail_level"] == record.DetailFull {
 		t.Error("63 hypotheses with statements and rationales fitted at full detail; the cap is not being applied")
 	}
 	if total, _ := hypotheses["total"].(float64); int(total) != len(l.Hypotheses()) {
@@ -244,10 +245,10 @@ func TestEmitDecisionRecordWritesExactlyOneEvent(t *testing.T) {
 
 	proj := projector.New(store)
 	if err := proj.RegisterSource(ctx, event.Source{
-		SourceID:      investigationstore.DecisionRecordSourceID,
+		SourceID:      record.DecisionRecordSourceID,
 		Kind:          "investigation",
 		Ordering:      "none",
-		SchemaVersion: investigationstore.DecisionRecordSchemaVersion,
+		SchemaVersion: record.DecisionRecordSchemaVersion,
 	}); err != nil {
 		t.Fatalf("register source: %v", err)
 	}
@@ -314,10 +315,10 @@ func TestEmitDecisionRecordReportsARejectionRatherThanFailing(t *testing.T) {
 
 	proj := projector.New(store)
 	if err := proj.RegisterSource(ctx, event.Source{
-		SourceID:      investigationstore.DecisionRecordSourceID,
+		SourceID:      record.DecisionRecordSourceID,
 		Kind:          "investigation",
 		Ordering:      "none",
-		SchemaVersion: investigationstore.DecisionRecordSchemaVersion,
+		SchemaVersion: record.DecisionRecordSchemaVersion,
 	}); err != nil {
 		t.Fatalf("register source: %v", err)
 	}

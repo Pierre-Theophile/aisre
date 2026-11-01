@@ -31,7 +31,7 @@ func (s *QueryService) Extent(ctx context.Context, _ *connect.Request[graphv1.Ex
 	var extent *graphv1.Extent
 	err := s.Metrics().TimeQuery(ctx, "Extent", func() error {
 		var err error
-		extent, err = s.projector.Log().Extent(ctx)
+		extent, err = s.projector.Extent(ctx)
 		return err
 	})
 	if err != nil {

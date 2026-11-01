@@ -15,6 +15,7 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
@@ -37,7 +38,7 @@ func newLifecycleFixture(ctx context.Context, t *testing.T, store *postgres.Stor
 	t.Helper()
 	dao := investigationstore.NewInvestigationDAO(store)
 	opened, err := dao.Open(ctx,
-		investigationstore.Incident{
+		record.Incident{
 			IncidentID:             lifecycleIncidentID,
 			CanonicalSubjectID:     "e:checkout",
 			OpenedAt:               lifecycleAt,
@@ -56,8 +57,8 @@ func newLifecycleFixture(ctx context.Context, t *testing.T, store *postgres.Stor
 	return dao
 }
 
-func newInvestigation(id string) investigationstore.NewInvestigation {
-	return investigationstore.NewInvestigation{
+func newInvestigation(id string) record.NewInvestigation {
+	return record.NewInvestigation{
 		InvestigationID:   id,
 		IncidentID:        lifecycleIncidentID,
 		ValidAt:           lifecycleAt,
@@ -105,7 +106,7 @@ func TestOpenIsIdempotentOnThePublishedKey(t *testing.T) {
 	// FR-008b: re-delivery of a symptom whose key has been seen returns the existing
 	// investigation and opens no second one.
 	second := newInvestigation("inv-idem-02")
-	again, err := dao.Open(ctx, investigationstore.Incident{
+	again, err := dao.Open(ctx, record.Incident{
 		IncidentID: lifecycleIncidentID, CanonicalSubjectID: "e:checkout",
 		OpenedAt: lifecycleAt, LastSymptomAt: lifecycleAt,
 	}, second, declaredSymptom("inv-idem-01"))
@@ -115,7 +116,7 @@ func TestOpenIsIdempotentOnThePublishedKey(t *testing.T) {
 	if again != "inv-idem-01" {
 		t.Fatalf("re-delivery opened %q; FR-008b makes it a no-op returning inv-idem-01", again)
 	}
-	rows, err := dao.List(ctx, investigationstore.ListFilter{IncidentID: lifecycleIncidentID})
+	rows, err := dao.List(ctx, record.ListFilter{IncidentID: lifecycleIncidentID})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -136,13 +137,13 @@ func TestLifecycleRunningToConcluded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lifecycle: %v", err)
 	}
-	if lifecycle != investigationstore.LifecycleRunning {
+	if lifecycle != record.LifecycleRunning {
 		t.Fatalf("lifecycle = %q, want running", lifecycle)
 	}
 
-	if err := lc.Conclude(ctx, "inv-conclude-01", investigationstore.Conclusion{
-		Kind:              investigationstore.ConclusionFinal,
-		Outcome:           investigationstore.OutcomeRanked,
+	if err := lc.Conclude(ctx, "inv-conclude-01", record.Conclusion{
+		Kind:              record.ConclusionFinal,
+		Outcome:           record.OutcomeRanked,
 		StopReason:        investigationv1.StopReason_COMPLETED,
 		VerdictLine:       "shop/payments@rev7 caused it",
 		RollbackCandidate: "k8s.change=shop/payments@rev7",
@@ -155,19 +156,19 @@ func TestLifecycleRunningToConcluded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lifecycle: %v", err)
 	}
-	if lifecycle != investigationstore.LifecycleConcluded ||
-		kind != investigationstore.ConclusionFinal ||
-		outcome != investigationstore.OutcomeRanked {
+	if lifecycle != record.LifecycleConcluded ||
+		kind != record.ConclusionFinal ||
+		outcome != record.OutcomeRanked {
 		t.Fatalf("got (%s, %s, %s), want (concluded, final, ranked)", lifecycle, kind, outcome)
 	}
 
 	// FR-007, Invariant 6: a completed investigation is immutable. A second conclusion — a retry,
 	// a duplicated callback — cannot rewrite the first one's verdict.
-	err = lc.Conclude(ctx, "inv-conclude-01", investigationstore.Conclusion{
-		Kind: investigationstore.ConclusionFinal, Outcome: investigationstore.OutcomeUnknown,
+	err = lc.Conclude(ctx, "inv-conclude-01", record.Conclusion{
+		Kind: record.ConclusionFinal, Outcome: record.OutcomeUnknown,
 		VerdictLine: "actually we do not know",
 	})
-	if !errors.Is(err, investigationstore.ErrNotRunning) {
+	if !errors.Is(err, record.ErrNotRunning) {
 		t.Fatalf("second conclude = %v, want ErrNotRunning (FR-007)", err)
 	}
 	inv, err := dao.Get(ctx, "inv-conclude-01")
@@ -190,15 +191,15 @@ func TestBudgetExhaustionIsAlwaysAPartialConclusion(t *testing.T) {
 	newLifecycleFixture(ctx, t, store, "inv-budget-01")
 	lc := investigationstore.NewLifecycleDAO(store)
 
-	err := lc.Conclude(ctx, "inv-budget-01", investigationstore.Conclusion{
-		Kind: investigationstore.ConclusionFinal, Outcome: investigationstore.OutcomeBudgetExhausted,
+	err := lc.Conclude(ctx, "inv-budget-01", record.Conclusion{
+		Kind: record.ConclusionFinal, Outcome: record.OutcomeBudgetExhausted,
 	})
-	if !errors.Is(err, investigationstore.ErrBudgetExhaustedIsPartial) {
+	if !errors.Is(err, record.ErrBudgetExhaustedIsPartial) {
 		t.Fatalf("error = %v, want ErrBudgetExhaustedIsPartial (FR-006)", err)
 	}
-	if err := lc.Conclude(ctx, "inv-budget-01", investigationstore.Conclusion{
-		Kind:       investigationstore.ConclusionPartial,
-		Outcome:    investigationstore.OutcomeBudgetExhausted,
+	if err := lc.Conclude(ctx, "inv-budget-01", record.Conclusion{
+		Kind:       record.ConclusionPartial,
+		Outcome:    record.OutcomeBudgetExhausted,
 		StopReason: investigationv1.StopReason_BUDGET_EXHAUSTED_STOP,
 	}); err != nil {
 		t.Fatalf("partial conclude: %v", err)
@@ -220,7 +221,7 @@ func TestFailedIsATerminalStateWithNoConclusionKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lifecycle: %v", err)
 	}
-	if lifecycle != investigationstore.LifecycleFailed || outcome != investigationstore.OutcomeFailed {
+	if lifecycle != record.LifecycleFailed || outcome != record.OutcomeFailed {
 		t.Fatalf("got (%s, %s), want (failed, failed)", lifecycle, outcome)
 	}
 	if kind != "" {
@@ -239,11 +240,11 @@ func TestReopenIsTheOnlyTransitionOnAConcludedRow(t *testing.T) {
 	lc := investigationstore.NewLifecycleDAO(store)
 
 	// Reopening a running investigation is refused: there is nothing concluded to reopen.
-	if err := lc.MarkReopened(ctx, "inv-reopen-parent"); !errors.Is(err, investigationstore.ErrNotConcluded) {
+	if err := lc.MarkReopened(ctx, "inv-reopen-parent"); !errors.Is(err, record.ErrNotConcluded) {
 		t.Fatalf("reopen while running = %v, want ErrNotConcluded", err)
 	}
-	if err := lc.Conclude(ctx, "inv-reopen-parent", investigationstore.Conclusion{
-		Kind: investigationstore.ConclusionFinal, Outcome: investigationstore.OutcomeUnknown,
+	if err := lc.Conclude(ctx, "inv-reopen-parent", record.Conclusion{
+		Kind: record.ConclusionFinal, Outcome: record.OutcomeUnknown,
 		VerdictLine: "no observed change explains this", EndedAt: lifecycleAt.Add(time.Minute),
 	}); err != nil {
 		t.Fatalf("conclude: %v", err)
@@ -252,7 +253,7 @@ func TestReopenIsTheOnlyTransitionOnAConcludedRow(t *testing.T) {
 	child := newInvestigation("inv-reopen-child")
 	child.ReopensInvestigationID = "inv-reopen-parent"
 	fact, err := dao.ReopenWithFact(ctx, "inv-reopen-parent", child, &investigationv1.HumanFact{
-		Kind:        investigationstore.FactKindCorrection,
+		Kind:        record.FactKindCorrection,
 		Statement:   "the affected services are shop/checkout and shop/payments",
 		EntityIds:   []string{"e:checkout", "e:payments"},
 		Author:      lifecyclePrincipal,
@@ -261,7 +262,7 @@ func TestReopenIsTheOnlyTransitionOnAConcludedRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen with fact: %v", err)
 	}
-	if fact.GetWeightClass() != investigationstore.WeightClassStrong {
+	if fact.GetWeightClass() != record.WeightClassStrong {
 		t.Errorf("weight class = %q, want strong and never decisive (FR-057a)", fact.GetWeightClass())
 	}
 
@@ -309,10 +310,10 @@ func TestHumanFactNeverCarriesDecisiveWeight(t *testing.T) {
 	dao := newLifecycleFixture(ctx, t, store, "inv-fact-01")
 
 	_, err := dao.SubmitFact(ctx, "inv-fact-01", &investigationv1.HumanFact{
-		Kind: investigationstore.FactKindManualAction, Statement: "I restarted a pod",
+		Kind: record.FactKindManualAction, Statement: "I restarted a pod",
 		Author: lifecyclePrincipal, WeightClass: "decisive",
 	})
-	if !errors.Is(err, investigationstore.ErrDecisiveHumanFact) {
+	if !errors.Is(err, record.ErrDecisiveHumanFact) {
 		t.Fatalf("error = %v, want ErrDecisiveHumanFact: a person who is certain is still a "+
 			"person (FR-057a)", err)
 	}
@@ -320,14 +321,14 @@ func TestHumanFactNeverCarriesDecisiveWeight(t *testing.T) {
 	_, err = dao.SubmitFact(ctx, "inv-fact-01", &investigationv1.HumanFact{
 		Kind: "hunch", Statement: "something feels off", Author: lifecyclePrincipal,
 	})
-	if !errors.Is(err, investigationstore.ErrUnknownFactKind) {
+	if !errors.Is(err, record.ErrUnknownFactKind) {
 		t.Fatalf("error = %v, want ErrUnknownFactKind", err)
 	}
 
 	_, err = dao.SubmitFact(ctx, "inv-fact-01", &investigationv1.HumanFact{
-		Kind: investigationstore.FactKindManualAction, Statement: "I restarted a pod",
+		Kind: record.FactKindManualAction, Statement: "I restarted a pod",
 	})
-	if !errors.Is(err, investigationstore.ErrAnonymousPrincipal) {
+	if !errors.Is(err, record.ErrAnonymousPrincipal) {
 		t.Fatalf("error = %v, want ErrAnonymousPrincipal (FR-066)", err)
 	}
 }
@@ -343,7 +344,7 @@ func TestHumanFactAgainstARunningInvestigationNeverBlocks(t *testing.T) {
 	lc := investigationstore.NewLifecycleDAO(store)
 
 	fact, err := dao.SubmitFact(ctx, "inv-fact-running", &investigationv1.HumanFact{
-		Kind:      investigationstore.FactKindVendorNotice,
+		Kind:      record.FactKindVendorNotice,
 		Statement: "the provider reported a regional incident from 14:10",
 		Author:    lifecyclePrincipal,
 		Concerns: &graphv1.Interval{
@@ -357,7 +358,7 @@ func TestHumanFactAgainstARunningInvestigationNeverBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lifecycle: %v", err)
 	}
-	if lifecycle != investigationstore.LifecycleRunning {
+	if lifecycle != record.LifecycleRunning {
 		t.Fatalf("lifecycle = %q after a fact; the engine never waits for a human (FR-006, FR-057)",
 			lifecycle)
 	}
@@ -386,8 +387,8 @@ func TestReviewAndLabelAreAdditiveAndAttributable(t *testing.T) {
 
 	dao := newLifecycleFixture(ctx, t, store, "inv-review-01")
 	lc := investigationstore.NewLifecycleDAO(store)
-	if err := lc.Conclude(ctx, "inv-review-01", investigationstore.Conclusion{
-		Kind: investigationstore.ConclusionFinal, Outcome: investigationstore.OutcomeRanked,
+	if err := lc.Conclude(ctx, "inv-review-01", record.Conclusion{
+		Kind: record.ConclusionFinal, Outcome: record.OutcomeRanked,
 		VerdictLine: "shop/payments@rev7 caused it",
 	}); err != nil {
 		t.Fatalf("conclude: %v", err)
@@ -431,7 +432,7 @@ func TestReviewAndLabelAreAdditiveAndAttributable(t *testing.T) {
 
 	if _, err := dao.RecordReview(ctx, "inv-review-01", &investigationv1.HumanReview{
 		ValidatedRootCause: "unobserved", Author: "",
-	}); !errors.Is(err, investigationstore.ErrAnonymousPrincipal) {
+	}); !errors.Is(err, record.ErrAnonymousPrincipal) {
 		t.Errorf("an anonymous review was accepted (FR-066)")
 	}
 
@@ -472,7 +473,7 @@ func TestEvidenceRecordingKeepsEveryCall(t *testing.T) {
 
 	item := func(id string) ledger.EvidenceItem {
 		return ledger.EvidenceItem{
-			ID: id, Kind: investigationstore.EvidenceKindAlgebraAnswer,
+			ID: id, Kind: record.EvidenceKindAlgebraAnswer,
 			Worker: "metrics", Capability: "errors_by_version",
 			ValidAt: lifecycleAt, ObservedAt: lifecycleAt, CalledAt: lifecycleAt,
 			Mode: "recorded", Outcome: "digest", ResponseDigest: "sha256:abc",
@@ -480,11 +481,11 @@ func TestEvidenceRecordingKeepsEveryCall(t *testing.T) {
 			DeepLink: "https://metrics.invalid/q",
 		}
 	}
-	call := func(seq int, id, evidenceID string) investigationstore.WorkerCall {
-		return investigationstore.WorkerCall{
+	call := func(seq int, id, evidenceID string) record.WorkerCall {
+		return record.WorkerCall{
 			CallID: id, Seq: seq, Worker: "metrics", Capability: "errors_by_version",
 			TermKey: "term-identical", DiscriminatingQuestion: "did rev7 raise the error rate?",
-			Mode: "recorded", Outcome: investigationstore.CallOutcomeAnswered,
+			Mode: "recorded", Outcome: record.CallOutcomeAnswered,
 			Duration: 40 * time.Millisecond, CostClass: "standard", Backend: "metrics-recorded",
 			EvidenceID: evidenceID,
 		}
@@ -519,14 +520,14 @@ func TestEvidenceRecordingKeepsEveryCall(t *testing.T) {
 
 	// FR-018a: a call that serves no hypothesis is recorded as exploratory, with a reason.
 	exploratory := call(2, "call-2", "ev-2")
-	exploratory.DiscriminatingQuestion = investigationstore.Exploratory("scanning the neighbourhood")
+	exploratory.DiscriminatingQuestion = record.Exploratory("scanning the neighbourhood")
 	if err := recorder.Record(ctx, "inv-evidence-01", exploratory, item("ev-2")); err != nil {
 		t.Fatalf("record exploratory: %v", err)
 	}
 	blank := call(3, "call-3", "")
 	blank.DiscriminatingQuestion = ""
 	if err := recorder.Record(ctx, "inv-evidence-01", blank, ledger.EvidenceItem{}); !errors.Is(
-		err, investigationstore.ErrNoDiscriminatingQuestion) {
+		err, record.ErrNoDiscriminatingQuestion) {
 		t.Fatalf("error = %v, want ErrNoDiscriminatingQuestion (FR-018a)", err)
 	}
 }
@@ -541,7 +542,7 @@ func TestObservedTimePinRejectsEvidenceFromTheFuture(t *testing.T) {
 	recorder := investigationstore.NewEvidenceRecorder(dao)
 
 	late := ledger.EvidenceItem{
-		ID: "ev-late", Kind: investigationstore.EvidenceKindAlgebraAnswer,
+		ID: "ev-late", Kind: record.EvidenceKindAlgebraAnswer,
 		Worker: "metrics", Capability: "compare",
 		ValidAt: lifecycleAt, ObservedAt: lifecycleAt.Add(time.Hour), CalledAt: lifecycleAt,
 		Mode: "live", Outcome: "digest",
@@ -549,18 +550,18 @@ func TestObservedTimePinRejectsEvidenceFromTheFuture(t *testing.T) {
 		DeepLink: "https://metrics.invalid/q",
 	}
 	// The Go-side check names the rule before the database does.
-	if err := investigationstore.CheckObservedPin(late, lifecycleAt, false); !errors.Is(
-		err, investigationstore.ErrObservedAfterInvestigation) {
+	if err := record.CheckObservedPin(late, lifecycleAt, false); !errors.Is(
+		err, record.ErrObservedAfterInvestigation) {
 		t.Fatalf("CheckObservedPin = %v, want ErrObservedAfterInvestigation", err)
 	}
-	if err := investigationstore.CheckObservedPin(late, lifecycleAt, true); err != nil {
+	if err := record.CheckObservedPin(late, lifecycleAt, true); err != nil {
 		t.Errorf("review mode is the recorded exception (FR-005); got %v", err)
 	}
 	// And the trigger refuses the row whatever the caller did.
-	err := recorder.Record(ctx, "inv-pin-01", investigationstore.WorkerCall{
+	err := recorder.Record(ctx, "inv-pin-01", record.WorkerCall{
 		CallID: "call-late", Seq: 0, Worker: "metrics", Capability: "compare",
 		TermKey: "t", DiscriminatingQuestion: "q", Mode: "live",
-		Outcome: investigationstore.CallOutcomeAnswered,
+		Outcome: record.CallOutcomeAnswered,
 	}, late)
 	if err == nil || !strings.Contains(err.Error(), "Invariant 7") {
 		t.Fatalf("the database accepted evidence from after the pin: %v", err)
@@ -575,19 +576,19 @@ func TestValidateEvidenceNamesTheRuleItBroke(t *testing.T) {
 		Coverage: &investigationv1.Coverage{DataSource: "metrics"},
 		DeepLink: "https://metrics.invalid/q",
 	}
-	if err := investigationstore.ValidateEvidence(base); err != nil {
+	if err := record.ValidateEvidence(base); err != nil {
 		t.Fatalf("a complete item was rejected: %v", err)
 	}
 	noCoverage := base
 	noCoverage.Coverage = nil
-	if err := investigationstore.ValidateEvidence(noCoverage); !errors.Is(
-		err, investigationstore.ErrMissingCoverage) {
+	if err := record.ValidateEvidence(noCoverage); !errors.Is(
+		err, record.ErrMissingCoverage) {
 		t.Errorf("error = %v, want ErrMissingCoverage (FR-014a)", err)
 	}
 	noLink := base
 	noLink.DeepLink = ""
-	if err := investigationstore.ValidateEvidence(noLink); !errors.Is(
-		err, investigationstore.ErrMissingDeepLink) {
+	if err := record.ValidateEvidence(noLink); !errors.Is(
+		err, record.ErrMissingDeepLink) {
 		t.Errorf("error = %v, want ErrMissingDeepLink (FR-057d)", err)
 	}
 }
@@ -602,10 +603,10 @@ func TestDeliveryIsEditedInPlaceAndNeverBlocksAConclusion(t *testing.T) {
 	dao := newLifecycleFixture(ctx, t, store, "inv-delivery-01")
 	lc := investigationstore.NewLifecycleDAO(store)
 
-	first, err := dao.RecordDelivery(ctx, investigationstore.DeliveryRecord{
+	first, err := dao.RecordDelivery(ctx, record.DeliveryRecord{
 		InvestigationID: "inv-delivery-01", TargetSystem: "slack:acme", TargetRef: "C0123STABLE",
 		ExternalMessageRef: "msg-1", RenderingDigest: "sha256:aaa",
-		Outcome: investigationstore.DeliveryDelivered, At: lifecycleAt,
+		Outcome: record.DeliveryDelivered, At: lifecycleAt,
 	})
 	if err != nil {
 		t.Fatalf("record delivery: %v", err)
@@ -616,10 +617,10 @@ func TestDeliveryIsEditedInPlaceAndNeverBlocksAConclusion(t *testing.T) {
 
 	// A second delivery to the same place edits in place: one row, the same external reference,
 	// a higher update count and the original first-delivered instant (FR-057f).
-	second, err := dao.RecordDelivery(ctx, investigationstore.DeliveryRecord{
+	second, err := dao.RecordDelivery(ctx, record.DeliveryRecord{
 		InvestigationID: "inv-delivery-01", TargetSystem: "slack:acme", TargetRef: "C0123STABLE",
 		RenderingDigest: "sha256:bbb",
-		Outcome:         investigationstore.DeliveryDelivered, At: lifecycleAt.Add(time.Minute),
+		Outcome:         record.DeliveryDelivered, At: lifecycleAt.Add(time.Minute),
 	})
 	if err != nil {
 		t.Fatalf("second delivery: %v", err)
@@ -643,25 +644,25 @@ func TestDeliveryIsEditedInPlaceAndNeverBlocksAConclusion(t *testing.T) {
 	}
 
 	// A failed delivery is recorded and the investigation still concludes (FR-057f).
-	if _, err := dao.RecordDelivery(ctx, investigationstore.DeliveryRecord{
+	if _, err := dao.RecordDelivery(ctx, record.DeliveryRecord{
 		InvestigationID: "inv-delivery-01", TargetSystem: "slack:acme", TargetRef: "C0123STABLE",
-		RenderingDigest: "sha256:ccc", Outcome: investigationstore.DeliveryFailed,
+		RenderingDigest: "sha256:ccc", Outcome: record.DeliveryFailed,
 		FailureDetail: "the chat connector returned 503", At: lifecycleAt.Add(2 * time.Minute),
 	}); err != nil {
 		t.Fatalf("failed delivery: %v", err)
 	}
-	if err := lc.Conclude(ctx, "inv-delivery-01", investigationstore.Conclusion{
-		Kind: investigationstore.ConclusionFinal, Outcome: investigationstore.OutcomeRanked,
+	if err := lc.Conclude(ctx, "inv-delivery-01", record.Conclusion{
+		Kind: record.ConclusionFinal, Outcome: record.OutcomeRanked,
 		VerdictLine: "shop/payments@rev7 caused it",
 	}); err != nil {
 		t.Fatalf("a failed delivery blocked the conclusion; FR-057f forbids that: %v", err)
 	}
 
 	// A failure with no detail is refused: a failure nobody can read is not a record.
-	if _, err := dao.RecordDelivery(ctx, investigationstore.DeliveryRecord{
+	if _, err := dao.RecordDelivery(ctx, record.DeliveryRecord{
 		InvestigationID: "inv-delivery-01", TargetSystem: "slack:acme", TargetRef: "C0999",
-		RenderingDigest: "sha256:ddd", Outcome: investigationstore.DeliveryFailed,
-	}); !errors.Is(err, investigationstore.ErrDeliveryFailureNeedsDetail) {
+		RenderingDigest: "sha256:ddd", Outcome: record.DeliveryFailed,
+	}); !errors.Is(err, record.ErrDeliveryFailureNeedsDetail) {
 		t.Errorf("error = %v, want ErrDeliveryFailureNeedsDetail", err)
 	}
 }
@@ -720,8 +721,8 @@ func TestADirectUpdateOfAConcludedRowIsRefusedByTheDatabase(t *testing.T) {
 		t.Fatalf("update a running investigation: %v", err)
 	}
 
-	if err := lc.Conclude(ctx, "inv-immutable-01", investigationstore.Conclusion{
-		Kind: investigationstore.ConclusionFinal, Outcome: investigationstore.OutcomeRanked,
+	if err := lc.Conclude(ctx, "inv-immutable-01", record.Conclusion{
+		Kind: record.ConclusionFinal, Outcome: record.OutcomeRanked,
 		VerdictLine: "payments@rev7 caused it", RollbackCandidate: "k8s.change=shop/payments@rev7",
 		EndedAt: lifecycleAt.Add(time.Minute),
 	}); err != nil {
@@ -741,7 +742,7 @@ func TestADirectUpdateOfAConcludedRowIsRefusedByTheDatabase(t *testing.T) {
 		{
 			"quietly changing the outcome",
 			`UPDATE investigation.investigations SET outcome = $2 WHERE investigation_id = $1`,
-			[]any{"inv-immutable-01", investigationstore.OutcomeUnknown},
+			[]any{"inv-immutable-01", record.OutcomeUnknown},
 		},
 		{
 			"reopening while also editing something else",

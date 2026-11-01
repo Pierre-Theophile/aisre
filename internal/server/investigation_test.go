@@ -18,6 +18,7 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1/investigationv1connect"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
@@ -45,8 +46,8 @@ type investigationServer struct {
 // ledger and hands it back, and that `List` does not.
 type stubLedger struct{}
 
-func (stubLedger) Load(_ context.Context, investigationID string) (*investigationstore.LedgerRows, error) {
-	return &investigationstore.LedgerRows{
+func (stubLedger) Load(_ context.Context, investigationID string) (*record.LedgerRows, error) {
+	return &record.LedgerRows{
 		InvestigationID: investigationID,
 		Hypotheses: []ledger.Hypothesis{{
 			ID: "h-1", Kind: ledger.KindChange, Statement: "shop/payments@rev7 caused it",
@@ -164,7 +165,7 @@ func newInvestigationServer(t *testing.T) *investigationServer {
 	srv, err := New(Config{
 		Listen:          "127.0.0.1:0",
 		Auth:            auth,
-		Projector:       proj,
+		Backends:        backendsFor(proj),
 		Logger:          logger,
 		Investigation:   NewInvestigationService(runner, dao, logger, WithLedgerReader(stubLedger{})),
 		ShutdownTimeout: 2 * time.Second,
@@ -204,12 +205,12 @@ func (ts *investigationServer) seed(t *testing.T) {
 	ctx := context.Background()
 	principal := ts.tokenPrincipal(t, "alice")
 	if _, err := ts.dao.Open(ctx,
-		investigationstore.Incident{
+		record.Incident{
 			IncidentID: investigationInc, CanonicalSubjectID: "e:checkout",
 			OpenedAt: investigationAt, LastSymptomAt: investigationAt,
 			AssociationRuleVersion: "1.0.0",
 		},
-		investigationstore.NewInvestigation{
+		record.NewInvestigation{
 			InvestigationID: investigationID, IncidentID: investigationInc,
 			ValidAt: investigationAt, ObservedAt: investigationAt,
 			WindowStart: investigationAt.Add(-90 * time.Minute), WindowEnd: investigationAt,
@@ -531,7 +532,7 @@ func TestSubmitHumanFactNeverBlocks(t *testing.T) {
 		t.Fatalf("facts = %d, want 1", len(resp.Msg.GetFacts()))
 	}
 	fact := resp.Msg.GetFacts()[0]
-	if fact.GetWeightClass() != investigationstore.WeightClassStrong {
+	if fact.GetWeightClass() != record.WeightClassStrong {
 		t.Errorf("weight class = %q, want strong and never decisive (FR-057a)", fact.GetWeightClass())
 	}
 	// FR-066: the author is the authenticated caller, filled in by the handler rather than

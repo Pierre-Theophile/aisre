@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/server/pgserver"
+
 	"github.com/Pierre-Theophile/aisre/internal/fixture"
 	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/server"
@@ -37,10 +39,10 @@ func queryServer(t *testing.T, fixtureDir string) (baseURL, token string) {
 	}
 
 	srv, err := server.New(server.Config{
-		Listen:    "127.0.0.1:0",
-		Auth:      devAuthenticator(t),
-		Projector: p,
-		Logger:    discardLogger(),
+		Listen:   "127.0.0.1:0",
+		Auth:     devAuthenticator(t),
+		Backends: pgserver.Backends(p),
+		Logger:   discardLogger(),
 	})
 	if err != nil {
 		t.Fatalf("build server: %v", err)

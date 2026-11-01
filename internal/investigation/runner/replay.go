@@ -12,10 +12,10 @@ import (
 
 	"connectrpc.com/connect"
 
+	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/internal/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/replay"
-	eventlog "github.com/Pierre-Theophile/aisre/internal/log"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 )
 
@@ -139,8 +139,8 @@ func isWorldDir(dir string) bool {
 // serves, and a rebuild missing an event is a rebuild that silently answers differently.
 func (r *Runner) GraphEvents(ctx context.Context, _ string) ([][]byte, error) {
 	var out [][]byte
-	err := eventlog.New(r.cfg.Store).Iterate(ctx, 0, func(record *eventlog.Record) error {
-		raw, err := graph.CanonicalJSON(record.Envelope)
+	err := r.decisions.Iterate(ctx, func(env *graphv1.EventEnvelope) error {
+		raw, err := graph.CanonicalJSON(env)
 		if err != nil {
 			return fmt.Errorf("export graph events: %w", err)
 		}

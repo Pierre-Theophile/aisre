@@ -45,12 +45,9 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
-	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	graphworker "github.com/Pierre-Theophile/aisre/internal/investigation/workers/graph"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
-	"github.com/Pierre-Theophile/aisre/internal/projector"
-	"github.com/Pierre-Theophile/aisre/internal/query"
-	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 	knowledgestore "github.com/Pierre-Theophile/aisre/pkg/knowledge"
 	"github.com/Pierre-Theophile/aisre/pkg/worker"
 )
@@ -67,25 +64,28 @@ const DefaultProfileName = "page"
 
 // Config is everything the runner is wired with.
 //
-// Only Store, Graph and Workers are required. Everything else has a published default, and the
+// Only Persistence, Graph and Workers are required. Everything else has a published default, and the
 // defaults are chosen so that a runner built with the minimum is a runner that works with no
 // vendor account and no network (FR-067).
 type Config struct {
-	// Store is the database holding schema `investigation` and the graph. Required.
-	Store *postgres.Store
-	// Projector writes the one event an investigation emits (FR-035). Built over Store when nil.
-	Projector *projector.Projector
+	// Persistence is where the run is written down and where its decision record goes. Required;
+	// pginvestigation.Persistence builds it over Postgres and the projector.
+	Persistence Persistence
 	// Graph is feature 001's published read surface. It answers intake's resolution audit and
 	// extent consultation and backs the graph worker. Required — an engine that cannot read the
-	// graph has no subject and no candidates. GraphOver builds one from a store.
+	// graph has no subject and no candidates. pginvestigation.GraphOver builds one from a store.
 	Graph graphworker.QueryService
 	// Workers is the worker registry the engine calls. Required. The graph worker is registered
 	// over Graph when the registry does not already declare one, so a caller only has to supply
 	// the telemetry workers.
 	Workers *worker.Registry
-	// NoKnowledgeWorker leaves the knowledge worker out. By default it is registered over Store
-	// beside the graph worker, so registered documents and reviewed investigations are cited
-	// (007 FR-005); without it `knowledge_search` is reported unavailable, like any absent worker.
+	// KnowledgeCorpus is the knowledge worker's corpus: the graph's CONCERNS and INVESTIGATED
+	// edges (007 FR-005, ADR-0013 item 3); pginvestigation.KnowledgeCorpusOver builds it from a store. When
+	// set, the knowledge worker is registered beside the graph worker, so registered documents and
+	// reviewed investigations are cited; when nil, `knowledge_search` is reported unavailable,
+	// like any absent worker.
+	KnowledgeCorpus knowledge.Corpus
+	// NoKnowledgeWorker leaves the knowledge worker out even when KnowledgeCorpus is set.
 	NoKnowledgeWorker bool
 	// KnowledgeStore holds the sections of registered documents (feature 008). When set, the
 	// knowledge worker ranks those sections by what they say; when nil it ranks each candidate
@@ -143,11 +143,11 @@ type Config struct {
 // Runner implements server.Runner.
 type Runner struct {
 	cfg       Config
-	dao       *investigationstore.InvestigationDAO
-	ledgerDAO *investigationstore.LedgerDAO
-	lifecycle *investigationstore.LifecycleDAO
-	recorder  *investigationstore.EvidenceRecorder
-	proj      *projector.Projector
+	dao       Investigations
+	ledgerDAO Ledgers
+	lifecycle Lifecycle
+	recorder  Evidence
+	decisions DecisionLog
 	workers   *engine.Workers
 	profiles  map[string]budget.Profile
 	clock     func() time.Time
@@ -165,8 +165,9 @@ type Runner struct {
 // knowable at startup.
 func New(cfg Config) (*Runner, error) {
 	switch {
-	case cfg.Store == nil:
-		return nil, errors.New("runner: a store is required")
+	case !cfg.Persistence.complete():
+		return nil, errors.New("runner: persistence is required (investigations, ledgers, lifecycle, " +
+			"evidence and the decision log)")
 	case cfg.Graph == nil:
 		return nil, errors.New("runner: a graph read surface is required; intake resolves the subject " +
 			"through it before anything is asked (FR-003)")
@@ -192,10 +193,6 @@ func New(cfg Config) (*Runner, error) {
 	if cfg.Neighbourhood == nil {
 		cfg.Neighbourhood = intake.SameEntityNeighbourhood{}
 	}
-	proj := cfg.Projector
-	if proj == nil {
-		proj = projector.New(cfg.Store)
-	}
 	profiles := cfg.Profiles
 	if len(profiles) == 0 {
 		profiles = budget.Published()
@@ -209,9 +206,8 @@ func New(cfg Config) (*Runner, error) {
 			return nil, fmt.Errorf("runner: register the graph worker: %w", err)
 		}
 	}
-	// The knowledge worker likewise needs nothing but the store: its corpus is the graph's
-	// CONCERNS and INVESTIGATED edges (007 FR-005, ADR-0013 item 3).
-	if _, ok := cfg.Workers.Lookup(knowledge.Name); !ok && !cfg.NoKnowledgeWorker {
+	// The knowledge worker likewise needs nothing but its corpus.
+	if _, ok := cfg.Workers.Lookup(knowledge.Name); !ok && !cfg.NoKnowledgeWorker && cfg.KnowledgeCorpus != nil {
 		var opts []knowledge.Option
 		if cfg.KnowledgeStore != nil {
 			opts = append(opts, knowledge.WithStore(cfg.KnowledgeStore))
@@ -219,7 +215,7 @@ func New(cfg Config) (*Runner, error) {
 		if cfg.KnowledgeEmbedder != nil {
 			opts = append(opts, knowledge.WithEmbedder(cfg.KnowledgeEmbedder, cfg.KnowledgeReady))
 		}
-		if err := cfg.Workers.Register(knowledge.New(knowledge.GraphCorpus{Engine: query.NewEngine(cfg.Store)}, opts...)); err != nil {
+		if err := cfg.Workers.Register(knowledge.New(cfg.KnowledgeCorpus, opts...)); err != nil {
 			return nil, fmt.Errorf("runner: register the knowledge worker: %w", err)
 		}
 	}
@@ -228,16 +224,13 @@ func New(cfg Config) (*Runner, error) {
 		return nil, fmt.Errorf("runner: index the worker registry: %w", err)
 	}
 
-	// The DAO is handed the projector so that a fact, a reopen and a label reach the event log
-	// in the transaction that writes their rows (FR-057a/b/e, human_events.go).
-	dao := investigationstore.NewInvestigationDAO(cfg.Store, investigationstore.WithEventLog(proj))
 	r := &Runner{
 		cfg:         cfg,
-		dao:         dao,
-		ledgerDAO:   investigationstore.NewLedgerDAO(cfg.Store),
-		lifecycle:   investigationstore.NewLifecycleDAO(cfg.Store),
-		recorder:    investigationstore.NewEvidenceRecorder(dao),
-		proj:        proj,
+		dao:         cfg.Persistence.Investigations,
+		ledgerDAO:   cfg.Persistence.Ledgers,
+		lifecycle:   cfg.Persistence.Lifecycle,
+		recorder:    cfg.Persistence.Evidence,
+		decisions:   cfg.Persistence.Decisions,
 		workers:     workers,
 		profiles:    profiles,
 		clock:       cfg.Clock,
@@ -254,19 +247,15 @@ func New(cfg Config) (*Runner, error) {
 	return r, nil
 }
 
-// DAO exposes the investigation DAO, for a caller that has to read what a run left behind
-// without building a second one.
-func (r *Runner) DAO() *investigationstore.InvestigationDAO { return r.dao }
-
 // registerDecisionSource makes `investigation:engine` an appendable source. It is idempotent —
 // the insert is ON CONFLICT DO NOTHING — so building two runners over one database is not an
 // error.
 func (r *Runner) registerDecisionSource(ctx context.Context) error {
-	err := r.proj.RegisterSource(ctx, event.Source{
-		SourceID:      investigationstore.DecisionRecordSourceID,
+	err := r.decisions.RegisterSource(ctx, event.Source{
+		SourceID:      record.DecisionRecordSourceID,
 		Kind:          "investigation",
 		Ordering:      "none",
-		SchemaVersion: investigationstore.DecisionRecordSchemaVersion,
+		SchemaVersion: record.DecisionRecordSchemaVersion,
 	})
 	if err != nil {
 		return fmt.Errorf("runner: register the decision-record source: %w", err)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package knowledge
+package pginvestigation
 
 import (
 	"context"
@@ -9,18 +9,19 @@ import (
 	"time"
 
 	"github.com/Pierre-Theophile/aisre/internal/graph"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/knowledge"
 	"github.com/Pierre-Theophile/aisre/internal/knowledgedoc"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 )
 
-// GraphCorpus is the corpus a running deployment reads: the graph's CONCERNS and INVESTIGATED
+// KnowledgeCorpus is the knowledge worker's corpus a running deployment reads: the graph's CONCERNS and INVESTIGATED
 // edges as of the request's instants (007 FR-005–FR-008, ADR-0013 item 3), every one of them
 // rather than only those into the request's scope (008 research R3).
-type GraphCorpus struct {
+type KnowledgeCorpus struct {
 	Engine *query.Engine
 }
 
-var _ Corpus = GraphCorpus{}
+var _ knowledge.Corpus = KnowledgeCorpus{}
 
 // Props the projector writes on an INVESTIGATION version that a citation reads
 // (internal/projector).
@@ -32,20 +33,20 @@ const (
 )
 
 // Candidates implements Corpus.
-func (c GraphCorpus) Candidates(ctx context.Context, entityIDs []string, at Instants) ([]Document, error) {
+func (c KnowledgeCorpus) Candidates(ctx context.Context, entityIDs []string, at knowledge.Instants) ([]knowledge.Document, error) {
 	candidates, err := c.Engine.KnowledgeDocuments(ctx, entityIDs, query.AsOf{ValidAt: at.Valid, ObservedAt: at.Observed})
 	if err != nil {
 		return nil, fmt.Errorf("knowledge: read the corpus: %w", err)
 	}
-	out := make([]Document, 0, len(candidates))
+	out := make([]knowledge.Document, 0, len(candidates))
 	for _, candidate := range candidates {
 		out = append(out, documentOf(candidate, at.Valid))
 	}
 	return out, nil
 }
 
-func documentOf(c query.KnowledgeCandidate, at time.Time) Document {
-	doc := Document{
+func documentOf(c query.KnowledgeCandidate, at time.Time) knowledge.Document {
+	doc := knowledge.Document{
 		ID:              c.Ref,
 		Title:           c.DisplayName,
 		LinkedEntityIDs: append(append([]string(nil), c.Linked...), c.Elsewhere...),

@@ -22,8 +22,8 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/engine/prompt"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/render"
-	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
 	sdk "github.com/Pierre-Theophile/aisre/pkg/backend"
 )
 
@@ -73,7 +73,7 @@ func (r *Runner) Investigate(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("investigate: %w", errNoRequest))
 	}
 	if requester == "" {
-		return nil, investigationstore.ErrAnonymousPrincipal
+		return nil, record.ErrAnonymousPrincipal
 	}
 	in, err := r.intakeOf(req, requester)
 	if err != nil {
@@ -103,7 +103,7 @@ func (r *Runner) Declare(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("declare: %w", errNoRequest))
 	}
 	if requester == "" {
-		return nil, investigationstore.ErrAnonymousPrincipal
+		return nil, record.ErrAnonymousPrincipal
 	}
 	in, err := r.intakeOfDeclaration(req, requester)
 	if err != nil {
@@ -204,7 +204,7 @@ func (r *Runner) start(ctx context.Context, in startInput, emit emitFunc) (*inve
 		startedAt:       r.now(),
 	}
 
-	incident := investigationstore.Incident{
+	incident := record.Incident{
 		IncidentID:             decision.IncidentID,
 		CanonicalSubjectID:     firstEntityID(set),
 		OpenedAt:               in.intake.ValidAt,
@@ -224,8 +224,8 @@ func (r *Runner) start(ctx context.Context, in startInput, emit emitFunc) (*inve
 }
 
 // newInvestigation is the row one run opens.
-func (r *Runner) newInvestigation(rn *run, reopens string) investigationstore.NewInvestigation {
-	return investigationstore.NewInvestigation{
+func (r *Runner) newInvestigation(rn *run, reopens string) record.NewInvestigation {
+	return record.NewInvestigation{
 		InvestigationID:        rn.investigationID,
 		IncidentID:             rn.incidentID,
 		ReopensInvestigationID: reopens,
@@ -326,7 +326,7 @@ func (r *Runner) execute(ctx context.Context, rn *run, emit emitFunc) (*investig
 	// A fact that reopened a concluded run enters the child's ledger as evidence, weighted
 	// `strong` and never decisive: where telemetry contradicts a person, both are kept (FR-057a).
 	if rn.fact != nil {
-		item := investigationstore.FactEvidence(rn.fact, rn.intake.ValidAt, rn.intake.ObservedAt)
+		item := record.FactEvidence(rn.fact, rn.intake.ValidAt, rn.intake.ObservedAt)
 		if err := book.AddEvidence(item); err != nil {
 			return nil, r.failed(ctx, rn.investigationID, fmt.Sprintf("fact evidence: %v", err), err)
 		}
@@ -404,7 +404,7 @@ func (r *Runner) attachFact(eng *engine.Engine, rn *run) error {
 		if !factConcerns(h, concerns) {
 			continue
 		}
-		judgment := investigationstore.FactJudgment(
+		judgment := record.FactJudgment(
 			"j-fact-"+h.ID, h.ID, rn.fact, ledger.Neutral)
 		if _, err := book.Judge(judgment); err != nil {
 			return err
@@ -445,9 +445,9 @@ func (r *Runner) conclude(
 	}
 
 	verdict, rollback, ranked := verdictOf(book)
-	conclusion := investigationstore.Conclusion{
+	conclusion := record.Conclusion{
 		Kind:                    conclusionKindOf(stop),
-		Outcome:                 investigationstore.OutcomeName(stop.Outcome(ranked)),
+		Outcome:                 record.OutcomeName(stop.Outcome(ranked)),
 		StopReason:              stop.Reason.Proto(),
 		StopDetail:              stop.Detail,
 		VerdictLine:             verdict,
@@ -517,9 +517,9 @@ func (r *Runner) concludeUnresolved(ctx context.Context, rn *run) (*investigatio
 		Reason: engine.StopCompleted,
 		Detail: "the intake named no entity the graph could resolve; the engine will not guess one (FR-002b, FR-003)",
 	}
-	conclusion := investigationstore.Conclusion{
-		Kind:        investigationstore.ConclusionFinal,
-		Outcome:     investigationstore.OutcomeUnknown,
+	conclusion := record.Conclusion{
+		Kind:        record.ConclusionFinal,
+		Outcome:     record.OutcomeUnknown,
 		StopReason:  stop.Reason.Proto(),
 		StopDetail:  stop.Detail,
 		VerdictLine: unresolvedVerdict(rn),
@@ -638,7 +638,7 @@ func (r *Runner) failed(ctx context.Context, investigationID, detail string, cau
 	writeCtx, cancel := detachedWrite(ctx)
 	defer cancel()
 	if err := r.lifecycle.Fail(writeCtx, investigationID, detail); err != nil &&
-		!errors.Is(err, investigationstore.ErrNotRunning) {
+		!errors.Is(err, record.ErrNotRunning) {
 		r.logger.Error("investigation runner: could not record the failure",
 			"investigation_id", investigationID, "error", err.Error())
 	}
@@ -684,11 +684,11 @@ func verdictOf(book *ledger.Ledger) (verdict, rollback string, ranked bool) {
 func conclusionKindOf(stop engine.Stop) string {
 	switch stop.Reason {
 	case engine.StopCompleted, engine.StopDiminishingReturns:
-		return investigationstore.ConclusionFinal
+		return record.ConclusionFinal
 	case engine.StopBudgetExhausted, engine.StopWorkerUnavailable, engine.StopRefused, engine.StopFailed:
-		return investigationstore.ConclusionPartial
+		return record.ConclusionPartial
 	default:
-		return investigationstore.ConclusionPartial
+		return record.ConclusionPartial
 	}
 }
 

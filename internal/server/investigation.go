@@ -15,7 +15,7 @@ import (
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1/investigationv1connect"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/intake"
-	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 )
 
 // InvestigationService: the dual-surface subset of FR-064 (T089, FR-008, FR-064, FR-066, FR-067,
@@ -90,7 +90,7 @@ type Runner interface {
 // database to assert that `Get` refuses a token with no roles.
 type InvestigationStore interface {
 	Get(ctx context.Context, investigationID string) (*investigationv1.Investigation, error)
-	List(ctx context.Context, f investigationstore.ListFilter) ([]*investigationv1.Investigation, error)
+	List(ctx context.Context, f record.ListFilter) ([]*investigationv1.Investigation, error)
 	SubmitFact(ctx context.Context, investigationID string, fact *investigationv1.HumanFact) (*investigationv1.HumanFact, error)
 	RecordReview(ctx context.Context, investigationID string, review *investigationv1.HumanReview) (*investigationv1.HumanReview, error)
 	RecordLabel(ctx context.Context, investigationID string, label *investigationv1.Label) (*investigationv1.Label, error)
@@ -109,7 +109,7 @@ type InvestigationStore interface {
 // It is optional. A server built without one still answers Get with the row and its symptoms,
 // facts, reviews, labels and deliveries, exactly as before.
 type LedgerReader interface {
-	Load(ctx context.Context, investigationID string) (*investigationstore.LedgerRows, error)
+	Load(ctx context.Context, investigationID string) (*record.LedgerRows, error)
 }
 
 // InvestigationService implements sreagent.investigation.v1.InvestigationService.
@@ -281,7 +281,7 @@ func (s *InvestigationService) List(
 	if s.store == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, ErrNoInvestigationStore)
 	}
-	filter := investigationstore.ListFilter{
+	filter := record.ListFilter{
 		IncidentID: req.Msg.GetIncidentId(),
 		Lifecycle:  req.Msg.GetLifecycle(),
 		Limit:      int(req.Msg.GetPageSize()),
@@ -555,15 +555,15 @@ func investigationError(what string, err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, investigationstore.ErrNotFound):
+	case errors.Is(err, record.ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, fmt.Errorf("%s: %w", what, err))
-	case errors.Is(err, investigationstore.ErrNotRunning),
-		errors.Is(err, investigationstore.ErrNotConcluded):
+	case errors.Is(err, record.ErrNotRunning),
+		errors.Is(err, record.ErrNotConcluded):
 		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("%s: %w", what, err))
-	case errors.Is(err, investigationstore.ErrAnonymousPrincipal):
+	case errors.Is(err, record.ErrAnonymousPrincipal):
 		return connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("%s: %w", what, err))
-	case errors.Is(err, investigationstore.ErrUnknownFactKind),
-		errors.Is(err, investigationstore.ErrDecisiveHumanFact),
+	case errors.Is(err, record.ErrUnknownFactKind),
+		errors.Is(err, record.ErrDecisiveHumanFact),
 		errors.Is(err, intake.ErrUnknownProvenance),
 		errors.Is(err, intake.ErrParsedWithoutRule),
 		errors.Is(err, intake.ErrNoSubject),

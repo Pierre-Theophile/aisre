@@ -26,6 +26,8 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/ledger"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/model/modeltest"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/pginvestigation"
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/replay"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/runner"
 	investigationstore "github.com/Pierre-Theophile/aisre/internal/investigation/store"
@@ -33,6 +35,7 @@ import (
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/logs"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/metrics"
 	"github.com/Pierre-Theophile/aisre/internal/investigation/workers/traces"
+	"github.com/Pierre-Theophile/aisre/internal/projector"
 	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres"
 	"github.com/Pierre-Theophile/aisre/internal/store/postgres/pgtest"
@@ -271,14 +274,15 @@ func newHarness(t *testing.T, turns []modeltest.Turn) *harness {
 
 	recording := t.TempDir()
 	r, err := runner.New(runner.Config{
-		Store:         store,
-		Graph:         stubGraph{},
-		Workers:       registry,
-		Model:         modelClient(t, turns),
-		RecordingRoot: recording,
-		Prior:         publishedPrior(t),
-		Mode:          worker.ModeRecorded,
-		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Persistence:     pginvestigation.Persistence(store, nil),
+		KnowledgeCorpus: pginvestigation.KnowledgeCorpusOver(store),
+		Graph:           stubGraph{},
+		Workers:         registry,
+		Model:           modelClient(t, turns),
+		RecordingRoot:   recording,
+		Prior:           publishedPrior(t),
+		Mode:            worker.ModeRecorded,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
 		t.Fatalf("new runner: %v", err)
@@ -641,7 +645,7 @@ func TestReopenLinksANewRunAndLeavesTheParentAsProduced(t *testing.T) {
 	parentVerdict := parent.GetVerdictLine()
 
 	child, err := h.runner.Reopen(ctx, parent.GetInvestigationId(), &investigationv1.HumanFact{
-		Kind:      investigationstore.FactKindManualAction,
+		Kind:      record.FactKindManualAction,
 		Statement: "I restarted the payments pods by hand at 14:25",
 		EntityIds: []string{paymentsRef},
 		Author:    requester,
@@ -673,7 +677,7 @@ func TestReopenLinksANewRunAndLeavesTheParentAsProduced(t *testing.T) {
 	if len(child.GetFacts()) != 1 {
 		t.Fatalf("the child holds %d facts, want the one that reopened it", len(child.GetFacts()))
 	}
-	if got := child.GetFacts()[0].GetWeightClass(); got != investigationstore.WeightClassStrong {
+	if got := child.GetFacts()[0].GetWeightClass(); got != record.WeightClassStrong {
 		t.Errorf("weight class = %q, want strong and never decisive", got)
 	}
 	var inLedger bool
@@ -913,12 +917,13 @@ func TestAnUnconfiguredTelemetryBackendConcludesRatherThanFailing(t *testing.T) 
 		}
 	}
 	r, err := runner.New(runner.Config{
-		Store:   store,
-		Graph:   stubGraph{},
-		Workers: registry,
-		Prior:   publishedPrior(t),
-		Mode:    worker.ModeLive,
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Persistence:     pginvestigation.Persistence(store, nil),
+		KnowledgeCorpus: pginvestigation.KnowledgeCorpusOver(store),
+		Graph:           stubGraph{},
+		Workers:         registry,
+		Prior:           publishedPrior(t),
+		Mode:            worker.ModeLive,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
 		t.Fatalf("new runner: %v", err)
@@ -955,7 +960,7 @@ func TestAnUnconfiguredTelemetryBackendConcludesRatherThanFailing(t *testing.T) 
 			continue
 		}
 		telemetryCalls++
-		if outcome == investigationstore.CallOutcomeEmpty {
+		if outcome == record.CallOutcomeEmpty {
 			t.Errorf("%s recorded `empty`; an unanswerable question is not evidence that nothing "+
 				"happened (FR-027)", workerName)
 		}
@@ -996,7 +1001,7 @@ func TestACancelledInvestigationEndsFailedRatherThanRunning(t *testing.T) {
 		if err := rows.Scan(&id, &lifecycle); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
-		if lifecycle == investigationstore.LifecycleRunning {
+		if lifecycle == record.LifecycleRunning {
 			t.Errorf("investigation %s is still `running` after the caller went away", id)
 		}
 	}
@@ -1337,7 +1342,7 @@ type humanChannelState struct {
 // labels it — the three human actions FR-057a/b/e define, through the paths production uses.
 func recordHumanChannel(t *testing.T, ctx context.Context, h *harness, investigationID string) humanChannelState {
 	t.Helper()
-	dao := h.runner.DAO()
+	dao := investigationstore.NewInvestigationDAO(h.store, investigationstore.WithEventLog(projector.New(h.store)))
 	state := humanChannelState{
 		parentID:      investigationID,
 		factStatement: "the canary was still on the old build at 14:20",
@@ -1347,7 +1352,7 @@ func recordHumanChannel(t *testing.T, ctx context.Context, h *harness, investiga
 	}
 
 	if _, err := dao.SubmitFact(ctx, investigationID, &investigationv1.HumanFact{
-		Kind:        investigationstore.FactKindManualAction,
+		Kind:        record.FactKindManualAction,
 		Statement:   state.factStatement,
 		Author:      state.factAuthor,
 		EntityIds:   []string{checkoutRef},
@@ -1357,7 +1362,7 @@ func recordHumanChannel(t *testing.T, ctx context.Context, h *harness, investiga
 	}
 
 	child, err := h.runner.Reopen(ctx, investigationID, &investigationv1.HumanFact{
-		Kind:        investigationstore.FactKindVendorNotice,
+		Kind:        record.FactKindVendorNotice,
 		Statement:   "the vendor confirms a regional incident overlapping the window",
 		Author:      requester,
 		SubmittedAt: timestamppb.New(firedAt.Add(30 * time.Minute)),
@@ -1398,7 +1403,7 @@ func assertHumanChannelRebuilds(
 		t.Errorf("the rebuild could not place events for %v", report.MissingInvestigations)
 	}
 
-	dao := h.runner.DAO()
+	dao := investigationstore.NewInvestigationDAO(h.store, investigationstore.WithEventLog(projector.New(h.store)))
 	facts, err := dao.FactsOf(ctx, investigationID)
 	if err != nil {
 		t.Fatalf("read the rebuilt facts: %v", err)
@@ -1415,7 +1420,7 @@ func assertHumanChannelRebuilds(
 			len(facts), investigationID)
 	case found.GetAuthor() != want.factAuthor:
 		t.Errorf("the rebuilt fact is attributed to %q, want %q", found.GetAuthor(), want.factAuthor)
-	case found.GetWeightClass() != investigationstore.WeightClassStrong:
+	case found.GetWeightClass() != record.WeightClassStrong:
 		t.Errorf("the rebuilt fact is weighted %q, want strong and never decisive",
 			found.GetWeightClass())
 	case found.GetEvidenceId() == "":
@@ -1470,13 +1475,14 @@ func newRunnerOver(t *testing.T, store *postgres.Store) *runner.Runner {
 		}
 	}
 	r, err := runner.New(runner.Config{
-		Store:         store,
-		Graph:         stubGraph{},
-		Workers:       registry,
-		RecordingRoot: t.TempDir(),
-		Prior:         publishedPrior(t),
-		Mode:          worker.ModeRecorded,
-		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Persistence:     pginvestigation.Persistence(store, nil),
+		KnowledgeCorpus: pginvestigation.KnowledgeCorpusOver(store),
+		Graph:           stubGraph{},
+		Workers:         registry,
+		RecordingRoot:   t.TempDir(),
+		Prior:           publishedPrior(t),
+		Mode:            worker.ModeRecorded,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
 		t.Fatalf("new runner over the rebuilt schema: %v", err)
@@ -1575,13 +1581,14 @@ func TestAnExportFromAFixtureServedRunCarriesLayerTwo(t *testing.T) {
 		}
 	}
 	r, err := runner.New(runner.Config{
-		Store:         store,
-		Graph:         stubGraph{},
-		Workers:       registry,
-		RecordingRoot: root,
-		Prior:         publishedPrior(t),
-		Mode:          worker.ModeRecorded,
-		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Persistence:     pginvestigation.Persistence(store, nil),
+		KnowledgeCorpus: pginvestigation.KnowledgeCorpusOver(store),
+		Graph:           stubGraph{},
+		Workers:         registry,
+		RecordingRoot:   root,
+		Prior:           publishedPrior(t),
+		Mode:            worker.ModeRecorded,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
 		t.Fatalf("new runner: %v", err)
@@ -1712,7 +1719,8 @@ func TestTheKnowledgeWorkerIsRegisteredByDefault(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			registry := worker.NewRegistry()
 			if _, err := runner.New(runner.Config{
-				Store: store, Graph: stubGraph{}, Workers: registry, NoKnowledgeWorker: tc.off,
+				Persistence: pginvestigation.Persistence(store, nil), KnowledgeCorpus: pginvestigation.KnowledgeCorpusOver(store),
+				Graph: stubGraph{}, Workers: registry, NoKnowledgeWorker: tc.off,
 				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 			}); err != nil {
 				t.Fatalf("new runner: %v", err)

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/investigation/record"
+
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -34,70 +36,27 @@ import (
 //     The only way delivery could block a conclusion would be for the conclusion path to call it,
 //     and it does not (ConcludeInTx is in lifecycle.go and mentions no delivery).
 
-// Delivery outcomes, exactly as `investigation.report_deliveries.outcome` accepts them.
-const (
-	// DeliveryDelivered is a report that reached its place.
-	DeliveryDelivered = "delivered"
-	// DeliveryFailed is one that did not. It is recorded; the investigation still concludes.
-	DeliveryFailed = "failed"
-	// DeliveryNotConfigured is the ordinary case with no connector: there is nowhere to post,
-	// which is not a failure of anything.
-	DeliveryNotConfigured = "not_configured"
-)
-
-// ErrDeliveryFailureNeedsDetail is a failed delivery with no detail. A failure nobody can read is
-// not a record of anything.
-var ErrDeliveryFailureNeedsDetail = errors.New("a failed delivery must record why (FR-057f)")
-
-// DeliveryRecord is one attempt to return a report to the place the incident lives.
-type DeliveryRecord struct {
-	// DeliveryID is the row's identifier; DeliveryIDFor derives the canonical one.
-	DeliveryID string
-	// InvestigationID is the investigation whose rendering was delivered.
-	InvestigationID string
-	// TargetSystem and TargetRef are the stable identifier of the place.
-	TargetSystem string
-	TargetRef    string
-	// ExternalMessageRef is what is edited in place on the next update. Empty until the first
-	// successful delivery mints one.
-	ExternalMessageRef string
-	// RenderingDigest is sha256 of the rendered report that was delivered.
-	RenderingDigest string
-	// Outcome is one of the three above.
-	Outcome string
-	// FailureDetail is required when Outcome is DeliveryFailed.
-	FailureDetail string
-	// At is when the attempt happened. Zero means now.
-	At time.Time
-}
-
-// DeliveryIDFor is the canonical delivery id: one row per (investigation, target system, target
-// ref), which is what makes "edited in place" representable.
-func DeliveryIDFor(investigationID, targetSystem, targetRef string) string {
-	return "delivery-" + investigationID + "-" + targetSystem + "-" + targetRef
-}
-
 // RecordDelivery writes or updates the delivery row (FR-057f).
 //
 // It is an upsert on the canonical id: the first call inserts with `update_count = 1`, every
 // later call to the same place updates in place and increments. `first_delivered_at` is set once
 // and never moved, so "when did the on-call first see this?" survives every later edit.
-func (d *InvestigationDAO) RecordDelivery(ctx context.Context, rec DeliveryRecord) (*investigationv1.ReportDelivery, error) {
+func (d *InvestigationDAO) RecordDelivery(ctx context.Context, rec record.DeliveryRecord) (*investigationv1.ReportDelivery, error) {
 	if d == nil || d.store == nil {
 		return nil, errors.New("investigation store: record delivery: no database")
 	}
 	switch rec.Outcome {
-	case DeliveryDelivered, DeliveryNotConfigured:
-	case DeliveryFailed:
+	case record.DeliveryDelivered, record.DeliveryNotConfigured:
+	case record.DeliveryFailed:
 		if rec.FailureDetail == "" {
-			return nil, fmt.Errorf("investigation store: record delivery: %w", ErrDeliveryFailureNeedsDetail)
+			return nil, fmt.Errorf("investigation store: record delivery: %w", record.ErrDeliveryFailureNeedsDetail)
 		}
 	default:
 		return nil, fmt.Errorf("investigation store: record delivery: outcome %q: want %s, %s or %s",
-			rec.Outcome, DeliveryDelivered, DeliveryFailed, DeliveryNotConfigured)
+			rec.Outcome, record.DeliveryDelivered, record.DeliveryFailed, record.DeliveryNotConfigured)
 	}
 	if rec.DeliveryID == "" {
-		rec.DeliveryID = DeliveryIDFor(rec.InvestigationID, rec.TargetSystem, rec.TargetRef)
+		rec.DeliveryID = record.DeliveryIDFor(rec.InvestigationID, rec.TargetSystem, rec.TargetRef)
 	}
 	at := rec.At
 	if at.IsZero() {
@@ -105,7 +64,7 @@ func (d *InvestigationDAO) RecordDelivery(ctx context.Context, rec DeliveryRecor
 	}
 	// `first_delivered_at` is only meaningful for a delivery that happened.
 	var firstAt any
-	if rec.Outcome == DeliveryDelivered {
+	if rec.Outcome == record.DeliveryDelivered {
 		firstAt = at.UTC()
 	}
 

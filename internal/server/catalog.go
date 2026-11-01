@@ -10,8 +10,6 @@ import (
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
-	"github.com/Pierre-Theophile/aisre/internal/projector"
-	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
 )
 
@@ -20,19 +18,19 @@ import (
 // attributed to that service?" must not need a credential that can change the answer. Writes go
 // through ResolutionService, where the principal is stamped.
 type CatalogService struct {
-	engine  *query.Engine
+	engine  CatalogReader
 	metrics *telemetry.Metrics
 	logger  *slog.Logger
 }
 
 var _ graphv1connect.CatalogServiceHandler = (*CatalogService)(nil)
 
-// NewCatalogService builds the service over the projector's store.
-func NewCatalogService(p *projector.Projector, metrics *telemetry.Metrics, logger *slog.Logger) *CatalogService {
+// NewCatalogService builds the service over a catalog reader.
+func NewCatalogService(catalog CatalogReader, metrics *telemetry.Metrics, logger *slog.Logger) *CatalogService {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &CatalogService{engine: query.NewEngine(p.Store()), metrics: metrics, logger: logger}
+	return &CatalogService{engine: catalog, metrics: metrics, logger: logger}
 }
 
 // catalogRead is the body every method shares: authorize, time, answer.

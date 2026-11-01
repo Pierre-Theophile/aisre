@@ -6,8 +6,6 @@ import (
 	"log/slog"
 
 	"github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1/graphv1connect"
-	"github.com/Pierre-Theophile/aisre/internal/projector"
-	"github.com/Pierre-Theophile/aisre/internal/query"
 	"github.com/Pierre-Theophile/aisre/internal/telemetry"
 )
 
@@ -33,8 +31,8 @@ import (
 
 // QueryService implements sreagent.graph.v1.QueryService.
 type QueryService struct {
-	projector *projector.Projector
-	engine    *query.Engine
+	projector EventLog
+	engine    GraphReader
 	metrics   *telemetry.Metrics
 	logger    *slog.Logger
 }
@@ -43,23 +41,17 @@ var _ graphv1connect.QueryServiceHandler = (*QueryService)(nil)
 
 // NewQueryService returns the query handler. metrics may be nil; logger defaults to
 // slog.Default().
-func NewQueryService(p *projector.Projector, metrics *telemetry.Metrics, logger *slog.Logger) *QueryService {
+func NewQueryService(p EventLog, graph GraphReader, metrics *telemetry.Metrics, logger *slog.Logger) *QueryService {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &QueryService{
 		projector: p,
-		engine:    query.NewEngine(p.Store()),
+		engine:    graph,
 		metrics:   metrics,
 		logger:    logger,
 	}
 }
-
-// Engine is the read engine the query handlers answer from.
-func (s *QueryService) Engine() *query.Engine { return s.engine }
-
-// Projector is the graph the query engine reads through.
-func (s *QueryService) Projector() *projector.Projector { return s.projector }
 
 // Metrics is the instrument set query handlers record their latency on.
 func (s *QueryService) Metrics() *telemetry.Metrics { return s.metrics }

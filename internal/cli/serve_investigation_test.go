@@ -13,6 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pierre-Theophile/aisre/internal/server/pgserver"
+
+	"github.com/Pierre-Theophile/aisre/internal/investigation/pginvestigation"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
@@ -191,13 +195,13 @@ func liveInvestigationServer(t *testing.T) (baseURL, token string) {
 	}
 	proj := projector.New(store)
 	engine, err := runner.New(runner.Config{
-		Store:         store,
-		Projector:     proj,
-		Graph:         cliStubGraph{},
-		Workers:       registry,
-		RecordingRoot: t.TempDir(),
-		Mode:          worker.ModeRecorded,
-		Logger:        logger,
+		Persistence:     pginvestigation.Persistence(store, proj),
+		KnowledgeCorpus: pginvestigation.KnowledgeCorpusOver(store),
+		Graph:           cliStubGraph{},
+		Workers:         registry,
+		RecordingRoot:   t.TempDir(),
+		Mode:            worker.ModeRecorded,
+		Logger:          logger,
 	})
 	if err != nil {
 		t.Fatalf("new runner: %v", err)
@@ -209,10 +213,10 @@ func liveInvestigationServer(t *testing.T) (baseURL, token string) {
 	}
 	dao := investigationstore.NewInvestigationDAO(store)
 	srv, err := server.New(server.Config{
-		Listen:    "127.0.0.1:0",
-		Auth:      auth,
-		Projector: proj,
-		Logger:    logger,
+		Listen:   "127.0.0.1:0",
+		Auth:     auth,
+		Backends: pgserver.Backends(proj),
+		Logger:   logger,
 		// The ledger reader, as `serve --enable-investigation` wires it: without it the read
 		// path serves a verdict with nothing under it, and anything downstream of `investigate
 		// get` — `to-incident`, the renderings — sees an empty ledger.
