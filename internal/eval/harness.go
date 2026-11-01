@@ -149,6 +149,9 @@ type Harness struct {
 	sections kstore.Store
 	world    *sdk.World
 	cleanup  func()
+	// projector is the fixture's own replayed database, kept so the simple harness can serve the
+	// production API over it (T131). Nil when the caller supplied a query service.
+	projector *projector.Projector
 
 	modelDigest  string
 	modelVersion string
@@ -223,7 +226,8 @@ func (h *Harness) openGraph(ctx context.Context) error {
 		return err
 	}
 	h.cleanup = cleanup
-	if _, err := fixture.Load(ctx, projector.New(store), h.manifest.Dir, fixture.LoadOptions{}); err != nil {
+	h.projector = projector.New(store)
+	if _, err := fixture.Load(ctx, h.projector, h.manifest.Dir, fixture.LoadOptions{}); err != nil {
 		h.Close()
 		return err
 	}

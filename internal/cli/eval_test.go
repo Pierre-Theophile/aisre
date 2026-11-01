@@ -46,7 +46,14 @@ func gateBinary(t *testing.T) string {
 			builtBin = filepath.Join(root, "bin", "aisre")
 			return
 		}
-		out := filepath.Join(t.TempDir(), "aisre")
+		// Not t.TempDir(): that is removed when the first caller's test ends, and every later
+		// gate test would then run without a binary and print `power: unavailable`.
+		dir, err := os.MkdirTemp("", "aisre-gate-")
+		if err != nil {
+			buildErr = err
+			return
+		}
+		out := filepath.Join(dir, "aisre")
 		cmd := exec.Command("go", "build", "-o", out, "./cmd/aisre")
 		cmd.Dir = root
 		if output, err := cmd.CombinedOutput(); err != nil {
