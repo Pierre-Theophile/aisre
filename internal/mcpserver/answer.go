@@ -133,13 +133,25 @@ func scanForInjection(encoded []byte) ([]Flag, error) {
 		return nil, fmt.Errorf("mcp: scan answer: %w", err)
 	}
 	flags := []Flag{}
+	// An answer repeats the same strings many times (every key, every namespace, every shared
+	// attribute value), and a match depends on the text alone, so each distinct string is scanned
+	// once. That is most of the adapter's cost on a large answer (SC-004).
+	seen := map[string][]injection.Injection{}
+	scan := func(path, text string) {
+		found, ok := seen[text]
+		if !ok {
+			found = injection.Scan(path, text)
+			seen[text] = found
+		}
+		for _, f := range found {
+			flags = append(flags, Flag{Path: path, Pattern: f.Pattern, Excerpt: f.Excerpt})
+		}
+	}
 	var walk func(path string, v any)
 	walk = func(path string, v any) {
 		switch t := v.(type) {
 		case string:
-			for _, found := range injection.Scan(path, t) {
-				flags = append(flags, Flag{Path: path, Pattern: found.Pattern, Excerpt: found.Excerpt})
-			}
+			scan(path, t)
 		case []any:
 			for i, item := range t {
 				walk(path+"["+strconv.Itoa(i)+"]", item)
@@ -152,9 +164,7 @@ func scanForInjection(encoded []byte) ([]Flag, error) {
 			sort.Strings(keys)
 			for _, k := range keys {
 				child := path + "." + k
-				for _, found := range injection.Scan(child, k) {
-					flags = append(flags, Flag{Path: child, Pattern: found.Pattern, Excerpt: found.Excerpt})
-				}
+				scan(child, k)
 				walk(child, t[k])
 			}
 		}
