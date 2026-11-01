@@ -5,6 +5,7 @@ package engine
 import (
 	"strings"
 	"testing"
+	"time"
 
 	graphv1 "github.com/Pierre-Theophile/aisre/api/sreagent/graph/v1"
 	investigationv1 "github.com/Pierre-Theophile/aisre/api/sreagent/investigation/v1"
@@ -74,5 +75,41 @@ func TestAPathTheGraphCannotDrawNamesItsMissingLink(t *testing.T) {
 	}
 	if got := PathsProto([]Path{p}).GetPaths()[0]; got.GetDrawable() || got.GetMissingLink() == nil {
 		t.Errorf("proto = %v", got)
+	}
+}
+
+// TestACompletionReadDrawsAPathTheNeighbourhoodCouldNot is the stop's path completion (FR-019b):
+// the neighbourhood read holds config with no edge to it, the read one hop wider holds the edge
+// ledger -depends_on-> config, and the path drawn over both reaches the subject through it.
+func TestACompletionReadDrawsAPathTheNeighbourhoodCouldNot(t *testing.T) {
+	t.Parallel()
+	e := pathWorld(t)
+	h := ledger.Hypothesis{ID: "h-2", Kind: ledger.KindCondition, TargetEntityIDs: []string{"e-config"}}
+	if p := e.pathOf(h); p.Drawable || p.missingFrom != "otel.service.name=config" {
+		t.Fatalf("before completion: path = %+v, want undrawable from config", p)
+	}
+	node := func(id, name string) *graphv1.NodeVersion {
+		return &graphv1.NodeVersion{EntityId: id, Type: graphv1.NodeType_SERVICE,
+			Aliases: []*graphv1.Ref{{Namespace: "otel.service.name", Value: name}}}
+	}
+	now := time.Date(2026, 9, 1, 14, 32, 0, 0, time.UTC)
+	wider := BuildProfile(&graphv1.SubgraphResponse{
+		Focus: node("e-config", "config"),
+		Nodes: []*graphv1.NodeVersion{node("e-ledger", "ledger"), node("e-vault", "vault")},
+		Edges: []*graphv1.EdgeVersion{
+			{SrcId: "e-ledger", DstId: "e-config", Type: graphv1.EdgeType_DEPENDS_ON},
+			{SrcId: "e-config", DstId: "e-vault", Type: graphv1.EdgeType_DEPENDS_ON},
+		},
+	}, now.Add(-time.Hour), now, now)
+	p := e.pathOf(h, wider)
+	if !p.Drawable {
+		t.Fatalf("after completion: path not drawn: %+v", p)
+	}
+	got := p.Render()
+	want := "path: otel.service.name=config -depends_on-> otel.service.name=ledger (unverified); " +
+		"otel.service.name=ledger -calls-> otel.service.name=payments (e-1); " +
+		"otel.service.name=payments -calls-> otel.service.name=checkout (unverified)"
+	if got != want {
+		t.Errorf("path =\n  %s\nwant\n  %s", got, want)
 	}
 }

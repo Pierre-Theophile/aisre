@@ -237,10 +237,14 @@ type RunRow struct {
 	// for a fixture whose ground truth publishes no causal path.
 	Credit    CausalCredit
 	HasCredit bool
-	// EdgeF1 is the propagation path's edge F1 against `causal_path`, defined when HasCredit is;
-	// PathDrawn says the scored path was drawn on the graph (FR-059a).
+	// EdgeF1 is the propagation path's edge F1 against `causal_path`, defined when HasEdges is;
+	// PathDrawn says the scored path was drawn on the graph (FR-059a). HasEdges is false for a
+	// ground truth whose causal path is the symptom alone: it has no edge to score a path
+	// against, so the run is left out of edge F1 and of the undrawable share rather than scored
+	// 0 for a path the truth itself does not have.
 	EdgeF1    float64
 	PathDrawn bool
+	HasEdges  bool
 	// Examined is true when the run held a hypothesis naming the ground-truth culprit, the one
 	// the omission rate reads; Omitted says the examination report found a decisive family
 	// reachable and unqueried for it; and EnforcementHeld says it was supported anyway, so an
@@ -934,7 +938,7 @@ type pathTally struct {
 }
 
 func (t *pathTally) add(run RunRow) {
-	if run.HasCredit {
+	if run.HasCredit && run.HasEdges {
 		t.scored++
 		t.edgeF1 = append(t.edgeF1, run.EdgeF1)
 		if !run.PathDrawn {
@@ -971,7 +975,8 @@ func (t *pathTally) add(run RunRow) {
 
 func (t *pathTally) rows(scope Scope, fixture string) []Row {
 	f1 := NotMeasured(MetricPathEdgeF1, scope, fixture,
-		"no run had a ground-truth `causal_path` to score a propagation path against")
+		"no run had a ground-truth `causal_path` with an edge to score a propagation path against: "+
+			"a truth that is the symptom alone has none")
 	if value, ok := Mean(t.edgeF1); ok {
 		f1 = NewRow(MetricPathEdgeF1, scope, fixture, value, len(t.edgeF1), fmt.Sprintf(
 			"%s: the engine's propagation path against `causal_path`, edge by edge (FR-059a); "+
@@ -1501,8 +1506,9 @@ func runRowFrom(outcome *RunOutcome, grade GradeResult, truth GroundTruth, opts 
 			pathEntities(truth.CausalPath), got,
 			pathVia(truth.CausalPath), outcomePathVia(outcome.CausalPath))
 		row.PathDrawn = outcome.PathDrawn
-		if outcome.PathDrawn {
-			row.EdgeF1, _ = EdgeF1(pathEntities(truth.CausalPath), got)
+		row.EdgeF1, row.HasEdges = EdgeF1(pathEntities(truth.CausalPath), got)
+		if !outcome.PathDrawn {
+			row.EdgeF1 = 0
 		}
 	}
 	if examined {

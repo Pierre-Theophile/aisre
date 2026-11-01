@@ -664,3 +664,30 @@ func TestTheCacheReadRatioIsPublishedAndAModelFreeRunSaysNotApplicable(t *testin
 		t.Error("the rendered report does not publish the cache-read ratio")
 	}
 }
+
+// TestASymptomOnlyTruthIsLeftOutOfEdgeF1 pins FR-059a's denominator: a ground truth whose causal
+// path is the symptom alone has no edge, so its run is neither scored 0 on edge F1 nor counted
+// among the undrawable paths; mechanism credit still covers it.
+func TestASymptomOnlyTruthIsLeftOutOfEdgeF1(t *testing.T) {
+	t.Parallel()
+
+	report := eval.Build(eval.Input{
+		AuditPath: testAudit,
+		Runs: []eval.RunRow{
+			{Fixture: "a", Run: 1, HasCredit: true, HasEdges: true, PathDrawn: true, EdgeF1: 1},
+			{Fixture: "b", Run: 1, HasCredit: true, HasEdges: true, PathDrawn: false},
+			{Fixture: "c", Run: 1, HasCredit: true, HasEdges: false, PathDrawn: false},
+		},
+	})
+
+	f1 := row(t, report.Rows, eval.MetricPathEdgeF1, eval.ScopeCorpus, "")
+	near(t, value(t, f1), 0.5, "corpus edge F1 over the two truths with an edge")
+	if f1.N != 2 {
+		t.Errorf("edge F1 n = %d, want 2", f1.N)
+	}
+	near(t, value(t, row(t, report.Rows, eval.MetricUndrawablePaths, eval.ScopeCorpus, "")), 0.5,
+		"undrawable share over the two truths with an edge")
+	if _, ok := row(t, report.Rows, eval.MetricPathEdgeF1, eval.ScopeFixture, "c").Float(); ok {
+		t.Error("a symptom-only truth must not be scored on edge F1")
+	}
+}
