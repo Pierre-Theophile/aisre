@@ -75,6 +75,32 @@ type Profile struct {
 	Truncations []string
 	// TotalEntities and TotalEdges are the counts before the caps.
 	TotalEntities, TotalEdges int
+
+	// all is every entity in scope, before the cap, and bySelector the entity each pointer
+	// belongs to (kind and selector): what the examination report reads (FR-022b).
+	all        []ProfileEntity
+	bySelector map[string]string
+}
+
+// InScope is every entity in scope, uncapped.
+func (p *Profile) InScope() []ProfileEntity {
+	if p == nil {
+		return nil
+	}
+	return append([]ProfileEntity(nil), p.all...)
+}
+
+// EntityOfPointer is the entity in scope a pointer belongs to, by its kind and selector.
+func (p *Profile) EntityOfPointer(ptr *graphv1.Pointer) (string, bool) {
+	if p == nil || ptr == nil {
+		return "", false
+	}
+	id, ok := p.bySelector[selectorKey(ptr)]
+	return id, ok
+}
+
+func selectorKey(ptr *graphv1.Pointer) string {
+	return ptr.GetKind().String() + "|" + ptr.GetSelector()
 }
 
 // ProfileEntity is one entity in scope.
@@ -133,7 +159,7 @@ var profiledTypes = map[graphv1.NodeType]bool{
 // BuildProfile builds the profile from the neighbourhood read. window is the investigation's
 // lookback, and observedAt the instant its knowledge is pinned to.
 func BuildProfile(sub *graphv1.SubgraphResponse, start, end, observedAt time.Time) *Profile {
-	p := &Profile{}
+	p := &Profile{bySelector: map[string]string{}}
 	if sub == nil {
 		p.BlindSpots = append(p.BlindSpots, "the graph returned no neighbourhood: nothing near the "+
 			"subject is known, so every family on every neighbour is unexamined by construction")
@@ -180,6 +206,14 @@ func BuildProfile(sub *graphv1.SubgraphResponse, start, end, observedAt time.Tim
 		return entities[i].ID < entities[j].ID
 	})
 	p.TotalEntities = len(entities)
+	p.all = append([]ProfileEntity(nil), entities...)
+	for _, ent := range entities {
+		for _, ptr := range nodes[ent.ID].GetPointers() {
+			if ptr.GetSelector() != "" {
+				p.bySelector[selectorKey(ptr)] = ent.ID
+			}
+		}
+	}
 
 	// Blind spots are computed over every entity in scope, before the cap: a cap on what is
 	// listed is not a reason to stop saying what cannot be seen.

@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The expectation table, version 1 (002 FR-022b, plan V6, ADR-0019 D1, T124).
+#
+# For each cause category, the signal families an investigation is expected to have queried
+# before it calls a hypothesis of that category supported. The examination report (T125) names
+# every decisive family that was reachable for a hypothesis's targets (the search-space profile,
+# FR-012a, lists it as queryable) and never queried: that is an omission. A family the profile
+# does not list as queryable is a coverage gap (FR-027), never an omission.
+#
+# This is hand-written domain knowledge applied at the conclusion, which is exactly what the
+# literature review warns about (F1): a wrong row would hold a correct answer back. So the table
+# starts in `observe` mode, where omissions are reported and nothing is held. A version moves to
+# `enforce` only after ADR-0019 D4's dual gate passes on the corpus (T132), and the cost of
+# enforcement is published beside the omission rate (FR-059a). Changing a row is a new version.
+#
+# Categories are 001's change kinds in lower case, `not_change_induced` for a named condition
+# (FR-061b), and `stopped_flow` for a flow surfaced by absence (FR-046b). Families are the
+# profile's: metrics, logs, traces, changes, knowledge. `changes` is never listed: every
+# hypothesis of a change category already rests on the graph's diff.
+
+version: 1
+mode: observe
+
+categories:
+  rollout:
+    decisive: [metrics]
+    why: a rollout is confirmed by the symptom splitting by version, which only the metrics (or the errors by version) show
+  iac_apply:
+    decisive: [metrics]
+    why: an infrastructure change is tied to the symptom by a shift on the resources it touched
+  flag_flip:
+    decisive: [metrics]
+    why: a flag is confirmed by the symptom moving with the cohort or the instant it flipped
+  secret_rotation:
+    decisive: [logs]
+    why: a rotated secret fails as authentication errors, which are written to logs and rarely counted
+  scaling:
+    decisive: [metrics]
+    why: a scaling event is confirmed by saturation or capacity moving with it
+  migration:
+    decisive: [metrics, logs]
+    why: a schema or data migration shows as query latency or errors and as the failing statements
+  dns_switch:
+    decisive: [metrics, traces]
+    why: a DNS switch shows as connection errors and as calls going to the wrong peer
+  cloud_maintenance:
+    decisive: [metrics]
+    why: provider maintenance is confirmed by the affected resources' own signals shifting in its window
+  config_change:
+    decisive: [metrics, logs]
+    why: a configuration change shows as a behaviour shift and as the errors that name the bad value
+  deprecation:
+    decisive: [logs]
+    why: a removed API or endpoint fails as explicit errors from the caller, written to logs
+  vendor_incident:
+    decisive: [traces]
+    why: a vendor fault is located by the outbound calls to that vendor failing or slowing
+  iam_change:
+    decisive: [logs]
+    why: a permission change fails as access-denied errors, written to logs
+  quota_change:
+    decisive: [metrics, logs]
+    why: a quota is hit as throttling, counted in metrics and named in the errors
+  other:
+    decisive: []
+    why: an unclassified change has no family the table can call decisive
+  not_change_induced:
+    decisive: [metrics, logs]
+    why: a condition no change explains has to be seen in the entity's own signals before it is named
+  stopped_flow:
+    decisive: [metrics, traces]
+    why: a flow that stopped is seen as a request rate falling to zero and as calls that are no longer made
