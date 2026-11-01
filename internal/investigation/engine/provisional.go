@@ -125,6 +125,16 @@ func (e *Engine) Publish(ctx context.Context) (*Provisional, error) {
 		return nil, err
 	}
 
+	// The search-space profile is built from this one read, before anything else is asked, so
+	// the brief that carries it describes the scope as the graph knew it at the pinned instants.
+	if sub, ok := subgraphAnswer.Graph.(*graphv1.SubgraphResponse); ok || subgraphAnswer.Graph == nil {
+		profile := BuildProfile(sub, e.subject.Window.GetStart().AsTime(), e.subject.Window.GetEnd().AsTime(),
+			e.at.ObservedAt)
+		e.mu.Lock()
+		e.profile = profile
+		e.mu.Unlock()
+	}
+
 	pointersReq, err := DecodeCall("pointers", jsonObject(map[string]any{
 		"entity_ref":              e.subject.EntityRef,
 		"discriminating_question": "which telemetry selectors describe the subject of this alert?",

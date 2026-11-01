@@ -408,7 +408,8 @@ const investigationSelect = `
 	       coalesce(recording_key, ''), coalesce(recording_digest, ''),
 	       coalesce(decision_event_id, ''), coalesce(onset_estimate_evidence_id, ''),
 	       started_at, ended_at,
-	       coalesce(verification_status, ''), coalesce(verification_detail, '')
+	       coalesce(verification_status, ''), coalesce(verification_detail, ''),
+	       coalesce(search_space_profile, '')
 	FROM investigation.investigations`
 
 func (d *InvestigationDAO) scanOne(ctx context.Context, where string, args ...any) (*investigationv1.Investigation, error) {
@@ -448,7 +449,7 @@ func scanInvestigation(rows pgx.Rows) (*investigationv1.Investigation, error) {
 		&inv.SchemaVersion, &inv.RecordingKey, &inv.RecordingDigest,
 		&inv.DecisionEventId, &inv.OnsetEstimateEvidenceId,
 		&startedAt, &endedAt,
-		&verification, &inv.VerificationDetail,
+		&verification, &inv.VerificationDetail, &inv.SearchSpaceProfile,
 	); err != nil {
 		return nil, fmt.Errorf("investigation store: scan investigation: %w", err)
 	}
