@@ -175,6 +175,8 @@ type Engine struct {
 
 	// provisional is the prior-only ranking published within 5 s of intake (FR-046a).
 	provisional *Provisional
+	// profile is the search-space profile built from the neighbourhood read (FR-012a).
+	profile *Profile
 
 	stopped *Stop
 

@@ -640,6 +640,7 @@ message Investigation {
   bool provisional = 34;                   // true while only the prior-only ranking exists (FR-046a)
   VerificationStatus verification_status = 36;  // FR-022c; unspecified on runs concluded before it
   string verification_detail = 37;         // why, in a sentence: counts kept/demoted/removed, or the reason
+  string search_space_profile = 38;        // FR-012a: the profile the first brief carried; empty on runs concluded before it
 }
 
 // ============================================================================

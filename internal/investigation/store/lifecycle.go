@@ -98,13 +98,15 @@ func ConcludeInTx(ctx context.Context, tx pgx.Tx, investigationID string, c reco
 			decision_event_id = coalesce(nullif($12, ''), decision_event_id),
 			onset_estimate_evidence_id = coalesce(nullif($13, ''), onset_estimate_evidence_id),
 			verification_status = $15,
-			verification_detail = $16
+			verification_detail = $16,
+			search_space_profile = $17
 		WHERE investigation_id = $1 AND lifecycle = $14`,
 		investigationID, record.LifecycleConcluded, c.Kind, c.Outcome,
 		record.StopReasonName(c.StopReason), c.StopDetail, nullable(c.VerdictLine),
 		nullable(c.RollbackCandidate), endedAt.UTC(),
 		c.RecordingKey, c.RecordingDigest, c.DecisionEventID, c.OnsetEstimateEvidenceID,
-		record.LifecycleRunning, nullable(c.VerificationStatus), nullable(c.VerificationDetail))
+		record.LifecycleRunning, nullable(c.VerificationStatus), nullable(c.VerificationDetail),
+		nullable(c.SearchSpaceProfile))
 	if err != nil {
 		return fmt.Errorf("investigation store: conclude %s: %w", investigationID, err)
 	}

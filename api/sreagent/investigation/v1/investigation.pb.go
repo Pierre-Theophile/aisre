@@ -6820,6 +6820,7 @@ type Investigation struct {
 	Provisional             bool                   `protobuf:"varint,34,opt,name=provisional,proto3" json:"provisional,omitempty"`                                                                                           // true while only the prior-only ranking exists (FR-046a)
 	VerificationStatus      VerificationStatus     `protobuf:"varint,36,opt,name=verification_status,json=verificationStatus,proto3,enum=sreagent.investigation.v1.VerificationStatus" json:"verification_status,omitempty"` // FR-022c; unspecified on runs concluded before it
 	VerificationDetail      string                 `protobuf:"bytes,37,opt,name=verification_detail,json=verificationDetail,proto3" json:"verification_detail,omitempty"`                                                    // why, in a sentence: counts kept/demoted/removed, or the reason
+	SearchSpaceProfile      string                 `protobuf:"bytes,38,opt,name=search_space_profile,json=searchSpaceProfile,proto3" json:"search_space_profile,omitempty"`                                                  // FR-012a: the profile the first brief carried; empty on runs concluded before it
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -7109,6 +7110,13 @@ func (x *Investigation) GetVerificationStatus() VerificationStatus {
 func (x *Investigation) GetVerificationDetail() string {
 	if x != nil {
 		return x.VerificationDetail
+	}
+	return ""
+}
+
+func (x *Investigation) GetSearchSpaceProfile() string {
+	if x != nil {
+		return x.SearchSpaceProfile
 	}
 	return ""
 }
@@ -9571,7 +9579,7 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\n" +
 	"next_query\x18\x03 \x01(\v2&.sreagent.investigation.v1.AlgebraTermR\tnextQuery\x12\x1b\n" +
 	"\tdeep_link\x18\x04 \x01(\tR\bdeepLink\x12#\n" +
-	"\rhypothesis_id\x18\x05 \x01(\tR\fhypothesisId\"\x99\x10\n" +
+	"\rhypothesis_id\x18\x05 \x01(\tR\fhypothesisId\"\xcb\x10\n" +
 	"\rInvestigation\x12)\n" +
 	"\x10investigation_id\x18\x01 \x01(\tR\x0finvestigationId\x12\x1f\n" +
 	"\vincident_id\x18\x02 \x01(\tR\n" +
@@ -9618,7 +9626,8 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\bended_at\x18! \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12 \n" +
 	"\vprovisional\x18\" \x01(\bR\vprovisional\x12^\n" +
 	"\x13verification_status\x18$ \x01(\x0e2-.sreagent.investigation.v1.VerificationStatusR\x12verificationStatus\x12/\n" +
-	"\x13verification_detail\x18% \x01(\tR\x12verificationDetail\"\x9b\x01\n" +
+	"\x13verification_detail\x18% \x01(\tR\x12verificationDetail\x120\n" +
+	"\x14search_space_profile\x18& \x01(\tR\x12searchSpaceProfile\"\x9b\x01\n" +
 	"\x0eDeclareRequest\x12D\n" +
 	"\vdeclaration\x18\x01 \x01(\v2\".sreagent.investigation.v1.SymptomR\vdeclaration\x12)\n" +
 	"\x10lookback_seconds\x18\x02 \x01(\x03R\x0flookbackSeconds\x12\x18\n" +

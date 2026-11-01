@@ -457,6 +457,9 @@ func (r *Runner) conclude(
 		OnsetEstimateEvidenceID: onsetEvidenceOf(eng),
 	}
 	applyVerification(&conclusion, verification)
+	if profile := eng.Profile(); profile != nil {
+		conclusion.SearchSpaceProfile = profile.Render()
+	}
 	written := r.writeTrajectory(rn.investigationID, eng)
 	conclusion.RecordingKey = written.key
 	conclusion.RecordingDigest = written.digest

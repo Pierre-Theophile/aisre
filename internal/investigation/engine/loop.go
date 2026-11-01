@@ -519,6 +519,14 @@ func (e *Engine) brief(wave *FirstWave) string {
 		e.subject.Window.GetEnd().AsTime().Format(time.RFC3339))
 	fmt.Fprintf(&b, "budget profile: %s\n\n", e.budget.Profile().Describe())
 
+	if profile := e.Profile(); profile != nil {
+		b.WriteString("# The search space (what can be asked, and what cannot)\n\n")
+		b.WriteString(profile.Render())
+		b.WriteString("\nA family listed as queryable for an entity is reachable. The conclusion will report " +
+			"which reachable families were never queried, so leaving one unasked is a choice the " +
+			"report will name.\n\n")
+	}
+
 	if provisional := e.Provisional(); provisional != nil {
 		b.WriteString("# The provisional ranking (prior only, nothing tested)\n\n")
 		b.WriteString(provisional.Render())

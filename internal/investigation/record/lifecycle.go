@@ -87,6 +87,9 @@ type Conclusion struct {
 	// says why in one sentence (FR-022c). Empty only on a path that never ran the engine.
 	VerificationStatus string
 	VerificationDetail string
+	// SearchSpaceProfile is the rendered search-space profile the first brief carried
+	// (FR-012a). Empty on a path that never read the neighbourhood.
+	SearchSpaceProfile string
 	// VerifierFindings is every claim's verdict, written in the same transaction as the
 	// conclusion: a removed claim is part of how the answer was reached (FR-022a).
 	VerifierFindings []VerifierFinding

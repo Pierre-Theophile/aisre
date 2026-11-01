@@ -221,4 +221,8 @@ func TestAModelFreeRunIsVerifiedWithNothingToCheck(t *testing.T) {
 	if len(final.GetVerifierFindings()) != 0 {
 		t.Errorf("a model-free run has findings: %v", final.GetVerifierFindings())
 	}
+	// The search-space profile is recorded with the investigation, model or not (FR-012a).
+	if !strings.Contains(final.GetSearchSpaceProfile(), "focus: ") {
+		t.Errorf("the concluded investigation records no search-space profile: %q", final.GetSearchSpaceProfile())
+	}
 }
