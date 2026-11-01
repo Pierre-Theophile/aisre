@@ -81,10 +81,18 @@ const (
 	// family reachable and unqueried (FR-022b), and MetricEnforcementCost the share in which the
 	// expectation table, enforced, would have held that hypothesis at `inconclusive`. All four
 	// are reported until the corpus has a baseline (FR-059a).
-	MetricPathEdgeF1      = "path_edge_f1"
-	MetricUndrawablePaths = "undrawable_path_share"
-	MetricOmissionRate    = "omission_rate"
-	MetricEnforcementCost = "enforcement_cost"
+	// MetricVerdictAccuracy is the share of runs whose answer alone was right, and
+	// MetricFloorAccuracy the same rule applied to the telemetry-free floor's answer on the same
+	// runs; MetricLiftOverFloor is the first minus the second, and MetricAnswerableWithoutTelemetry
+	// flags a fixture the floor solves. All reported, never gated (FR-059b, plan V8).
+	MetricVerdictAccuracy            = "verdict_accuracy"
+	MetricFloorAccuracy              = "floor_verdict_accuracy"
+	MetricLiftOverFloor              = "lift_over_floor"
+	MetricAnswerableWithoutTelemetry = "answerable_without_telemetry"
+	MetricPathEdgeF1                 = "path_edge_f1"
+	MetricUndrawablePaths            = "undrawable_path_share"
+	MetricOmissionRate               = "omission_rate"
+	MetricEnforcementCost            = "enforcement_cost"
 	// MetricMissRate is the world-replay `not_recorded` miss rate. It gates a fixture's
 	// admission and never the engine's score (FR-060).
 	MetricMissRate = "not_recorded_miss_rate"
@@ -240,6 +248,12 @@ type RunRow struct {
 	Examined        bool
 	Omitted         bool
 	EnforcementHeld bool
+	// HasFloor is true when the outcome carries the telemetry-free floor's answer; VerdictRight
+	// and FloorRight score the engine's answer and the floor's by the same verdict-only rule
+	// (FR-059b).
+	HasFloor     bool
+	VerdictRight bool
+	FloorRight   bool
 
 	// Claims is how many claims the conclusion made, ValidClaims how many resolved to an
 	// evidence id whose digest matches the recording, and Untraceable how many resolved to
@@ -911,6 +925,12 @@ type pathTally struct {
 	scored, undrawable int
 	examined, omitted  int
 	held               int
+	floored            int
+	engineRight        int
+	floorRight         int
+	// floorMisses counts, per fixture, the runs the floor got wrong; a fixture present with 0
+	// is one the floor solves.
+	floorMisses map[string]int
 }
 
 func (t *pathTally) add(run RunRow) {
@@ -919,6 +939,23 @@ func (t *pathTally) add(run RunRow) {
 		t.edgeF1 = append(t.edgeF1, run.EdgeF1)
 		if !run.PathDrawn {
 			t.undrawable++
+		}
+	}
+	if run.HasFloor {
+		t.floored++
+		if t.floorMisses == nil {
+			t.floorMisses = map[string]int{}
+		}
+		if run.FloorRight {
+			t.floorMisses[run.Fixture] += 0
+		} else {
+			t.floorMisses[run.Fixture]++
+		}
+		if run.VerdictRight {
+			t.engineRight++
+		}
+		if run.FloorRight {
+			t.floorRight++
 		}
 	}
 	if run.Examined {
@@ -940,7 +977,7 @@ func (t *pathTally) rows(scope Scope, fixture string) []Row {
 			"%s: the engine's propagation path against `causal_path`, edge by edge (FR-059a); "+
 				"%d of %d paths could not be drawn and score 0", detailReported, t.undrawable, t.scored))
 	}
-	return []Row{
+	return append([]Row{
 		f1,
 		fraction(MetricUndrawablePaths, scope, fixture, t.undrawable, t.scored,
 			detailReported+": read edge F1 beside it — a thin graph is not a regression (FR-019b)"),
@@ -949,7 +986,54 @@ func (t *pathTally) rows(scope Scope, fixture string) []Row {
 		fraction(MetricEnforcementCost, scope, fixture, t.held, t.examined,
 			detailReported+": an enforced expectation table would have held the supported ground-truth "+
 				"hypothesis at `inconclusive`; read with the omission rate (FR-059a)"),
+	}, t.floorRows(scope, fixture)...)
+}
+
+// floorRows are the telemetry-free floor's rows (FR-059b, plan V8): both answers scored by the
+// same verdict-only rule, and the lift between them. A fixture the floor solves in every run is
+// flagged as answerable without telemetry; the corpus row counts them.
+func (t *pathTally) floorRows(scope Scope, fixture string) []Row {
+	if t.floored == 0 {
+		return []Row{
+			NotMeasured(MetricVerdictAccuracy, scope, fixture, "no run carried the floor's answer to compare with"),
+			NotMeasured(MetricFloorAccuracy, scope, fixture, "no run carried the floor's answer"),
+			NotMeasured(MetricLiftOverFloor, scope, fixture, "no run carried the floor's answer"),
+		}
 	}
+	engine, _ := Rate(t.engineRight, t.floored)
+	floor, _ := Rate(t.floorRight, t.floored)
+	rows := []Row{
+		fraction(MetricVerdictAccuracy, scope, fixture, t.engineRight, t.floored,
+			detailReported+": the answer alone was right, by the rule the floor is held to (FR-059b)"),
+		fraction(MetricFloorAccuracy, scope, fixture, t.floorRight, t.floored,
+			detailReported+": the prior-only ranking's first change, read before any evidence (plan V8)"),
+		NewRow(MetricLiftOverFloor, scope, fixture, engine-floor, t.floored,
+			detailReported+": verdict accuracy minus the telemetry-free floor's (FR-059b)"),
+	}
+	if scope == ScopeFixture {
+		solved := t.floorRight == t.floored
+		detail := detailReported + ": the floor does not solve this fixture"
+		if solved {
+			detail = detailReported + ": the prior alone names the right answer — this fixture does not " +
+				"show that telemetry was needed (FR-059b)"
+		}
+		rows = append(rows, boolRow(MetricAnswerableWithoutTelemetry, scope, fixture, solved, t.floored, detail))
+		return rows
+	}
+	var solved []string
+	for _, name := range sortedKeys(t.floorMisses) {
+		if t.floorMisses[name] == 0 {
+			solved = append(solved, name)
+		}
+	}
+	detail := detailReported + ": no fixture is answerable from the prior alone"
+	if len(solved) > 0 {
+		detail = fmt.Sprintf("%s: %d of %d fixtures are answerable from the prior alone: %s",
+			detailReported, len(solved), len(t.floorMisses), strings.Join(solved, ", "))
+	}
+	rows = append(rows, NewRow(MetricAnswerableWithoutTelemetry, scope, fixture, float64(len(solved)),
+		len(t.floorMisses), detail))
+	return rows
 }
 
 func breakdown(metric string, scope Scope, fixture string, counts map[string]int) []Row {
@@ -1396,6 +1480,13 @@ func runRowFrom(outcome *RunOutcome, grade GradeResult, truth GroundTruth, opts 
 		row.PriorRank = *truth.PriorRankOfCulprit
 	}
 	row.ConfidentlyWrong = confidentlyWrong(outcome, truth)
+
+	if outcome.FloorVerdict != "" {
+		row.HasFloor = true
+		row.VerdictRight = VerdictRight(outcome, truth, grade.AskedAt)
+		floor := &RunOutcome{Verdict: outcome.FloorVerdict, VerdictRefs: outcome.FloorVerdictRefs}
+		row.FloorRight = VerdictRight(floor, truth, grade.AskedAt)
+	}
 
 	matched, examined := outcome.Hypothesis(truth.Culprit)
 	if len(truth.CausalPath) > 0 {

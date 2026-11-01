@@ -97,6 +97,13 @@ type RunOutcome struct {
 	VerdictConfidence float64 `json:"verdict_confidence"`
 	VerdictBucket     string  `json:"verdict_bucket,omitempty"`
 
+	// FloorVerdict and FloorVerdictRefs are what the telemetry-free floor answers on the same
+	// fixture: the first change of the engine's prior-only provisional ranking (FR-046a), read
+	// off the graph before any evidence was gathered, or `unobserved` where the graph offered no
+	// candidate change (FR-059b, plan V8).
+	FloorVerdict     string   `json:"floor_verdict,omitempty"`
+	FloorVerdictRefs []string `json:"floor_verdict_refs,omitempty"`
+
 	// CausalPath is the chain the engine reports from cause to symptom, so localisation,
 	// attribution and mechanism can be scored separately and with partial credit (FR-061b).
 	CausalPath []PathStep `json:"causal_path,omitempty"`

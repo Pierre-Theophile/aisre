@@ -422,6 +422,7 @@ func (h *Harness) outcome(
 	out.Outcome = outcomeName(stop.Outcome(ranked))
 	out.Verdict, out.VerdictRefs, out.VerdictConfidence, out.VerdictBucket =
 		verdictOf(out.Ledger, out.Outcome, h.manifest.Incident.GroundTruth.CauseCategory())
+	out.FloorVerdict, out.FloorVerdictRefs = floorOf(e, out.Ledger)
 	out.CausalPath, out.PathHypothesisID, out.PathDrawn = causalPathOf(e, out)
 	out.Onset = onsetOf(e.Onset())
 
@@ -560,6 +561,35 @@ func verdictOf(rows []Hypothesis, outcome, category string) (verdict string, ref
 		return VerdictUnknown, nil, top.Posterior, top.Bucket
 	}
 	return named, refs, top.Posterior, top.Bucket
+}
+
+// floorOf is the telemetry-free floor's answer (FR-059b, plan V8): the prior-only ranking the
+// engine published before any evidence (FR-046a), read as if it were the conclusion. Its first
+// change is the answer, spelled as verdictOf spells a change; a ranking with no change answers
+// `unobserved`. Nothing the investigation gathered afterwards enters it.
+func floorOf(e *engine.Engine, rows []Hypothesis) (string, []string) {
+	provisional := e.Provisional()
+	if provisional == nil {
+		return VerdictUnobserved, nil
+	}
+	refsOf := map[string][]string{}
+	for _, h := range rows {
+		refsOf[h.ID] = h.CandidateChangeRefs
+	}
+	for _, h := range provisional.Ranked {
+		if h.Kind != ledger.KindChange || h.CandidateChangeEntityID == "" {
+			continue
+		}
+		refs := append([]string(nil), refsOf[h.ID]...)
+		named := h.CandidateChangeEntityID
+		if len(refs) > 0 {
+			named = refs[0]
+		}
+		refs = append(refs, h.CandidateChangeEntityID)
+		sort.Strings(refs)
+		return named, dedupe(refs)
+	}
+	return VerdictUnobserved, nil
 }
 
 // causalPathOf reports the engine's propagation path from cause to symptom (FR-019b, FR-059a).
