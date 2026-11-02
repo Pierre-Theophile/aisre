@@ -25,8 +25,8 @@ Each answer is scored by the same verdict-only rule (`VerdictRight`, FR-059b).
 
 Where they differ:
 
-- The simple harness names a change on all five `unobserved-*` and declared fixtures whose truth is
-  that no observed change caused the symptom. The engine is right on all five. Without telemetry,
+- The simple harness names a change on all four `unobserved-*` fixtures, whose truth is that no
+  observed change caused the symptom. The engine is right on all four. Without telemetry,
   the agent has no way to rule a change out, so it picks the closest one.
 - The simple harness is right where the engine is wrong on `adjacent-decoy-01` and
   `stopped-flow-01`. Both are verdicts the engine still gets wrong
