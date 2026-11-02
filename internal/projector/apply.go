@@ -178,6 +178,8 @@ func (p *Projector) applyInTx(ctx context.Context, tx pgx.Tx, env *graphv1.Event
 
 // applyProjected is applyInTx without the instrumentation: validate, append, project.
 func (p *Projector) applyProjected(ctx context.Context, tx pgx.Tx, env *graphv1.EventEnvelope, opts ApplyOptions) (*graphv1.IngestResult, error) {
+	// Every instant is cut to what the store keeps before anything reasons about it (event.StorePrecision).
+	env = event.StorePrecision(env)
 	// Resolvability is checked before the append, not after: an upsert creates what it names,
 	// but a retraction naming an entity the graph has never seen is a rejected event, and a
 	// rejected event must not be in log.events (data-model.md "Validation rules", FR-024).
