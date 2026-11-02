@@ -148,6 +148,10 @@ func (e *Engine) concludeVerdict(stop Stop) error {
 	if err := e.recordUntestedCandidates("the investigation stopped before this candidate was tested"); err != nil {
 		return err
 	}
+	held, err := e.enforceExpectations()
+	if err != nil {
+		return err
+	}
 	switch stop.Reason {
 	case StopCompleted, StopDiminishingReturns:
 	case StopBudgetExhausted, StopWorkerUnavailable, StopRefused, StopFailed:
@@ -163,6 +167,12 @@ func (e *Engine) concludeVerdict(stop Stop) error {
 			// Something was named, and it was named under the rule: nothing to conclude.
 			return nil
 		}
+	}
+	if held > 0 {
+		// A held hypothesis is not ruled out: it is waiting on the query that would settle it.
+		// Concluding `unobserved` over it would be the wrong answer stated with confidence, so the
+		// run ends with nothing named and the omissions as its resolving actions (FR-022b).
+		return nil
 	}
 	open := e.ledger.OpenHypothesisID()
 	if err := e.ledger.SetStatus(open, ledger.StatusSupported, ledger.StatusUpdate{}); err != nil {

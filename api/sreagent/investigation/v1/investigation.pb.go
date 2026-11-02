@@ -6641,6 +6641,9 @@ type HypothesisExamination struct {
 	Queried       []string               `protobuf:"bytes,4,rep,name=queried,proto3" json:"queried,omitempty"`
 	Omissions     []string               `protobuf:"bytes,5,rep,name=omissions,proto3" json:"omissions,omitempty"`
 	CoverageGaps  []string               `protobuf:"bytes,6,rep,name=coverage_gaps,json=coverageGaps,proto3" json:"coverage_gaps,omitempty"`
+	// In `enforce` mode, a hypothesis that would have been supported while a decisive family was
+	// reachable and unqueried is held at inconclusive; its omissions are the resolving actions.
+	Held          bool `protobuf:"varint,7,opt,name=held,proto3" json:"held,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6715,6 +6718,13 @@ func (x *HypothesisExamination) GetCoverageGaps() []string {
 		return x.CoverageGaps
 	}
 	return nil
+}
+
+func (x *HypothesisExamination) GetHeld() bool {
+	if x != nil {
+		return x.Held
+	}
+	return false
 }
 
 type ExaminationReport struct {
@@ -9937,14 +9947,15 @@ const file_sreagent_investigation_v1_investigation_proto_rawDesc = "" +
 	"\x06author\x18\x03 \x01(\tR\x06author\x12;\n" +
 	"\vlabelled_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"labelledAt\x12\x19\n" +
-	"\bevent_id\x18\x05 \x01(\tR\aeventId\"\xda\x01\n" +
+	"\bevent_id\x18\x05 \x01(\tR\aeventId\"\xee\x01\n" +
 	"\x15HypothesisExamination\x12#\n" +
 	"\rhypothesis_id\x18\x01 \x01(\tR\fhypothesisId\x12%\n" +
 	"\x0ecause_category\x18\x02 \x01(\tR\rcauseCategory\x12\x18\n" +
 	"\atargets\x18\x03 \x03(\tR\atargets\x12\x18\n" +
 	"\aqueried\x18\x04 \x03(\tR\aqueried\x12\x1c\n" +
 	"\tomissions\x18\x05 \x03(\tR\tomissions\x12#\n" +
-	"\rcoverage_gaps\x18\x06 \x03(\tR\fcoverageGaps\"\xdf\x01\n" +
+	"\rcoverage_gaps\x18\x06 \x03(\tR\fcoverageGaps\x12\x12\n" +
+	"\x04held\x18\a \x01(\bR\x04held\"\xdf\x01\n" +
 	"\x11ExaminationReport\x12+\n" +
 	"\x11expectation_table\x18\x01 \x01(\tR\x10expectationTable\x12P\n" +
 	"\n" +
