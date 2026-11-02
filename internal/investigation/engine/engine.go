@@ -178,6 +178,8 @@ type Engine struct {
 	changeKinds map[string]graphv1.ChangeKind
 	// expectations is the table the examination report applies.
 	expectations *expectations.Table
+	// held are the hypotheses an enforced expectation table held at inconclusive (FR-022b).
+	held map[string]bool
 
 	// onset is the estimated symptom onset and its evidence id, once the metrics worker has
 	// produced one. Everything about causal ordering hangs off it (T081).

@@ -614,6 +614,9 @@ message HypothesisExamination {
   repeated string queried = 4;
   repeated string omissions = 5;
   repeated string coverage_gaps = 6;
+  // In `enforce` mode, a hypothesis that would have been supported while a decisive family was
+  // reachable and unqueried is held at inconclusive; its omissions are the resolving actions.
+  bool held = 7;
 }
 message ExaminationReport {
   string expectation_table = 1;  // the table and the mode in force, e.g. "v1 (observe)"
